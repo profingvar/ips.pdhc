@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}{{ patient.family_name or 'Patient' }} — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ patient.family_name or '—' }}, {{ patient.given_name or '—' }}</h1>
+    <p class="lead">Patient detail — FHIR ID: <code>{{ patient.resource_id }}</code></p>
+  </div>
+  <a href="{{ url_for('admin.patients') }}" class="btn btn-secondary"><i data-lucide="arrow-left"></i> Back</a>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Demographics</h2>
+    <div class="detail-grid">
+      <span class="detail-label">GUID</span>
+      <span class="detail-value"><code>{{ patient.guid }}</code></span>
+      <span class="detail-label">Identifier</span>
+      <span class="detail-value">{{ patient.identifier_system or '' }} <code>{{ patient.identifier_value or '—' }}</code></span>
+      <span class="detail-label">Birth Date</span>
+      <span class="detail-value">{{ patient.birth_date.isoformat() if patient.birth_date else '—' }}</span>
+      <span class="detail-label">Gender</span>
+      <span class="detail-value">{{ patient.gender or '—' }}</span>
+      <span class="detail-label">Status</span>
+      <span class="detail-value">
+        {% if patient.is_active %}
+          <span class="badge badge-success">Active</span>
+        {% else %}
+          <span class="badge badge-danger">Inactive</span>
+        {% endif %}
+      </span>
+      <span class="detail-label">Created</span>
+      <span class="detail-value">{{ patient.created_at.strftime('%Y-%m-%d %H:%M') if patient.created_at else '—' }}</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Summary</h2>
+    <div class="detail-grid">
+      <span class="detail-label">FHIR Resources</span>
+      <span class="detail-value">{{ resources | length }}</span>
+      <span class="detail-label">IPS Cards</span>
+      <span class="detail-value">{{ cards | length }}</span>
+      <span class="detail-label">Snapshots</span>
+      <span class="detail-value">{{ snapshot_count }}</span>
+    </div>
+  </div>
+</div>
+
+<hr class="section-break">
+
+<h2 class="section-heading">FHIR Resources</h2>
+{% if resources %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Resource ID</th>
+          <th>Version</th>
+          <th>Status</th>
+          <th>Last Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in resources %}
+        <tr>
+          <td><span class="badge badge-info">{{ r.resource_type }}</span></td>
+          <td><code>{{ r.resource_id }}</code></td>
+          <td>{{ r.version_id }}</td>
+          <td>{{ r.status or '—' }}</td>
+          <td>{{ r.last_updated.strftime('%Y-%m-%d %H:%M') if r.last_updated else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No clinical resources for this patient.</p>
+</div>
+{% endif %}
+
+<hr class="section-break">
+
+<h2 class="section-heading">IPS Cards</h2>
+{% if cards %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Snapshots</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cards %}
+        <tr>
+          <td>{{ c.title or '(untitled)' }}</td>
+          <td><code>{{ c.mode }}</code></td>
+          <td>
+            {% if c.status == 'active' %}
+              <span class="badge badge-success">{{ c.status }}</span>
+            {% elif c.status == 'archived' %}
+              <span class="badge badge-warning">{{ c.status }}</span>
+            {% else %}
+              <span class="badge badge-info">{{ c.status }}</span>
+            {% endif %}
+          </td>
+          <td>{{ c.snapshots | length }}</td>
+          <td>{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No IPS cards for this patient.</p>
+</div>
+{% endif %}
+
+{% if snapshots %}
+<h3 class="mt-6">All Snapshots</h3>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Snapshot GUID</th>
+          <th>Card</th>
+          <th>Mode</th>
+          <th>Resources</th>
+          <th>Composition Date</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in snapshots %}
+        <tr>
+          <td><code>{{ s.guid | string | truncate(12, True, '...') }}</code></td>
+          <td>{{ s.card.title or '(untitled)' }}</td>
+          <td><code>{{ s.mode }}</code></td>
+          <td>{{ s.resource_count or '—' }}</td>
+          <td>{{ s.composition_date.strftime('%Y-%m-%d %H:%M') if s.composition_date else '—' }}</td>
+          <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

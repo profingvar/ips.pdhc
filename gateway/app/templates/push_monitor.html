@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Push Monitor — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Push Monitor</h1>
+    <p class="lead">Push destinations, job queue, statuses, and errors</p>
+  </div>
+</div>
+
+<h2 class="section-heading">Destinations</h2>
+{% if destinations %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Endpoint</th>
+          <th>Auth</th>
+          <th>Status</th>
+          <th>Jobs</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in destinations %}
+        <tr>
+          <td>{{ d.name }}</td>
+          <td><code>{{ d.destination_type }}</code></td>
+          <td><code>{{ d.endpoint_url | truncate(50, True, '...') }}</code></td>
+          <td>{{ d.auth_method or 'none' }}</td>
+          <td>
+            {% if d.is_active %}
+              <span class="badge badge-success">Active</span>
+            {% else %}
+              <span class="badge badge-danger">Inactive</span>
+            {% endif %}
+          </td>
+          <td>{{ d.job_count }}</td>
+          <td>{{ d.created_at.strftime('%Y-%m-%d') if d.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No push destinations configured.</p>
+</div>
+{% endif %}
+
+<hr class="section-break">
+
+<h2 class="section-heading">Push Jobs</h2>
+
+<div class="card mb-2">
+  <form method="get" action="{{ url_for('admin.push_monitor') }}" class="inline-form">
+    <div class="form-group">
+      <label for="status">Filter by status</label>
+      <select id="status" name="status" class="form-control">
+        <option value="">All</option>
+        {% for s in ['queued', 'in_progress', 'completed', 'failed'] %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary"><i data-lucide="filter"></i> Filter</button>
+    {% if status_filter %}
+    <a href="{{ url_for('admin.push_monitor') }}" class="btn btn-secondary">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if jobs %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Job GUID</th>
+          <th>Destination</th>
+          <th>Snapshot</th>
+          <th>Status</th>
+          <th>Attempts</th>
+          <th>Response</th>
+          <th>Error</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td><code>{{ j.guid | string | truncate(12, True, '...') }}</code></td>
+          <td>{{ j.destination.name if j.destination else '—' }}</td>
+          <td><code>{{ j.snapshot_guid | string | truncate(12, True, '...') }}</code></td>
+          <td>
+            {% if j.status == 'completed' %}
+              <span class="badge badge-success">{{ j.status }}</span>
+            {% elif j.status == 'failed' %}
+              <span class="badge badge-danger">{{ j.status }}</span>
+            {% elif j.status == 'in_progress' %}
+              <span class="badge badge-warning">{{ j.status }}</span>
+            {% else %}
+              <span class="badge badge-pending">{{ j.status }}</span>
+            {% endif %}
+          </td>
+          <td>{{ j.attempts }}/{{ j.max_attempts }}</td>
+          <td>{{ j.response_code or '—' }}</td>
+          <td>{{ j.error_message | truncate(60, True, '...') if j.error_message else '—' }}</td>
+          <td>{{ j.created_at.strftime('%Y-%m-%d %H:%M') if j.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="dash-grid mt-6">
+  <div class="dash-card">
+    <i data-lucide="clock"></i>
+    <div class="count">{{ stats.queued }}</div>
+    <h2>Queued</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="loader"></i>
+    <div class="count">{{ stats.in_progress }}</div>
+    <h2>In Progress</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="check-circle"></i>
+    <div class="count">{{ stats.completed }}</div>
+    <h2>Completed</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="alert-circle"></i>
+    <div class="count">{{ stats.failed }}</div>
+    <h2>Failed</h2>
+  </div>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No push jobs{% if status_filter %} with status "{{ status_filter }}"{% endif %}.</p>
+</div>
+{% endif %}
+{% endblock %}

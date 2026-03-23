@@ -1,0 +1,135 @@
+{% extends "docs_base.html" %}
+{% block title %}Capability Statement — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="doc-header">
+  <h1>FHIR R5 Capability Statement</h1>
+  <p>PDHC IPS Server — Machine-readable server capabilities</p>
+  <div class="doc-meta">
+    <span>FHIR Version: <code>{{ cs.fhirVersion }}</code></span>
+    <span>Kind: <code>{{ cs.kind }}</code></span>
+    <span>Status: <span class="badge badge-success">{{ cs.status }}</span></span>
+    <span>Date: {{ cs.date }}</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#resources">Supported Resources</a></li>
+    <li><a href="#interactions">Interaction Matrix</a></li>
+    <li><a href="#search">Search Parameters</a></li>
+    <li><a href="#operations">Operations</a></li>
+    <li><a href="#json">Raw JSON</a></li>
+  </ul>
+</div>
+
+<h2 id="overview">Overview</h2>
+<div class="endpoint-card">
+  <div class="detail-grid" style="display:grid; grid-template-columns:10rem 1fr; gap:0.3rem 0.75rem;">
+    <span style="font-weight:600; color:var(--text-muted);">Endpoint</span>
+    <span><code>GET /fhir/metadata</code></span>
+    <span style="font-weight:600; color:var(--text-muted);">FHIR Version</span>
+    <span><code>{{ cs.fhirVersion }}</code></span>
+    <span style="font-weight:600; color:var(--text-muted);">Format</span>
+    <span>{{ cs.format | join(', ') }}</span>
+    <span style="font-weight:600; color:var(--text-muted);">REST Mode</span>
+    <span><code>{{ cs.rest[0].mode }}</code></span>
+    <span style="font-weight:600; color:var(--text-muted);">Resource Types</span>
+    <span>{{ cs.rest[0].resource | length }}</span>
+  </div>
+</div>
+
+<h2 id="resources">Supported Resources</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Resource Type</th>
+      <th>Interactions</th>
+      <th>Search Parameters</th>
+      <th>Operations</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in cs.rest[0].resource %}
+    <tr>
+      <td><code>{{ r.type }}</code></td>
+      <td>
+        {% for i in r.interaction %}
+          <span class="badge badge-info">{{ i.code }}</span>
+        {% endfor %}
+      </td>
+      <td>
+        {% for sp in r.get('searchParam', []) %}
+          <code>{{ sp.name }}</code>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </td>
+      <td>
+        {% for op in r.get('operation', []) %}
+          <code>${{ op.name }}</code>
+        {% endfor %}
+        {% if not r.get('operation') %}—{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 id="interactions">Interaction Matrix</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Resource</th>
+      <th>create</th>
+      <th>read</th>
+      <th>update</th>
+      <th>search-type</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in cs.rest[0].resource %}
+    {% set codes = r.interaction | map(attribute='code') | list %}
+    <tr>
+      <td><code>{{ r.type }}</code></td>
+      <td>{% if 'create' in codes %}<span class="badge badge-success">Yes</span>{% else %}—{% endif %}</td>
+      <td>{% if 'read' in codes %}<span class="badge badge-success">Yes</span>{% else %}—{% endif %}</td>
+      <td>{% if 'update' in codes %}<span class="badge badge-success">Yes</span>{% else %}—{% endif %}</td>
+      <td>{% if 'search-type' in codes %}<span class="badge badge-success">Yes</span>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 id="search">Search Parameters</h2>
+{% for r in cs.rest[0].resource %}
+{% if r.get('searchParam') %}
+<h3><code>{{ r.type }}</code></h3>
+<table>
+  <thead><tr><th>Name</th><th>Type</th></tr></thead>
+  <tbody>
+    {% for sp in r.searchParam %}
+    <tr><td><code>{{ sp.name }}</code></td><td>{{ sp.type }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endfor %}
+
+<h2 id="operations">Operations</h2>
+{% for r in cs.rest[0].resource %}
+{% if r.get('operation') %}
+{% for op in r.operation %}
+<div class="endpoint-card">
+  <h3><code>{{ r.type }}/${{ op.name }}</code></h3>
+  <p><strong>Definition:</strong> <code>{{ op.definition }}</code></p>
+  <p>Generates an International Patient Summary (IPS) FHIR Bundle for the specified patient.</p>
+</div>
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+<h2 id="json">Raw JSON</h2>
+<p>The complete CapabilityStatement as served by <code>/fhir/metadata</code>:</p>
+<pre><code>{{ cs_json }}</code></pre>
+{% endblock %}

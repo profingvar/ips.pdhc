@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>IPS Server Dashboard</h1>
+    <p class="lead">International Patient Summary — FHIR R5</p>
+  </div>
+</div>
+
+<div class="card mb-2">
+  <h2>Service Status</h2>
+  <div class="detail-grid">
+    <span class="detail-label">Database</span>
+    <span class="detail-value">
+      {% if db_status == 'connected' %}
+        <span class="badge badge-success">Connected</span>
+      {% else %}
+        <span class="badge badge-danger">Disconnected</span>
+      {% endif %}
+    </span>
+  </div>
+</div>
+
+<h2 class="section-heading mt-6">Resource Counts</h2>
+<div class="dash-grid">
+  <div class="dash-card">
+    <i data-lucide="users"></i>
+    <div class="count">{{ counts.get('patients', 0) }}</div>
+    <h2>Patients</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="file-text"></i>
+    <div class="count">{{ counts.get('resources', 0) }}</div>
+    <h2>FHIR Resources</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="credit-card"></i>
+    <div class="count">{{ counts.get('cards', 0) }}</div>
+    <h2>IPS Cards</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="camera"></i>
+    <div class="count">{{ counts.get('snapshots', 0) }}</div>
+    <h2>Snapshots</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="send"></i>
+    <div class="count">{{ counts.get('push_jobs', 0) }}</div>
+    <h2>Push Jobs</h2>
+  </div>
+  <div class="dash-card">
+    <i data-lucide="shield"></i>
+    <div class="count">{{ counts.get('audit_events', 0) }}</div>
+    <h2>Audit Events</h2>
+  </div>
+</div>
+
+<hr class="section-break">
+
+<h2 class="section-heading">Recent Audit Events</h2>
+{% if recent_audit %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Actor</th>
+          <th>Method</th>
+          <th>Path</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in recent_audit %}
+        <tr>
+          <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') if event.created_at else '—' }}</td>
+          <td><span class="badge badge-info">{{ event.event_type }}</span></td>
+          <td>{{ event.actor_label or '—' }}</td>
+          <td><code>{{ event.request_method or '—' }}</code></td>
+          <td><code>{{ event.request_path or '—' }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No audit events recorded yet.</p>
+</div>
+{% endif %}
+{% endblock %}

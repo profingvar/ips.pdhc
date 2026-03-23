@@ -1,0 +1,412 @@
+{% extends "docs_base.html" %}
+{% block title %}API Reference — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="doc-header">
+  <h1>IPS Server — API Reference</h1>
+  <p>PDHC International Patient Summary Service</p>
+  <div class="doc-meta">
+    <span>Version 0.1.0</span>
+    <span>FHIR R5 (5.0.0)</span>
+    <span>Base URL: <code>https://ips.pdhc.se</code></span>
+    <span>Generated: {{ generated }}</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#auth">Authentication</a></li>
+    <li><a href="#public">Public Endpoints</a></li>
+    <li><a href="#fhir-metadata">FHIR — Capability Statement</a></li>
+    <li><a href="#fhir-patient">FHIR — Patient CRUD</a></li>
+    <li><a href="#fhir-clinical">FHIR — Clinical Resources</a></li>
+    <li><a href="#fhir-ips">FHIR — $ips Operation</a></li>
+    <li><a href="#app-cards">Application — IPS Cards</a></li>
+    <li><a href="#app-snapshots">Application — IPS Snapshots</a></li>
+    <li><a href="#app-push-dest">Application — Push Destinations</a></li>
+    <li><a href="#app-push-jobs">Application — Push Jobs</a></li>
+    <li><a href="#app-keys">Application — API Keys</a></li>
+    <li><a href="#app-audit">Application — Audit Log</a></li>
+    <li><a href="#app-clinics">Application — Clinics</a></li>
+    <li><a href="#errors">Error Handling</a></li>
+  </ul>
+</div>
+
+<!-- ───── Authentication ───── -->
+<h2 id="auth">Authentication</h2>
+<p>All endpoints except <code>/api/v1/health</code>, <code>/api/v1/metrics</code>, and <code>/fhir/metadata</code> require authentication.</p>
+
+<h3>SSO Bearer Token</h3>
+<pre><code>Authorization: Bearer &lt;access_token&gt;</code></pre>
+<p>The token is validated against the SSO service at <code>OAUTH_BASE_URL/api/auth/me</code>.</p>
+
+<h3>API Key</h3>
+<pre><code>Authorization: Bearer &lt;api_key&gt;</code></pre>
+<p>API keys are SHA-256 hashed before lookup. The plaintext is shown once at creation.</p>
+
+<div class="note">When <code>AUTH_DISABLED=true</code> (development only), a synthetic dev user is attached. Never enable in production.</div>
+
+<!-- ───── Public Endpoints ───── -->
+<h2 id="public">Public Endpoints</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/health</span></h3>
+  <p>Health check — verifies database connectivity.</p>
+  <p><strong>Auth:</strong> None</p>
+  <p><strong>Response:</strong></p>
+  <pre><code>{
+  "status": "ok",
+  "database": "connected",
+  "timestamp": "2026-03-23T12:00:00+00:00",
+  "service": "ips-server",
+  "version": "0.1.0"
+}</code></pre>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/metrics</span></h3>
+  <p>High-level service statistics — resource counts.</p>
+  <p><strong>Auth:</strong> None</p>
+  <p><strong>Response:</strong></p>
+  <pre><code>{
+  "timestamp": "2026-03-23T12:00:00+00:00",
+  "counts": {
+    "patients": 42,
+    "fhir_resources": 156,
+    "ips_cards": 12,
+    "ips_snapshots": 8,
+    "audit_events": 320
+  }
+}</code></pre>
+</div>
+
+<!-- ───── FHIR Metadata ───── -->
+<h2 id="fhir-metadata">FHIR — Capability Statement</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/fhir/metadata</span></h3>
+  <p>Returns the FHIR R5 CapabilityStatement. See the <a href="{{ url_for('admin.docs_capability') }}">Capability Statement</a> page for the full rendered version.</p>
+  <p><strong>Auth:</strong> None</p>
+  <p><strong>Response:</strong> FHIR <code>CapabilityStatement</code> resource (JSON)</p>
+</div>
+
+<!-- ───── FHIR Patient ───── -->
+<h2 id="fhir-patient">FHIR — Patient CRUD</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/fhir/Patient</span></h3>
+  <p>Create a new Patient resource.</p>
+  <p><strong>Body:</strong> FHIR Patient resource JSON with <code>resourceType: "Patient"</code>.</p>
+  <p><strong>Response:</strong> <code>201</code> — created Patient resource with assigned <code>id</code>.</p>
+  <pre><code>{
+  "resourceType": "Patient",
+  "name": [{"family": "Andersson", "given": ["Erik"]}],
+  "gender": "male",
+  "birthDate": "1985-06-15",
+  "identifier": [{"system": "urn:oid:1.2.752.129.2.1.3.1", "value": "198506151234"}]
+}</code></pre>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/fhir/Patient/{resource_id}</span></h3>
+  <p>Read a Patient resource by FHIR resource ID.</p>
+  <p><strong>Response:</strong> <code>200</code> — Patient resource JSON. <code>404</code> — OperationOutcome.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-put">PUT</span> <span class="endpoint-path">/fhir/Patient/{resource_id}</span></h3>
+  <p>Update a Patient resource (full replacement).</p>
+  <p><strong>Body:</strong> Updated FHIR Patient resource JSON.</p>
+  <p><strong>Response:</strong> <code>200</code> — updated Patient resource. <code>404</code> — OperationOutcome.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/fhir/Patient</span></h3>
+  <p>Search for patients. Returns a FHIR Bundle (searchset).</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>identifier</code></td><td>token</td><td>Patient identifier value</td></tr>
+      <tr><td><code>family</code></td><td>string</td><td>Family name (case-insensitive)</td></tr>
+      <tr><td><code>given</code></td><td>string</td><td>Given name (case-insensitive)</td></tr>
+      <tr><td><code>birthdate</code></td><td>date</td><td>Birth date (YYYY-MM-DD)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ───── FHIR Clinical ───── -->
+<h2 id="fhir-clinical">FHIR — Clinical Resources</h2>
+<p>Supported resource types: <code>Condition</code>, <code>Observation</code>, <code>MedicationStatement</code>, <code>AllergyIntolerance</code>, <code>Immunization</code>, <code>Procedure</code>, <code>DocumentReference</code>, <code>DiagnosticReport</code>.</p>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/fhir/{ResourceType}</span></h3>
+  <p>Create a clinical resource. The <code>resourceType</code> field must match the URL segment.</p>
+  <p>Patient linkage is resolved from <code>subject.reference</code> or <code>patient.reference</code> (format: <code>Patient/{id}</code>).</p>
+  <p><strong>Response:</strong> <code>201</code> — created resource.</p>
+  <pre><code>{
+  "resourceType": "Condition",
+  "subject": {"reference": "Patient/abc-123-def"},
+  "code": {
+    "coding": [{"system": "http://snomed.info/sct", "code": "73211009", "display": "Diabetes mellitus"}]
+  }
+}</code></pre>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/fhir/{ResourceType}/{resource_id}</span></h3>
+  <p>Read a clinical resource by type and ID.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/fhir/{ResourceType}?patient={patient_id}</span></h3>
+  <p>Search clinical resources by patient. Returns a FHIR Bundle (searchset).</p>
+</div>
+
+<!-- ───── $ips Operation ───── -->
+<h2 id="fhir-ips">FHIR — $ips Operation</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/fhir/Patient/{resource_id}/$ips</span></h3>
+  <p>Generate an International Patient Summary (IPS) Bundle for the patient.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>mode</code></td><td>string</td><td><code>full</code></td><td><code>full</code> = all clinical types. <code>minimal</code> = Condition + MedicationStatement + AllergyIntolerance only.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Response:</strong> FHIR Bundle (<code>type: "document"</code>) conforming to the IPS profile.</p>
+  <p>The bundle contains a <code>Composition</code> resource with LOINC-coded sections, the <code>Patient</code>, and all relevant clinical resources. Empty sections include an <code>emptyReason</code> code.</p>
+</div>
+
+<!-- ───── IPS Cards ───── -->
+<h2 id="app-cards">Application — IPS Cards</h2>
+<p>IPS cards represent a named summary concept tied to a patient. All GUIDs are UUIDs.</p>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/ips/cards</span></h3>
+  <p>Create an IPS card.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>patient_guid</code></td><td>Yes</td><td>Patient GUID (from PatientIndex)</td></tr>
+      <tr><td><code>clinic_guid</code></td><td>No</td><td>Associated clinic GUID</td></tr>
+      <tr><td><code>title</code></td><td>No</td><td>Card title (default: "International Patient Summary")</td></tr>
+      <tr><td><code>mode</code></td><td>No</td><td><code>full</code> or <code>minimal</code> (default: <code>full</code>)</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Response:</strong> <code>201</code> — card object.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/ips/cards</span></h3>
+  <p>List cards. Optional filters: <code>?patient_guid=</code>, <code>?clinic_guid=</code>.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/ips/cards/{guid}</span></h3>
+  <p>Get a single card by GUID.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-patch">PATCH</span> <span class="endpoint-path">/api/v1/ips/cards/{guid}</span></h3>
+  <p>Update card fields: <code>status</code>, <code>mode</code>, <code>title</code>.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-delete">DELETE</span> <span class="endpoint-path">/api/v1/ips/cards/{guid}</span></h3>
+  <p>Archive a card (sets status to <code>archived</code>).</p>
+</div>
+
+<!-- ───── IPS Snapshots ───── -->
+<h2 id="app-snapshots">Application — IPS Snapshots</h2>
+<p>Snapshots capture an immutable point-in-time IPS bundle for a card.</p>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/ips/cards/{card_guid}/snapshots</span></h3>
+  <p>Generate and store a snapshot. The bundle is generated using the card's mode.</p>
+  <p><strong>Response:</strong> <code>201</code> — snapshot metadata (bundle not included).</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/ips/cards/{card_guid}/snapshots</span></h3>
+  <p>List snapshots for a card (metadata only).</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/ips/snapshots/{guid}</span></h3>
+  <p>Get snapshot metadata (bundle not included).</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/ips/snapshots/{guid}/bundle</span></h3>
+  <p>Get the full IPS bundle JSON. <span class="badge badge-warning">Audited</span> — an <code>ips_bundle_read</code> event is recorded.</p>
+</div>
+
+<!-- ───── Push Destinations ───── -->
+<h2 id="app-push-dest">Application — Push Destinations</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/push/destinations</span></h3>
+  <p>Create a push destination.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>name</code></td><td>Yes</td><td>Display name</td></tr>
+      <tr><td><code>destination_type</code></td><td>Yes</td><td>e.g. <code>fhir_endpoint</code>, <code>webhook</code></td></tr>
+      <tr><td><code>endpoint_url</code></td><td>Yes</td><td>Target URL</td></tr>
+      <tr><td><code>auth_method</code></td><td>No</td><td>e.g. <code>bearer</code>, <code>basic</code></td></tr>
+      <tr><td><code>auth_config</code></td><td>No</td><td>JSON object with auth credentials</td></tr>
+      <tr><td><code>headers</code></td><td>No</td><td>Custom HTTP headers (JSON object)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/push/destinations</span></h3>
+  <p>List active destinations.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/push/destinations/{guid}</span></h3>
+  <p>Get a single destination.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-patch">PATCH</span> <span class="endpoint-path">/api/v1/push/destinations/{guid}</span></h3>
+  <p>Update destination fields.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-delete">DELETE</span> <span class="endpoint-path">/api/v1/push/destinations/{guid}</span></h3>
+  <p>Deactivate a destination.</p>
+</div>
+
+<!-- ───── Push Jobs ───── -->
+<h2 id="app-push-jobs">Application — Push Jobs</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/push/jobs</span></h3>
+  <p>Create a push job to deliver a snapshot to a destination.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>snapshot_guid</code></td><td>Yes</td><td>Snapshot to deliver</td></tr>
+      <tr><td><code>destination_guid</code></td><td>Yes</td><td>Target destination (must be active)</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Response:</strong> <code>201</code> — job with status <code>queued</code>.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/push/jobs</span></h3>
+  <p>List push jobs. Optional filter: <code>?status=queued|in_progress|completed|failed</code>.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/push/jobs/{guid}</span></h3>
+  <p>Get job status and details.</p>
+</div>
+
+<!-- ───── API Keys ───── -->
+<h2 id="app-keys">Application — API Keys</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/auth/keys</span></h3>
+  <p>Create a new API key. <span class="badge badge-warning">The plaintext key is returned exactly once.</span></p>
+  <table>
+    <thead><tr><th>Field</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>label</code></td><td>No</td><td>Human-readable label</td></tr>
+      <tr><td><code>scopes</code></td><td>No</td><td>List of scopes (e.g. <code>["read:fhir", "write:fhir"]</code>)</td></tr>
+      <tr><td><code>expires_at</code></td><td>No</td><td>ISO-8601 expiration date</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/auth/keys</span></h3>
+  <p>List API keys — shows prefix and metadata only, never the hash or plaintext.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-delete">DELETE</span> <span class="endpoint-path">/api/v1/auth/keys/{guid}</span></h3>
+  <p>Revoke a key immediately and irreversibly.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/auth/keys/{guid}/rotate</span></h3>
+  <p>Rotate: revokes old key and issues a new one. Returns the new plaintext once.</p>
+</div>
+
+<!-- ───── Audit Log ───── -->
+<h2 id="app-audit">Application — Audit Log</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/audit</span></h3>
+  <p>Query audit events with filters.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>actor_guid</code></td><td>uuid</td><td>Filter by actor</td></tr>
+      <tr><td><code>patient_guid</code></td><td>uuid</td><td>Filter by patient</td></tr>
+      <tr><td><code>event_type</code></td><td>string</td><td>e.g. <code>ips_bundle_read</code>, <code>fhir_create</code></td></tr>
+      <tr><td><code>from</code></td><td>ISO-8601</td><td>Events after this date</td></tr>
+      <tr><td><code>to</code></td><td>ISO-8601</td><td>Events before this date</td></tr>
+      <tr><td><code>limit</code></td><td>int</td><td>Max results (default 100, max 1000)</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Event types:</strong> <code>fhir_create</code>, <code>fhir_update</code>, <code>ips_generate</code>, <code>ips_card_create</code>, <code>ips_card_update</code>, <code>ips_card_archive</code>, <code>ips_snapshot_create</code>, <code>ips_bundle_read</code>, <code>push_destination_create</code>, <code>push_destination_update</code>, <code>push_destination_deactivate</code>, <code>push_job_create</code>, <code>api_key_create</code>, <code>api_key_revoke</code>, <code>clinic_create</code>, <code>clinic_update</code>.</p>
+</div>
+
+<!-- ───── Clinics ───── -->
+<h2 id="app-clinics">Application — Clinics</h2>
+
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/clinics</span></h3>
+  <p>Create a clinic. Required field: <code>name</code>. Optional: <code>identifier</code>.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/clinics</span></h3>
+  <p>List active clinics.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/clinics/{guid}</span></h3>
+  <p>Get a single clinic.</p>
+</div>
+
+<div class="endpoint-card">
+  <h3><span class="method method-patch">PATCH</span> <span class="endpoint-path">/api/v1/clinics/{guid}</span></h3>
+  <p>Update clinic: <code>name</code>, <code>identifier</code>, <code>is_active</code>.</p>
+</div>
+
+<!-- ───── Errors ───── -->
+<h2 id="errors">Error Handling</h2>
+<p>FHIR endpoints return errors as <code>OperationOutcome</code> resources:</p>
+<pre><code>{
+  "resourceType": "OperationOutcome",
+  "issue": [{
+    "severity": "error",
+    "code": "not-found",
+    "diagnostics": "Patient/abc-123 not found"
+  }]
+}</code></pre>
+
+<p>Application API endpoints return errors as JSON objects:</p>
+<pre><code>{
+  "error": "Patient not found"
+}</code></pre>
+
+<table>
+  <thead><tr><th>HTTP Status</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>200</code></td><td>Success</td></tr>
+    <tr><td><code>201</code></td><td>Created</td></tr>
+    <tr><td><code>400</code></td><td>Bad request — missing or invalid fields</td></tr>
+    <tr><td><code>401</code></td><td>Unauthorized — missing or invalid token/key</td></tr>
+    <tr><td><code>404</code></td><td>Not found</td></tr>
+  </tbody>
+</table>
+{% endblock %}

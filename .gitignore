@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+gateway/venv/
+
+# Environment secrets
+gateway/.env
+.env
+
+# Database
+gateway/instance/
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+.Rhistory
+
+# Test cache
+.pytest_cache/
+gateway/.pytest_cache/
+
+# Test results (local only)
+results/
+
+# Claude
+.claude/
+
+# Deployment tarballs
+*.tar.gz

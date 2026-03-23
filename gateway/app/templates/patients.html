@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Patients — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Patient Browser</h1>
+    <p class="lead">Search and view patients, resources, cards, and snapshots</p>
+  </div>
+</div>
+
+<div class="card mb-2">
+  <form method="get" action="{{ url_for('admin.patients') }}" class="inline-form">
+    <div class="form-group">
+      <label for="q">Search</label>
+      <input type="text" id="q" name="q" class="form-control" placeholder="Family name, given name, or identifier" value="{{ q }}">
+    </div>
+    <button type="submit" class="btn btn-primary"><i data-lucide="search"></i> Search</button>
+    {% if q %}
+    <a href="{{ url_for('admin.patients') }}" class="btn btn-secondary">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if patients %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Identifier</th>
+          <th>Birth Date</th>
+          <th>Gender</th>
+          <th>Cards</th>
+          <th>Resources</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in patients %}
+        <tr>
+          <td>{{ p.family_name or '—' }}, {{ p.given_name or '—' }}</td>
+          <td><code>{{ p.identifier_value or '—' }}</code></td>
+          <td>{{ p.birth_date.isoformat() if p.birth_date else '—' }}</td>
+          <td>{{ p.gender or '—' }}</td>
+          <td>{{ p.card_count }}</td>
+          <td>{{ p.resource_count }}</td>
+          <td>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
+          <td><a href="{{ url_for('admin.patient_detail', guid=p.guid) }}" class="btn btn-sm btn-secondary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif q %}
+<div class="card empty-state">
+  <p>No patients match "{{ q }}".</p>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No patients in the system yet.</p>
+</div>
+{% endif %}
+{% endblock %}

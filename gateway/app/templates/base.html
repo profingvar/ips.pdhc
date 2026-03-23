@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PDHC IPS Server{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pdhc.css') }}">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav>
+    <a class="brand" href="{{ url_for('admin.dashboard') }}">PDHC IPS Server</a>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>Dashboard</a></li>
+      <li><a href="{{ url_for('admin.patients') }}" {% if request.endpoint and request.endpoint.startswith('admin.patient') %}class="active"{% endif %}>Patients</a></li>
+      <li><a href="{{ url_for('admin.push_monitor') }}" {% if request.endpoint == 'admin.push_monitor' %}class="active"{% endif %}>Push Monitor</a></li>
+      <li><a href="{{ url_for('admin.docs_index') }}" {% if request.endpoint and request.endpoint.startswith('admin.docs') %}class="active"{% endif %}>Docs</a></li>
+      <li class="nav-separator"></li>
+      <li><a href="/api/v1/health" target="_blank">Health</a></li>
+      <li><a href="/fhir/metadata" target="_blank">FHIR Metadata</a></li>
+    </ul>
+  </nav>
+
+  <div class="container-wide">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}" role="alert" aria-live="polite">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+  <script>lucide.createIcons();</script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

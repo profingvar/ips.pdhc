@@ -1,0 +1,236 @@
+{% extends "docs_base.html" %}
+{% block title %}Technical Documentation — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="doc-header">
+  <h1>IPS Server — Technical Documentation</h1>
+  <p>PDHC International Patient Summary Service</p>
+  <div class="doc-meta">
+    <span>Version 0.1.0</span>
+    <span>FHIR R5 (5.0.0)</span>
+    <span>Generated: {{ generated }}</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#stack">Technology Stack</a></li>
+    <li><a href="#data-model">Data Model</a></li>
+    <li><a href="#fhir-compliance">FHIR R5 Compliance</a></li>
+    <li><a href="#ips-generation">IPS Generation</a></li>
+    <li><a href="#security">Security Model</a></li>
+    <li><a href="#api-surface">API Surface Summary</a></li>
+    <li><a href="#deployment">Deployment</a></li>
+    <li><a href="#ports">Port Allocation</a></li>
+  </ul>
+</div>
+
+<h2 id="architecture">Architecture</h2>
+<p>The system is structured as four independently understandable layers:</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>Technology</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td>HTTP/API</td><td>Flask + Blueprints</td><td>FHIR endpoints (<code>/fhir/</code>), Application API (<code>/api/v1/</code>), Admin UI (<code>/admin/</code>)</td></tr>
+    <tr><td>Service</td><td>Python modules</td><td>IPS generation, auth validation, audit logging, FHIR resource management</td></tr>
+    <tr><td>Persistence</td><td>SQLAlchemy + PostgreSQL</td><td>Schema management, JSONB resource storage, search indexes</td></tr>
+    <tr><td>Admin Frontend</td><td>Jinja2 + PDHC CSS</td><td>Dashboard, patient browser, push monitor, documentation</td></tr>
+  </tbody>
+</table>
+
+<h3>Blueprint Structure</h3>
+<table>
+  <thead><tr><th>Blueprint</th><th>Prefix</th><th>File</th></tr></thead>
+  <tbody>
+    <tr><td><code>fhir_api</code></td><td><code>/fhir</code></td><td><code>app/fhir/fhir_routes.py</code></td></tr>
+    <tr><td><code>api_v1</code></td><td><code>/api/v1</code></td><td><code>app/api/health.py</code></td></tr>
+    <tr><td><code>ips_api</code></td><td><code>/api/v1/ips</code></td><td><code>app/api/ips_routes.py</code></td></tr>
+    <tr><td><code>push_api</code></td><td><code>/api/v1/push</code></td><td><code>app/api/push_routes.py</code></td></tr>
+    <tr><td><code>auth_api</code></td><td><code>/api/v1/auth</code></td><td><code>app/api/auth_routes.py</code></td></tr>
+    <tr><td><code>audit_api</code></td><td><code>/api/v1/audit</code></td><td><code>app/api/audit_routes.py</code></td></tr>
+    <tr><td><code>clinic_api</code></td><td><code>/api/v1/clinics</code></td><td><code>app/api/clinic_routes.py</code></td></tr>
+    <tr><td><code>admin</code></td><td><code>/admin</code></td><td><code>app/admin.py</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="stack">Technology Stack</h2>
+<table>
+  <thead><tr><th>Component</th><th>Technology</th><th>Version</th></tr></thead>
+  <tbody>
+    <tr><td>Runtime</td><td>Python</td><td>3.12+</td></tr>
+    <tr><td>Web framework</td><td>Flask</td><td>3.x</td></tr>
+    <tr><td>ORM</td><td>SQLAlchemy</td><td>2.0</td></tr>
+    <tr><td>Database</td><td>PostgreSQL</td><td>16 (Alpine)</td></tr>
+    <tr><td>DB driver</td><td>psycopg (v3)</td><td>3.2.x</td></tr>
+    <tr><td>Migrations</td><td>Alembic</td><td>latest</td></tr>
+    <tr><td>WSGI server</td><td>Gunicorn</td><td>latest</td></tr>
+    <tr><td>Container</td><td>Docker + docker-compose</td><td>—</td></tr>
+    <tr><td>Reverse proxy</td><td>Nginx</td><td>Homebrew</td></tr>
+    <tr><td>SSL</td><td>Let's Encrypt (certbot)</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2 id="data-model">Data Model</h2>
+<p>13 SQLAlchemy models organized into application and FHIR schemas:</p>
+
+<h3>Identity and Access</h3>
+<table>
+  <thead><tr><th>Model</th><th>Table</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>User</code></td><td><code>users</code></td><td>System users (SSO-resolved or bootstrapped)</td></tr>
+    <tr><td><code>Clinic</code></td><td><code>clinics</code></td><td>Healthcare facilities</td></tr>
+    <tr><td><code>UserClinicAssignment</code></td><td><code>user_clinic_assignments</code></td><td>User-to-clinic membership</td></tr>
+    <tr><td><code>ApiKey</code></td><td><code>api_keys</code></td><td>Machine-to-machine auth keys (SHA-256 hashed)</td></tr>
+  </tbody>
+</table>
+
+<h3>FHIR Storage</h3>
+<table>
+  <thead><tr><th>Model</th><th>Table</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>FhirResource</code></td><td><code>fhir_resources</code></td><td>Generic FHIR resource storage (JSONB)</td></tr>
+    <tr><td><code>PatientIndex</code></td><td><code>patient_index</code></td><td>Search-optimized patient metadata</td></tr>
+    <tr><td><code>PatientClinicAssignment</code></td><td><code>patient_clinic_assignments</code></td><td>Patient-to-clinic association</td></tr>
+    <tr><td><code>CapabilityStatement</code></td><td><code>capability_statement</code></td><td>Stored FHIR CapabilityStatement</td></tr>
+  </tbody>
+</table>
+
+<h3>IPS Workflow</h3>
+<table>
+  <thead><tr><th>Model</th><th>Table</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>IpsCard</code></td><td><code>ips_cards</code></td><td>Named IPS summary handle per patient</td></tr>
+    <tr><td><code>IpsSnapshot</code></td><td><code>ips_snapshots</code></td><td>Immutable point-in-time bundle capture (JSONB)</td></tr>
+    <tr><td><code>PushDestination</code></td><td><code>push_destinations</code></td><td>Delivery target configuration</td></tr>
+    <tr><td><code>PushJob</code></td><td><code>push_jobs</code></td><td>Delivery queue with status, retries, errors</td></tr>
+  </tbody>
+</table>
+
+<h3>Operational</h3>
+<table>
+  <thead><tr><th>Model</th><th>Table</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>AuditLog</code></td><td><code>audit_log</code></td><td>Append-only audit trail (actor, event, patient, path)</td></tr>
+  </tbody>
+</table>
+
+<div class="note"><strong>Design principle:</strong> All internal references use GUIDs (UUID v4). FHIR resource IDs are separate identifiers used for FHIR API compatibility. FHIR resources are stored as JSONB to preserve semantic structure and allow incremental profile support.</div>
+
+<h2 id="fhir-compliance">FHIR R5 Compliance</h2>
+
+<h3>Supported Resource Types</h3>
+<p><code>Patient</code>, <code>Condition</code>, <code>Observation</code>, <code>MedicationStatement</code>, <code>AllergyIntolerance</code>, <code>Immunization</code>, <code>Procedure</code>, <code>DocumentReference</code>, <code>DiagnosticReport</code></p>
+
+<h3>IPS Profile</h3>
+<ul style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li>Profile URL: <code>http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips</code></li>
+  <li>Bundle type: <code>document</code></li>
+  <li>Composition uses LOINC section codes</li>
+  <li>Empty sections include <code>emptyReason</code> coding</li>
+  <li>$ips operation supports <code>full</code> and <code>minimal</code> modes</li>
+</ul>
+
+<h3>Error Handling</h3>
+<p>FHIR endpoints return <code>OperationOutcome</code> for all errors (4xx/5xx) per the FHIR specification.</p>
+
+<h2 id="ips-generation">IPS Generation</h2>
+<p>The IPS generation service (<code>app/services/ips_generator.py</code>) performs a deterministic transformation:</p>
+<ol style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li>Identify the patient and composition date</li>
+  <li>Collect clinical resources by type for that patient</li>
+  <li>Build a FHIR Composition with LOINC-coded sections</li>
+  <li>Assemble into a document Bundle with resource references</li>
+</ol>
+
+<h3>Modes</h3>
+<table>
+  <thead><tr><th>Mode</th><th>Included Resource Types</th></tr></thead>
+  <tbody>
+    <tr><td><code>full</code></td><td>All 8 clinical resource types</td></tr>
+    <tr><td><code>minimal</code></td><td>Condition, MedicationStatement, AllergyIntolerance</td></tr>
+  </tbody>
+</table>
+
+<h2 id="security">Security Model</h2>
+<p>Four concentric controls: authentication, authorization, data minimization, and auditability.</p>
+
+<h3>Authentication</h3>
+<table>
+  <thead><tr><th>Method</th><th>Mechanism</th><th>Use Case</th></tr></thead>
+  <tbody>
+    <tr><td>SSO Bearer Token</td><td>Validated via <code>OAUTH_BASE_URL/api/auth/me</code></td><td>User-initiated requests</td></tr>
+    <tr><td>API Key</td><td>SHA-256 hash lookup, checks active/expired/revoked</td><td>Machine-to-machine integration</td></tr>
+    <tr><td>AUTH_DISABLED</td><td>Synthetic dev user attached</td><td>Local development only</td></tr>
+  </tbody>
+</table>
+
+<h3>Public Endpoints (no auth required)</h3>
+<p><code>/api/v1/health</code>, <code>/api/v1/metrics</code>, <code>/fhir/metadata</code></p>
+
+<h3>Audit Trail</h3>
+<p>All significant operations are logged with: actor identity, patient context (when applicable), event type, request method/path, IP address, and timestamp. Sensitive reads (e.g. snapshot bundle retrieval) are specifically flagged.</p>
+
+<div class="warn"><strong>Production requirements:</strong> Set <code>AUTH_DISABLED=false</code>. Enforce HTTPS via nginx. Never log tokens, keys, or raw patient identifiers. Audit logs need retention policies and restricted access.</div>
+
+<h2 id="api-surface">API Surface Summary</h2>
+<table>
+  <thead><tr><th>Group</th><th>Endpoints</th><th>Auth</th></tr></thead>
+  <tbody>
+    <tr><td>Public</td><td><code>GET /api/v1/health</code>, <code>GET /api/v1/metrics</code></td><td>None</td></tr>
+    <tr><td>FHIR Metadata</td><td><code>GET /fhir/metadata</code></td><td>None</td></tr>
+    <tr><td>FHIR Patient</td><td><code>POST/GET/PUT /fhir/Patient[/{id}]</code></td><td>Required</td></tr>
+    <tr><td>FHIR Clinical</td><td><code>POST/GET /fhir/{Type}[/{id}]</code></td><td>Required</td></tr>
+    <tr><td>FHIR $ips</td><td><code>GET /fhir/Patient/{id}/$ips</code></td><td>Required</td></tr>
+    <tr><td>IPS Cards</td><td>5 endpoints under <code>/api/v1/ips/cards</code></td><td>Required</td></tr>
+    <tr><td>IPS Snapshots</td><td>4 endpoints under <code>/api/v1/ips/[cards/*/]snapshots</code></td><td>Required</td></tr>
+    <tr><td>Push Destinations</td><td>5 endpoints under <code>/api/v1/push/destinations</code></td><td>Required</td></tr>
+    <tr><td>Push Jobs</td><td>3 endpoints under <code>/api/v1/push/jobs</code></td><td>Required</td></tr>
+    <tr><td>API Keys</td><td>4 endpoints under <code>/api/v1/auth/keys</code></td><td>Required</td></tr>
+    <tr><td>Audit</td><td><code>GET /api/v1/audit</code></td><td>Required</td></tr>
+    <tr><td>Clinics</td><td>4 endpoints under <code>/api/v1/clinics</code></td><td>Required</td></tr>
+    <tr><td>Admin UI</td><td>6 routes under <code>/admin/</code></td><td>None (internal)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deployment">Deployment</h2>
+
+<h3>Docker Services</h3>
+<table>
+  <thead><tr><th>Service</th><th>Image</th><th>Port</th></tr></thead>
+  <tbody>
+    <tr><td><code>db</code></td><td>postgres:16-alpine</td><td>9041 (host) → 5432 (container)</td></tr>
+    <tr><td><code>app</code></td><td>Python 3.12-slim + gunicorn</td><td>9040</td></tr>
+  </tbody>
+</table>
+
+<h3>Environment Variables</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Purpose</th><th>Production Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>FLASK_ENV</code></td><td>Flask mode</td><td><code>production</code></td></tr>
+    <tr><td><code>SECRET_KEY</code></td><td>Session/signing key</td><td>Random 64-char hex</td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>PostgreSQL connection</td><td><code>postgresql+psycopg://...</code></td></tr>
+    <tr><td><code>AUTH_DISABLED</code></td><td>Auth bypass</td><td><code>false</code></td></tr>
+    <tr><td><code>OAUTH_BASE_URL</code></td><td>SSO service URL</td><td><code>https://sso.pdhc.se</code></td></tr>
+    <tr><td><code>CORS_ORIGINS</code></td><td>Allowed origins</td><td><code>https://ips.pdhc.se</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Nginx</h3>
+<p>Reverse proxy at <code>/opt/homebrew/etc/nginx/sites-available/ips.pdhc.se.conf</code> proxies HTTPS to <code>127.0.0.1:9040</code>. SSL via Let's Encrypt.</p>
+
+<h2 id="ports">Port Allocation</h2>
+<table>
+  <thead><tr><th>Project</th><th>App Port</th><th>DB Port</th><th>Admin Port</th><th>Subdomain</th></tr></thead>
+  <tbody>
+    <tr><td>plan.pdhc</td><td>9030</td><td>9031</td><td>—</td><td>plan.pdhc.se</td></tr>
+    <tr><td>forms.pdhc</td><td>9036</td><td>9037</td><td>—</td><td>forms.pdhc.se</td></tr>
+    <tr><td><strong>ips.pdhc</strong></td><td><strong>9040</strong></td><td><strong>9041</strong></td><td><strong>9042</strong></td><td><strong>ips.pdhc.se</strong></td></tr>
+  </tbody>
+</table>
+
+<h3>Test Suite</h3>
+<p>158 tests across 6 test files, all passing. Results stored in <code>./results/</code> with ISO-8601 timestamps.</p>
+{% endblock %}

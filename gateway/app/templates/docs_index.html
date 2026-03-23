@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Documentation — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Documentation</h1>
+    <p class="lead">IPS Server technical documentation, API reference, and operator manual</p>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <a href="{{ url_for('admin.docs_api') }}" class="dash-card">
+    <i data-lucide="code"></i>
+    <h2>API Reference</h2>
+    <p>All FHIR and application API endpoints with methods, parameters, and examples</p>
+  </a>
+  <a href="{{ url_for('admin.docs_capability') }}" class="dash-card">
+    <i data-lucide="server"></i>
+    <h2>Capability Statement</h2>
+    <p>FHIR R5 CapabilityStatement — supported resources, interactions, and operations</p>
+  </a>
+  <a href="{{ url_for('admin.docs_manual') }}" class="dash-card">
+    <i data-lucide="book-open"></i>
+    <h2>Operator Manual</h2>
+    <p>Using the Admin UI, managing patients, IPS cards, snapshots, push jobs, and API keys</p>
+  </a>
+  <a href="{{ url_for('admin.docs_technical') }}" class="dash-card">
+    <i data-lucide="layers"></i>
+    <h2>Technical Documentation</h2>
+    <p>Architecture, security model, data model, FHIR compliance, and deployment</p>
+  </a>
+</div>
+
+<hr class="section-break">
+
+<h2 class="section-heading">Downloads</h2>
+<p class="text-muted mb-2">Standalone HTML files — open in any browser, no server required.</p>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Document</th>
+          <th>Description</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>API Reference</td>
+          <td>All endpoints, methods, parameters, payloads</td>
+          <td><a href="{{ url_for('admin.docs_api_download') }}" class="btn btn-sm btn-primary" download>Download HTML</a></td>
+        </tr>
+        <tr>
+          <td>Capability Statement</td>
+          <td>FHIR R5 CapabilityStatement rendered</td>
+          <td><a href="{{ url_for('admin.docs_capability_download') }}" class="btn btn-sm btn-primary" download>Download HTML</a></td>
+        </tr>
+        <tr>
+          <td>Operator Manual</td>
+          <td>Admin UI workflows, procedures</td>
+          <td><a href="{{ url_for('admin.docs_manual_download') }}" class="btn btn-sm btn-primary" download>Download HTML</a></td>
+        </tr>
+        <tr>
+          <td>Technical Documentation</td>
+          <td>Architecture, security, data model, deployment</td>
+          <td><a href="{{ url_for('admin.docs_technical_download') }}" class="btn btn-sm btn-primary" download>Download HTML</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

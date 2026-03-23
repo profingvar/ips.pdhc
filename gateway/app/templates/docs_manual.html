@@ -1,0 +1,166 @@
+{% extends "docs_base.html" %}
+{% block title %}Operator Manual — PDHC IPS Server{% endblock %}
+
+{% block content %}
+<div class="doc-header">
+  <h1>IPS Server — Operator Manual</h1>
+  <p>PDHC International Patient Summary Service</p>
+  <div class="doc-meta">
+    <span>Version 0.1.0</span>
+    <span>Generated: {{ generated }}</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#overview">Service Overview</a></li>
+    <li><a href="#admin-ui">Admin UI</a></li>
+    <li><a href="#dashboard">Dashboard</a></li>
+    <li><a href="#patients">Patient Browser</a></li>
+    <li><a href="#push">Push Monitor</a></li>
+    <li><a href="#ips-workflow">IPS Workflow</a></li>
+    <li><a href="#api-keys">API Key Management</a></li>
+    <li><a href="#audit">Audit Log</a></li>
+    <li><a href="#maintenance">Maintenance Procedures</a></li>
+  </ul>
+</div>
+
+<h2 id="overview">Service Overview</h2>
+<p>The IPS Server produces and serves International Patient Summaries (IPS) using the FHIR R5 standard. It provides:</p>
+<ul style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li>A <strong>FHIR REST API</strong> (<code>/fhir/...</code>) for standards-based interoperability</li>
+  <li>An <strong>Application API</strong> (<code>/api/v1/...</code>) for operational workflows</li>
+  <li>An <strong>Admin UI</strong> (<code>/admin/...</code>) for operators</li>
+</ul>
+
+<table>
+  <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>/admin/</code></td><td>Admin dashboard</td></tr>
+    <tr><td><code>/admin/patients</code></td><td>Patient browser</td></tr>
+    <tr><td><code>/admin/push</code></td><td>Push job monitor</td></tr>
+    <tr><td><code>/admin/docs</code></td><td>Documentation and downloads</td></tr>
+    <tr><td><code>/api/v1/health</code></td><td>Health check (public)</td></tr>
+    <tr><td><code>/api/v1/metrics</code></td><td>Service metrics (public)</td></tr>
+    <tr><td><code>/fhir/metadata</code></td><td>FHIR CapabilityStatement (public)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="admin-ui">Admin UI</h2>
+<p>The Admin UI is accessible at <code>/admin/</code>. It requires no separate authentication when accessed through the same host. The navigation bar provides links to all pages.</p>
+
+<h2 id="dashboard">Dashboard</h2>
+<p>The dashboard (<code>/admin/</code>) displays:</p>
+<ul style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li><strong>Service Status</strong> — database connectivity indicator</li>
+  <li><strong>Resource Counts</strong> — patients, FHIR resources, IPS cards, snapshots, push jobs, audit events</li>
+  <li><strong>Recent Audit Events</strong> — the last 20 events with timestamp, type, actor, method, and path</li>
+</ul>
+
+<h2 id="patients">Patient Browser</h2>
+<p>The patient browser (<code>/admin/patients</code>) allows operators to search and inspect patients.</p>
+
+<h3>Searching</h3>
+<p>Use the search box to find patients by family name, given name, or identifier value. The search is case-insensitive and partial-match.</p>
+
+<h3>Patient Detail</h3>
+<p>Click "View" on any patient to see their detail page showing:</p>
+<ul style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li><strong>Demographics</strong> — GUID, identifier, birth date, gender, status, creation date</li>
+  <li><strong>Summary</strong> — counts of FHIR resources, IPS cards, and snapshots</li>
+  <li><strong>FHIR Resources</strong> — table of all clinical resources (type, ID, version, status, last updated)</li>
+  <li><strong>IPS Cards</strong> — table of cards with title, mode, status, and snapshot count</li>
+  <li><strong>Snapshots</strong> — table of all snapshots with composition date and resource count</li>
+</ul>
+
+<h2 id="push">Push Monitor</h2>
+<p>The push monitor (<code>/admin/push</code>) provides visibility into the IPS distribution system.</p>
+
+<h3>Destinations</h3>
+<p>The destinations table shows all configured push targets with name, type, endpoint URL, auth method, active/inactive status, and job count.</p>
+
+<h3>Push Jobs</h3>
+<p>The jobs table shows all push jobs with their status, attempt count, response code, and error message. Use the status filter dropdown to view only jobs in a specific state.</p>
+
+<h3>Queue Statistics</h3>
+<p>Four cards show the count of jobs by status: Queued, In Progress, Completed, Failed.</p>
+
+<h2 id="ips-workflow">IPS Workflow</h2>
+<p>The standard workflow for producing and distributing an IPS:</p>
+
+<h3>Step 1 — Ingest patient and clinical data</h3>
+<p>Create a Patient via <code>POST /fhir/Patient</code>, then add clinical resources (Condition, Observation, MedicationStatement, etc.) via <code>POST /fhir/{ResourceType}</code>. Each clinical resource must reference the patient via <code>subject.reference</code> or <code>patient.reference</code>.</p>
+
+<h3>Step 2 — Generate IPS on demand (optional)</h3>
+<p>Call <code>GET /fhir/Patient/{id}/$ips</code> to generate an IPS bundle in real time. Use <code>?mode=minimal</code> for a reduced set (conditions, medications, allergies only).</p>
+
+<h3>Step 3 — Create an IPS card</h3>
+<p>Call <code>POST /api/v1/ips/cards</code> with the patient GUID to create a named summary handle. Set mode to <code>full</code> or <code>minimal</code>.</p>
+
+<h3>Step 4 — Take a snapshot</h3>
+<p>Call <code>POST /api/v1/ips/cards/{card_guid}/snapshots</code> to generate and store an immutable point-in-time bundle. The snapshot captures exactly what the IPS contains at that moment.</p>
+
+<h3>Step 5 — Distribute (push)</h3>
+<p>Create a push destination (<code>POST /api/v1/push/destinations</code>) and then create a push job (<code>POST /api/v1/push/jobs</code>) with the snapshot GUID and destination GUID. Monitor delivery via the Push Monitor page or <code>GET /api/v1/push/jobs</code>.</p>
+
+<h2 id="api-keys">API Key Management</h2>
+<p>API keys provide machine-to-machine authentication for integrations.</p>
+
+<h3>Creating a key</h3>
+<p><code>POST /api/v1/auth/keys</code> with an optional <code>label</code> and <code>scopes</code>. The response includes the plaintext key <strong>exactly once</strong> — store it securely. It will never be shown again.</p>
+
+<h3>Listing keys</h3>
+<p><code>GET /api/v1/auth/keys</code> shows key metadata (prefix, label, creation date, last used) but never the hash or plaintext.</p>
+
+<h3>Revoking a key</h3>
+<p><code>DELETE /api/v1/auth/keys/{guid}</code> revokes the key immediately. This is irreversible.</p>
+
+<h3>Rotating a key</h3>
+<p><code>POST /api/v1/auth/keys/{guid}/rotate</code> revokes the old key and issues a new one in a single operation. The new plaintext is returned once.</p>
+
+<div class="warn"><strong>Security:</strong> Review active keys monthly. Revoke unused keys (no activity in 30+ days). Rotate all service-account keys at least every 90 days. After a security incident: revoke all keys and issue new ones.</div>
+
+<h2 id="audit">Audit Log</h2>
+<p>All significant operations are recorded in the audit log. Query via <code>GET /api/v1/audit</code> or view the most recent events on the Dashboard page.</p>
+
+<h3>Audited operations</h3>
+<table>
+  <thead><tr><th>Event Type</th><th>Trigger</th></tr></thead>
+  <tbody>
+    <tr><td><code>fhir_create</code></td><td>FHIR resource created</td></tr>
+    <tr><td><code>fhir_update</code></td><td>FHIR resource updated</td></tr>
+    <tr><td><code>ips_generate</code></td><td>$ips operation called</td></tr>
+    <tr><td><code>ips_card_create</code></td><td>IPS card created</td></tr>
+    <tr><td><code>ips_card_update</code></td><td>IPS card updated</td></tr>
+    <tr><td><code>ips_card_archive</code></td><td>IPS card archived</td></tr>
+    <tr><td><code>ips_snapshot_create</code></td><td>Snapshot generated</td></tr>
+    <tr><td><code>ips_bundle_read</code></td><td>Snapshot bundle retrieved (sensitive)</td></tr>
+    <tr><td><code>push_job_create</code></td><td>Push job created</td></tr>
+    <tr><td><code>api_key_create</code></td><td>API key created</td></tr>
+    <tr><td><code>api_key_revoke</code></td><td>API key revoked</td></tr>
+    <tr><td><code>clinic_create</code></td><td>Clinic created</td></tr>
+    <tr><td><code>clinic_update</code></td><td>Clinic updated</td></tr>
+  </tbody>
+</table>
+
+<h2 id="maintenance">Maintenance Procedures</h2>
+
+<h3>Health monitoring</h3>
+<p>Poll <code>GET /api/v1/health</code> periodically. Status <code>"ok"</code> means all systems operational. Status <code>"degraded"</code> means the database is unreachable.</p>
+
+<h3>Database backup</h3>
+<p>The PostgreSQL database runs in Docker. Back up via:</p>
+<pre><code>docker-compose exec db pg_dump -U ips_user ips_db > backup_$(date +%Y%m%d).sql</code></pre>
+
+<h3>Restarting the service</h3>
+<pre><code>cd /usr/local/www/ips.pdhc/gateway
+docker-compose down
+docker-compose up -d</code></pre>
+
+<div class="warn"><strong>Note:</strong> Use <code>docker-compose up -d --force-recreate</code> after editing <code>.env</code> — a plain <code>restart</code> does not re-read environment variables.</div>
+
+<h3>Viewing logs</h3>
+<pre><code>docker-compose logs -f app     # Application logs
+docker-compose logs -f db      # Database logs</code></pre>
+{% endblock %}

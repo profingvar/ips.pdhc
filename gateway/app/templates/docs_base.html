@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Documentation — PDHC IPS Server{% endblock %}</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --warning: #d97706;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.6; font-size: 12px;
+    }
+    .doc-container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    .doc-header { border-bottom: 2px solid var(--primary); padding-bottom: 0.75rem; margin-bottom: 1.25rem; }
+    .doc-header h1 { font-size: 1.5rem; color: var(--primary); margin-bottom: 0.2rem; }
+    .doc-header p { color: var(--text-muted); font-size: 1em; }
+    .doc-meta { display: flex; gap: 1.5rem; color: var(--text-muted); font-size: 0.92em; margin-top: 0.4rem; }
+    h2 { font-size: 1.15rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+    h3 { font-size: 1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.4rem; }
+    p { margin-bottom: 0.6rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 1em; margin-bottom: 1rem; }
+    th { background: var(--code-bg); font-weight: 600; font-size: 0.92em; text-transform: uppercase; letter-spacing: 0.025em; text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+    td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+    tr:hover { background: var(--bg); }
+    code { background: var(--code-bg); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.9em; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+    pre { background: var(--code-bg); padding: 0.75rem; border-radius: 5px; overflow-x: auto; margin-bottom: 0.75rem; font-size: 0.9em; line-height: 1.5; }
+    pre code { background: none; padding: 0; }
+    .method { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em; font-weight: 700; color: white; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+    .method-get { background: var(--success); }
+    .method-post { background: var(--primary); }
+    .method-put { background: var(--warning); }
+    .method-patch { background: var(--warning); }
+    .method-delete { background: var(--danger); }
+    .endpoint-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+    .endpoint-card h3 { margin-top: 0; }
+    .endpoint-path { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 0.95em; }
+    .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 9999px; font-size: 0.85em; font-weight: 600; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    .badge-success { background: #dcfce7; color: #166534; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .toc { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-bottom: 1.25rem; }
+    .toc h3 { margin-top: 0; font-size: 0.92em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+    .toc ul { list-style: none; padding-left: 0; }
+    .toc li { padding: 0.15rem 0; }
+    .toc a { color: var(--primary); text-decoration: none; font-size: 0.95em; }
+    .toc a:hover { text-decoration: underline; }
+    .note { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 5px; padding: 0.6rem 0.75rem; margin-bottom: 0.75rem; color: #1e40af; font-size: 0.95em; }
+    .warn { background: #fffbeb; border: 1px solid #fde68a; border-radius: 5px; padding: 0.6rem 0.75rem; margin-bottom: 0.75rem; color: #92400e; font-size: 0.95em; }
+    @media print { body { font-size: 10px; } .doc-container { max-width: 100%; padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="doc-container">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
