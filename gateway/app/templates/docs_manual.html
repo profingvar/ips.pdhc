@@ -48,7 +48,7 @@
 </table>
 
 <h2 id="admin-ui">Admin UI</h2>
-<p>The Admin UI is accessible at <code>/admin/</code>. It requires no separate authentication when accessed through the same host. The navigation bar provides links to all pages.</p>
+<p>The Admin UI is accessible at <code>/admin/</code> and is gated by the platform SSO (<code>sso.pdhc.se</code>) — unauthenticated callers are redirected to the SSO login and bounced back to <code>https://ips.pdhc.se/callback</code> on success. After login the navigation bar provides links to all pages.</p>
 
 <h2 id="dashboard">Dashboard</h2>
 <p>The dashboard (<code>/admin/</code>) displays:</p>
@@ -150,17 +150,27 @@
 <p>Poll <code>GET /api/v1/health</code> periodically. Status <code>"ok"</code> means all systems operational. Status <code>"degraded"</code> means the database is unreachable.</p>
 
 <h3>Database backup</h3>
-<p>The PostgreSQL database runs in Docker. Back up via:</p>
-<pre><code>docker-compose exec db pg_dump -U ips_user ips_db > backup_$(date +%Y%m%d).sql</code></pre>
+<p>Only the PostgreSQL database runs in Docker (container <code>ips-db-1</code> in the shared Colima VM). The app itself is bare-metal Python. Back up the DB via:</p>
+<pre><code>docker exec ips-db-1 pg_dump -U ips_user ips_db --format=custom \
+  &gt; ~/backups/ips_db_$(date +%Y%m%d).pgdump</code></pre>
+<p>Or use the platform-wide <code>~/server_backup_full_v2.sh</code> on miserver, which captures every PDHC service's DB into a single tarball.</p>
 
 <h3>Restarting the service</h3>
-<pre><code>cd /usr/local/www/ips.pdhc/gateway
-docker-compose down
-docker-compose up -d</code></pre>
-
-<div class="warn"><strong>Note:</strong> Use <code>docker-compose up -d --force-recreate</code> after editing <code>.env</code> — a plain <code>restart</code> does not re-read environment variables.</div>
+<p>The DB container and the gunicorn app are independent — restart only what changed.</p>
+<p><strong>App-only restart</strong> (most common — code or .env changed):</p>
+<pre><code>cd /usr/local/www/pdhcips/pdhcips/gateway
+PID=$(cat ~/.gunicorn/ips.pid 2>/dev/null) || PID=$(lsof -ti tcp:9040)
+kill -TERM "$PID"
+# wait, then re-launch
+./start.sh    # or for production: gunicorn --bind 127.0.0.1:9040 --daemon ...</code></pre>
+<p><strong>DB-only restart</strong> (rare — db config/upgrade):</p>
+<pre><code>colima ssh -- docker restart ips-db-1</code></pre>
+<div class="warn"><strong>Note on environment variables:</strong> a plain <code>docker restart</code> on <code>ips-db-1</code> reuses the env captured at create time and will <em>not</em> pick up new <code>.env</code> values. To reload env, use <code>docker-compose -p pdhcips up -d db</code> from the gateway directory (recreates the container with the current env). The bare-metal app does re-read <code>.env</code> on every restart since it loads via <code>python-dotenv</code> at boot.</div>
 
 <h3>Viewing logs</h3>
-<pre><code>docker-compose logs -f app     # Application logs
-docker-compose logs -f db      # Database logs</code></pre>
+<pre><code># App logs (bare-metal gunicorn — error + access)
+tail -f ~/.gunicorn/ips.access.log ~/.gunicorn/ips.error.log
+
+# Database logs (Docker)
+colima ssh -- docker logs -f ips-db-1</code></pre>
 {% endblock %}

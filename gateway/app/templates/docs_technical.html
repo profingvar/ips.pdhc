@@ -196,14 +196,15 @@
 
 <h2 id="deployment">Deployment</h2>
 
-<h3>Docker Services</h3>
+<h3>Runtime topology</h3>
 <table>
-  <thead><tr><th>Service</th><th>Image</th><th>Port</th></tr></thead>
+  <thead><tr><th>Component</th><th>Runtime</th><th>Port</th></tr></thead>
   <tbody>
-    <tr><td><code>db</code></td><td>postgres:16-alpine</td><td>9041 (host) → 5432 (container)</td></tr>
-    <tr><td><code>app</code></td><td>Python 3.12-slim + gunicorn</td><td>9040</td></tr>
+    <tr><td><code>db</code> (Postgres)</td><td>Docker — <code>postgres:16-alpine</code> in the shared Colima VM (container <code>ips-db-1</code>)</td><td>9041 (host) → 5432 (container)</td></tr>
+    <tr><td>App (Flask + gunicorn)</td><td>Bare-metal Python under the operator account — <strong>not</strong> in Docker. Started by <code>start.sh</code> via <code>python wsgi.py</code> (dev) or <code>gunicorn --bind 127.0.0.1:9040</code> (production).</td><td>9040 (loopback only; nginx terminates TLS)</td></tr>
   </tbody>
 </table>
+<div class="note"><strong>Why split:</strong> the app's Python venv lives directly under the release directory and is rebuilt on each deploy (shebangs are absolute paths into the release dir, so a copied venv would silently glue a new release to the old one). Only the database needs the persistence + isolation Docker provides.</div>
 
 <h3>Environment Variables</h3>
 <table>
@@ -222,15 +223,17 @@
 <p>Reverse proxy at <code>/opt/homebrew/etc/nginx/sites-available/ips.pdhc.se.conf</code> proxies HTTPS to <code>127.0.0.1:9040</code>. SSL via Let's Encrypt.</p>
 
 <h2 id="ports">Port Allocation</h2>
+<p>ips.pdhc owns the 904x block. Within that block:</p>
 <table>
-  <thead><tr><th>Project</th><th>App Port</th><th>DB Port</th><th>Admin Port</th><th>Subdomain</th></tr></thead>
+  <thead><tr><th>Port</th><th>Bound to</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td>plan.pdhc</td><td>9030</td><td>9031</td><td>—</td><td>plan.pdhc.se</td></tr>
-    <tr><td>forms.pdhc</td><td>9036</td><td>9037</td><td>—</td><td>forms.pdhc.se</td></tr>
-    <tr><td><strong>ips.pdhc</strong></td><td><strong>9040</strong></td><td><strong>9041</strong></td><td><strong>9042</strong></td><td><strong>ips.pdhc.se</strong></td></tr>
+    <tr><td><strong>9040</strong></td><td><code>127.0.0.1</code></td><td>App (Flask + gunicorn) — nginx proxies <code>https://ips.pdhc.se</code> here</td></tr>
+    <tr><td><strong>9041</strong></td><td><code>127.0.0.1</code></td><td>PostgreSQL host port (forwarded to <code>ips-db-1:5432</code>)</td></tr>
+    <tr><td>9042–9043</td><td>—</td><td>Reserved for future use; <code>start.sh</code> kills any process on these as a belt-and-braces safety</td></tr>
   </tbody>
 </table>
+<p>Reverse-proxy entries: <code>/opt/homebrew/etc/nginx/sites-enabled/ips.pdhc.se.conf</code> on miserver. Per platform Rule 22, never edit the proxy config without explicit operator authorisation.</p>
 
 <h3>Test Suite</h3>
-<p>158 tests across 6 test files, all passing. Results stored in <code>./results/</code> with ISO-8601 timestamps.</p>
+<p>148 test methods across 7 test files (<code>test_admin.py</code>, <code>test_api_endpoints.py</code>, <code>test_app_api.py</code>, <code>test_fhir_endpoints.py</code>, <code>test_health.py</code>, <code>test_models.py</code>, plus <code>conftest.py</code>). Run from <code>gateway/</code> with <code>pytest -q</code>. Results stored in <code>./results/&lt;ISO-UTC-timestamp&gt;_results/</code>.</p>
 {% endblock %}
