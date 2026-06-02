@@ -382,6 +382,28 @@
   <p>Update clinic: <code>name</code>, <code>identifier</code>, <code>is_active</code>.</p>
 </div>
 
+<div class="endpoint-card">
+  <h3><span class="method method-get">GET</span> <span class="endpoint-path">/api/v1/clinics/{guid}/patients</span></h3>
+  <p>List active patients assigned to a clinic, ordered by family name, then given name. Source of truth for "this organisation's patients" across the PDHC platform.</p>
+  <p><strong>Response:</strong> <code>200</code> — JSON array of <code>PatientIndex</code> objects (same shape as the admin patient list). <code>404</code> — <code>{"error": "Clinic not found"}</code>.</p>
+  <pre><code>[
+  {
+    "guid": "f0c1...",
+    "resource_id": "abc-123",
+    "identifier_system": "http://example.org/mrn",
+    "identifier_value": "MRN-001",
+    "family_name": "Andersson",
+    "given_name": "Anna",
+    "birth_date": "1972-03-14",
+    "gender": "female",
+    "is_active": true,
+    "created_at": "2026-05-30T09:21:00+00:00",
+    "updated_at": "2026-05-30T09:21:00+00:00"
+  }
+]</code></pre>
+  <p>Patients assigned to multiple clinics appear in each clinic's list. Inactive patients (<code>is_active = false</code>) are filtered out.</p>
+</div>
+
 <!-- ───── Errors ───── -->
 <h2 id="errors">Error Handling</h2>
 <p>FHIR endpoints return errors as <code>OperationOutcome</code> resources:</p>

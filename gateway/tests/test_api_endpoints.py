@@ -829,6 +829,84 @@ class TestAppClinics:
         assert resp.get_json()["is_active"] is False
 
 
+class TestClinicPatients:
+    """GET /api/v1/clinics/{guid}/patients — list patients assigned to a clinic."""
+
+    @staticmethod
+    def _create_patient(client, family, given, identifier):
+        resp = client.post(_url("/fhir/Patient"), json={
+            "resourceType": "Patient",
+            "name": [{"family": family, "given": [given]}],
+            "identifier": [{"system": "test", "value": identifier}],
+        })
+        assert resp.status_code == 201
+        return resp.get_json()["id"]
+
+    @staticmethod
+    def _assign(db, patient_resource_id, clinic_guid):
+        from app.models.patient_index import PatientIndex, PatientClinicAssignment
+        pi = db.session.query(PatientIndex).filter_by(resource_id=patient_resource_id).first()
+        assert pi is not None, "PatientIndex was not synced from POST /fhir/Patient"
+        db.session.add(PatientClinicAssignment(
+            patient_guid=pi.guid, clinic_guid=clinic_guid,
+        ))
+        db.session.commit()
+        return pi.guid
+
+    def test_lists_patients_for_clinic(self, client, db):
+        clinic = client.post(_url("/api/v1/clinics"), json={"name": "Stockholm"}).get_json()
+        rid_a = self._create_patient(client, "Andersson", "Anna", "A-1")
+        rid_b = self._create_patient(client, "Bergström", "Björn", "B-1")
+        self._assign(db, rid_a, clinic["guid"])
+        self._assign(db, rid_b, clinic["guid"])
+
+        resp = client.get(_url(f"/api/v1/clinics/{clinic['guid']}/patients"))
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data) == 2
+        # Ordered by family_name asc
+        assert data[0]["family_name"] == "Andersson"
+        assert data[1]["family_name"] == "Bergström"
+        # Shape matches PatientIndex.to_dict()
+        assert {"guid", "resource_id", "family_name", "given_name", "birth_date"}.issubset(data[0].keys())
+
+    def test_does_not_leak_patients_from_other_clinics(self, client, db):
+        a = client.post(_url("/api/v1/clinics"), json={"name": "ClinicA"}).get_json()
+        b = client.post(_url("/api/v1/clinics"), json={"name": "ClinicB"}).get_json()
+        rid_a = self._create_patient(client, "OnlyInA", "Alice", "ID-A")
+        rid_b = self._create_patient(client, "OnlyInB", "Bob", "ID-B")
+        self._assign(db, rid_a, a["guid"])
+        self._assign(db, rid_b, b["guid"])
+
+        resp = client.get(_url(f"/api/v1/clinics/{a['guid']}/patients"))
+        assert resp.status_code == 200
+        names = [p["family_name"] for p in resp.get_json()]
+        assert names == ["OnlyInA"]
+
+    def test_patient_in_two_clinics_appears_in_both(self, client, db):
+        a = client.post(_url("/api/v1/clinics"), json={"name": "ClinicA"}).get_json()
+        b = client.post(_url("/api/v1/clinics"), json={"name": "ClinicB"}).get_json()
+        rid = self._create_patient(client, "Dual", "Diana", "ID-DUAL")
+        self._assign(db, rid, a["guid"])
+        self._assign(db, rid, b["guid"])
+
+        ra = client.get(_url(f"/api/v1/clinics/{a['guid']}/patients")).get_json()
+        rb = client.get(_url(f"/api/v1/clinics/{b['guid']}/patients")).get_json()
+        assert [p["family_name"] for p in ra] == ["Dual"]
+        assert [p["family_name"] for p in rb] == ["Dual"]
+
+    def test_unknown_clinic_returns_404(self, client, db):
+        resp = client.get(_url(f"/api/v1/clinics/{uuid.uuid4()}/patients"))
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "Clinic not found"
+
+    def test_clinic_with_no_patients_returns_empty(self, client, db):
+        clinic = client.post(_url("/api/v1/clinics"), json={"name": "Empty"}).get_json()
+        resp = client.get(_url(f"/api/v1/clinics/{clinic['guid']}/patients"))
+        assert resp.status_code == 200
+        assert resp.get_json() == []
+
+
 # ===========================================================================
 # 13. ADMIN UI
 # ===========================================================================

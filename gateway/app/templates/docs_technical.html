@@ -97,6 +97,16 @@
   </tbody>
 </table>
 
+<h3>Patient ↔ clinic (organisation) relationship</h3>
+<p>Across the PDHC platform the IPS server is the <strong>source of truth for "which patients belong to which organisation"</strong>. Other services (notably <code>sim.pdhc</code>) query this relationship rather than holding their own copy.</p>
+<ul style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li>The relationship is <strong>many-to-many</strong>: <code>PatientClinicAssignment</code> is the join table with <code>UniqueConstraint(patient_guid, clinic_guid)</code>. One patient may belong to several clinics; one clinic has many patients.</li>
+  <li>Vocabulary: <em>clinic</em> in this service maps to <em>organisation</em> elsewhere in PDHC. <code>Clinic.guid</code> is the value other services pass as <code>organisation_guid</code> / <code>org_guid</code>.</li>
+  <li>The cross-service query path is <code>GET /api/v1/clinics/{guid}/patients</code>. It joins <code>PatientClinicAssignment → PatientIndex</code>, filters on <code>PatientIndex.is_active = true</code>, and orders by <code>(family_name, given_name)</code>. Clinic-level <code>is_active</code> is deliberately not filtered so audit/reporting still works against retired clinics.</li>
+  <li>Assignment write path: there is no public POST endpoint. Assignments are written by ingestion paths (FHIR Patient creation in an organisation context) or by direct DB tooling during onboarding.</li>
+  <li>FHIR <code>GET /Patient</code> intentionally does <strong>not</strong> support a clinic filter — its search parameters follow the standard (<code>identifier</code>, <code>family</code>, <code>given</code>, <code>birthdate</code>). Cross-service tooling uses the application API instead.</li>
+</ul>
+
 <h3>IPS Workflow</h3>
 <table>
   <thead><tr><th>Model</th><th>Table</th><th>Purpose</th></tr></thead>
@@ -189,7 +199,7 @@
     <tr><td>Push Jobs</td><td>3 endpoints under <code>/api/v1/push/jobs</code></td><td>Required</td></tr>
     <tr><td>API Keys</td><td>4 endpoints under <code>/api/v1/auth/keys</code></td><td>Required</td></tr>
     <tr><td>Audit</td><td><code>GET /api/v1/audit</code></td><td>Required</td></tr>
-    <tr><td>Clinics</td><td>4 endpoints under <code>/api/v1/clinics</code></td><td>Required</td></tr>
+    <tr><td>Clinics</td><td>5 endpoints under <code>/api/v1/clinics</code> (incl. <code>GET /{guid}/patients</code>)</td><td>Required</td></tr>
     <tr><td>Admin UI</td><td>6 routes under <code>/admin/</code></td><td>None (internal)</td></tr>
   </tbody>
 </table>

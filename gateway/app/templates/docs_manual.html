@@ -18,6 +18,7 @@
     <li><a href="#admin-ui">Admin UI</a></li>
     <li><a href="#dashboard">Dashboard</a></li>
     <li><a href="#patients">Patient Browser</a></li>
+    <li><a href="#clinic-patients">Clinic patient lists (cross-service)</a></li>
     <li><a href="#push">Push Monitor</a></li>
     <li><a href="#ips-workflow">IPS Workflow</a></li>
     <li><a href="#api-keys">API Key Management</a></li>
@@ -72,6 +73,20 @@
   <li><strong>FHIR Resources</strong> — table of all clinical resources (type, ID, version, status, last updated)</li>
   <li><strong>IPS Cards</strong> — table of cards with title, mode, status, and snapshot count</li>
   <li><strong>Snapshots</strong> — table of all snapshots with composition date and resource count</li>
+</ul>
+
+<h2 id="clinic-patients">Clinic patient lists (cross-service)</h2>
+<p>Other PDHC services (notably <code>sim.pdhc</code> when an operator picks an organisation to simulate against) treat the IPS server as the <strong>source of truth for "who belongs to organisation X"</strong>. The relationship is many-to-many: one patient can belong to several clinics; one clinic has many patients.</p>
+
+<p>The list is exposed via <code>GET /api/v1/clinics/{guid}/patients</code>. It returns the active patients only, ordered by family name then given name, in the same JSON shape as the admin patient browser. See the API reference for the exact response shape and error codes.</p>
+
+<h3>How patients become assigned to a clinic</h3>
+<p>Assignment lives in the <code>patient_clinic_assignments</code> table. There is no public endpoint to create assignments — they are written by ingestion paths (FHIR Patient creation with an organisation in scope) or by direct DB tooling during onboarding. The unique constraint on <code>(patient_guid, clinic_guid)</code> prevents duplicates.</p>
+
+<h3>Common questions</h3>
+<ul style="margin-left:1.5rem; margin-bottom:0.75rem;">
+  <li><strong>Why doesn't FHIR <code>GET /Patient</code> support a clinic filter?</strong> — the FHIR endpoint follows the standard search parameters (<code>identifier</code>, <code>family</code>, <code>given</code>, <code>birthdate</code>) and intentionally does not expose internal data model. Cross-service tooling uses the application API instead.</li>
+  <li><strong>What does "active" mean here?</strong> — <code>PatientIndex.is_active = true</code>. Clinic-level <code>is_active</code> is not checked; even an inactive clinic returns its patient list (so audit/reporting can still query it).</li>
 </ul>
 
 <h2 id="push">Push Monitor</h2>

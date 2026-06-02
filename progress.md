@@ -298,3 +298,36 @@ Results saved to: `./results/2026-03-23T07-56-57Z_docs_results/`
 ## Status: Feature complete
 
 All deployment plan steps (1–12) are complete. The application is ready for server deployment by the operator following `gateway/server_configs/deploy.md`.
+
+---
+
+## 2026-06-02 — `GET /api/v1/clinics/{guid}/patients` (cross-service)
+
+Added one endpoint to expose the patient list for a clinic, joining
+`PatientClinicAssignment → PatientIndex`. Used by `sim.pdhc` Cohort
+Builder (Step A of the plandef-driven flow): "pick an organisation,
+get its patients, simulate against them".
+
+- Route in `gateway/app/api/clinic_routes.py`, `@require_auth` like the
+  rest of the blueprint.
+- `is_active = true` filter on `PatientIndex`; clinic-level `is_active`
+  deliberately not filtered so audit/reporting still works against
+  retired clinics.
+- Order by `(family_name, given_name)`.
+- 404 with `{"error": "Clinic not found"}` for unknown clinic.
+- Empty clinic → `[]` with 200.
+- Patient assigned to two clinics appears in both lists (M2M via
+  `PatientClinicAssignment` with `UniqueConstraint(patient_guid,
+  clinic_guid)` so no dedupe needed).
+- 5 new tests in `TestClinicPatients`; **174/174** suite green.
+
+Docs updated per Rule 25: API reference (`docs_api.html`), operator
+manual (`docs_manual.html` — new "Clinic patient lists (cross-service)"
+section), technical reference (`docs_technical.html` — new "Patient ↔
+clinic (organisation) relationship" sub-section under Data Model + API
+surface row bumped 4 → 5 endpoints).
+
+Pre-existing drift on `gateway/` (≈1100 lines across 15 unrelated
+files including `admin.py +597`) **not committed in this pass** — it
+predates this session and is the same uncommitted-but-deployed pattern
+seen on contract.pdhc / plan.pdhc; needs a separate audit.
