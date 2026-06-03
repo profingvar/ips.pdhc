@@ -907,6 +907,89 @@ class TestClinicPatients:
         assert resp.get_json() == []
 
 
+class TestCreateClinicPatient:
+    """POST /api/v1/clinics/{guid}/patients — programmatic create-patient
+    endpoint used by sim.pdhc's Synthea importer."""
+
+    def test_create_from_flat_fields_lands_in_roster(self, client, db):
+        clinic = client.post(
+            _url("/api/v1/clinics"),
+            json={"name": "TestClinic"},
+        ).get_json()
+
+        resp = client.post(
+            _url(f"/api/v1/clinics/{clinic['guid']}/patients"),
+            json={
+                "family_name": "Lindberg",
+                "given_name": "Olof",
+                "gender": "male",
+                "birth_date": "1948-09-18",
+                "identifier_value": "MRN-001",
+            },
+        )
+        assert resp.status_code == 201, resp.get_json()
+        pi = resp.get_json()
+        assert pi["family_name"] == "Lindberg"
+        assert pi["given_name"] == "Olof"
+        assert pi["gender"] == "male"
+        assert pi["identifier_value"] == "MRN-001"
+
+        # The patient appears in the roster — the whole reason for the endpoint.
+        roster = client.get(
+            _url(f"/api/v1/clinics/{clinic['guid']}/patients")
+        ).get_json()
+        assert len(roster) == 1
+        assert roster[0]["guid"] == pi["guid"]
+
+    def test_create_from_full_fhir_body(self, client, db):
+        clinic = client.post(_url("/api/v1/clinics"),
+                             json={"name": "FhirClinic"}).get_json()
+        fhir_patient = {
+            "resourceType": "Patient",
+            "id": str(uuid.uuid4()),
+            "name": [{"use": "official", "family": "Andersson",
+                      "given": ["Anna"]}],
+            "gender": "female",
+            "birthDate": "1972-03-14",
+        }
+        resp = client.post(
+            _url(f"/api/v1/clinics/{clinic['guid']}/patients"),
+            json={"fhir": fhir_patient},
+        )
+        assert resp.status_code == 201
+        roster = client.get(
+            _url(f"/api/v1/clinics/{clinic['guid']}/patients")
+        ).get_json()
+        assert len(roster) == 1
+        assert roster[0]["family_name"] == "Andersson"
+
+    def test_missing_required_fields_returns_400(self, client, db):
+        clinic = client.post(_url("/api/v1/clinics"),
+                             json={"name": "C"}).get_json()
+        resp = client.post(
+            _url(f"/api/v1/clinics/{clinic['guid']}/patients"),
+            json={"family_name": "OnlyFamily"},
+        )
+        assert resp.status_code == 400
+        assert "required" in resp.get_json()["error"]
+
+    def test_unknown_clinic_returns_404(self, client, db):
+        resp = client.post(
+            _url(f"/api/v1/clinics/{uuid.uuid4()}/patients"),
+            json={"family_name": "X", "given_name": "Y"},
+        )
+        assert resp.status_code == 404
+
+    def test_full_fhir_wrong_resource_type_returns_400(self, client, db):
+        clinic = client.post(_url("/api/v1/clinics"),
+                             json={"name": "C"}).get_json()
+        resp = client.post(
+            _url(f"/api/v1/clinics/{clinic['guid']}/patients"),
+            json={"fhir": {"resourceType": "Observation"}},
+        )
+        assert resp.status_code == 400
+
+
 # ===========================================================================
 # 13. ADMIN UI
 # ===========================================================================
