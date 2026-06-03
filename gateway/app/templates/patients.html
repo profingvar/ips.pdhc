@@ -5,21 +5,69 @@
 <div class="page-header">
   <div>
     <h1>Patient Browser</h1>
-    <p class="lead">Search and view patients, resources, cards, and snapshots</p>
+    <p class="lead">Search, create, and manage patients</p>
   </div>
 </div>
 
-<div class="card mb-2">
-  <form method="get" action="{{ url_for('admin.patients') }}" class="inline-form">
-    <div class="form-group">
-      <label for="q">Search</label>
-      <input type="text" id="q" name="q" class="form-control" placeholder="Family name, given name, or identifier" value="{{ q }}">
-    </div>
-    <button type="submit" class="btn btn-primary"><i data-lucide="search"></i> Search</button>
-    {% if q %}
-    <a href="{{ url_for('admin.patients') }}" class="btn btn-secondary">Clear</a>
-    {% endif %}
-  </form>
+<div class="grid-2 mb-2">
+  <div class="card">
+    <h2><i data-lucide="search"></i> Search</h2>
+    <form method="get" action="{{ url_for('admin.patients') }}" class="inline-form">
+      <div class="form-group">
+        <label for="q">Name or identifier</label>
+        <input type="text" id="q" name="q" class="form-control" placeholder="Family name, given name, or identifier" value="{{ q }}">
+      </div>
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if q %}
+      <a href="{{ url_for('admin.patients') }}" class="btn btn-secondary">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="card">
+    <h2><i data-lucide="user-plus"></i> Create Patient</h2>
+    <form method="post" action="{{ url_for('admin.create_patient') }}">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+        <div class="form-group">
+          <label for="family_name">Family name</label>
+          <input type="text" id="family_name" name="family_name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label for="given_name">Given name</label>
+          <input type="text" id="given_name" name="given_name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label for="birth_date">Birth date</label>
+          <input type="date" id="birth_date" name="birth_date" class="form-control">
+        </div>
+        <div class="form-group">
+          <label for="gender">Gender</label>
+          <select id="gender" name="gender" class="form-control">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+        <div class="form-group">
+          <label for="identifier">Identifier (personnummer)</label>
+          <input type="text" id="identifier" name="identifier" class="form-control" placeholder="Optional">
+        </div>
+        <div class="form-group">
+          <label for="org_clinic">Organisation</label>
+          <select id="org_clinic" name="clinic_guid" class="form-control">
+            <option value="">— None —</option>
+            {% for c in clinics %}
+            <option value="{{ c.guid }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Create</button>
+    </form>
+  </div>
 </div>
 
 {% if patients %}
@@ -29,6 +77,7 @@
       <thead>
         <tr>
           <th>Name</th>
+          <th>Organisation</th>
           <th>Identifier</th>
           <th>Birth Date</th>
           <th>Gender</th>
@@ -42,6 +91,7 @@
         {% for p in patients %}
         <tr>
           <td>{{ p.family_name or '—' }}, {{ p.given_name or '—' }}</td>
+          <td>{{ p.organisation or '—' }}</td>
           <td><code>{{ p.identifier_value or '—' }}</code></td>
           <td>{{ p.birth_date.isoformat() if p.birth_date else '—' }}</td>
           <td>{{ p.gender or '—' }}</td>
@@ -61,7 +111,7 @@
 </div>
 {% else %}
 <div class="card empty-state">
-  <p>No patients in the system yet.</p>
+  <p>No patients in the system yet. Create one above or use <strong>Generate Mock Data</strong> on the dashboard.</p>
 </div>
 {% endif %}
 {% endblock %}

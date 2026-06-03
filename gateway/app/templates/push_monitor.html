@@ -10,6 +10,41 @@
 </div>
 
 <h2 class="section-heading">Destinations</h2>
+
+<div class="card mb-2">
+  <h3><i data-lucide="plus-circle"></i> Create Destination</h3>
+  <form method="post" action="{{ url_for('admin.create_destination') }}">
+    <div style="display:grid; grid-template-columns:1fr 1fr 2fr 1fr auto; gap:0.5rem; align-items:end;">
+      <div class="form-group" style="margin:0">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" class="form-control" placeholder="e.g. Region Skåne" required>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="destination_type">Type</label>
+        <select id="destination_type" name="destination_type" class="form-control">
+          <option value="fhir">FHIR</option>
+          <option value="webhook">Webhook</option>
+          <option value="email">Email</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="endpoint_url">Endpoint URL</label>
+        <input type="url" id="endpoint_url" name="endpoint_url" class="form-control" placeholder="https://..." required>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="auth_method">Auth</label>
+        <select id="auth_method" name="auth_method" class="form-control">
+          <option value="">None</option>
+          <option value="bearer">Bearer</option>
+          <option value="basic">Basic</option>
+          <option value="api_key">API Key</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Create</button>
+    </div>
+  </form>
+</div>
+
 {% if destinations %}
 <div class="card">
   <div class="table-wrap">
@@ -49,7 +84,7 @@
 </div>
 {% else %}
 <div class="card empty-state">
-  <p>No push destinations configured.</p>
+  <p>No push destinations configured. Create one above.</p>
 </div>
 {% endif %}
 

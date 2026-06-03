@@ -59,6 +59,44 @@
 
 <hr class="section-break">
 
+<h2 class="section-heading">Generate Mock Patients</h2>
+<div class="card mb-2">
+  <form method="post" action="{{ url_for('admin.generate_mock_data') }}">
+    <p class="text-muted" style="margin-bottom:0.75rem">
+      Creates patients with full IPS data: conditions, medications, allergies, immunizations,
+      observations, procedures, diagnostic reports — plus IPS card and snapshot per patient.
+    </p>
+    <div style="display:grid; grid-template-columns:2fr 1fr auto; gap:0.5rem; align-items:end;">
+      <div class="form-group" style="margin:0">
+        <label for="clinic_select">Organisation (synced from SSO)</label>
+        <select id="clinic_select" name="clinic_guid" class="form-control">
+          {% if orgs %}
+            {% for o in orgs %}
+            <option value="{{ o.guid }}">{{ o.name }}{% if o.organisation_guid %} ({{ o.organisation_guid[:8] }}…){% endif %}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No organisations — check SSO connection</option>
+          {% endif %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="count">Patients</label>
+        <select id="count" name="count" class="form-control">
+          <option value="2">2</option>
+          <option value="4" selected>4</option>
+          <option value="8">8</option>
+          <option value="12">12</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" onclick="return confirm('Generate mock patients with full clinical data?')">
+        <i data-lucide="database"></i> Generate
+      </button>
+    </div>
+  </form>
+</div>
+
+<hr class="section-break">
+
 <h2 class="section-heading">Recent Audit Events</h2>
 {% if recent_audit %}
 <div class="card">

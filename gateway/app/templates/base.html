@@ -10,7 +10,11 @@
 </head>
 <body>
   <nav>
-    <a class="brand" href="{{ url_for('admin.dashboard') }}">PDHC IPS Server</a>
+    <div style="display:flex;align-items:center;gap:0.6rem;">
+      <a class="brand" href="https://www.pdhc.se/services.html" style="opacity:0.75;font-size:0.85em;">PDHC</a>
+      <span style="color:rgba(255,255,255,0.3);">/</span>
+      <a class="brand" href="{{ url_for('admin.dashboard') }}">IPS Server</a>
+    </div>
     <ul class="nav-links">
       <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>Dashboard</a></li>
       <li><a href="{{ url_for('admin.patients') }}" {% if request.endpoint and request.endpoint.startswith('admin.patient') %}class="active"{% endif %}>Patients</a></li>
@@ -19,6 +23,11 @@
       <li class="nav-separator"></li>
       <li><a href="/api/v1/health" target="_blank">Health</a></li>
       <li><a href="/fhir/metadata" target="_blank">FHIR Metadata</a></li>
+      {% if session.get('sso_user') %}
+      <li class="nav-separator"></li>
+      <li><span style="color:rgba(255,255,255,0.7);font-size:0.85em">{{ session.sso_user.email }}</span></li>
+      <li><a href="{{ url_for('sso.logout') }}">Logout</a></li>
+      {% endif %}
     </ul>
   </nav>
 

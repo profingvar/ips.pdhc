@@ -50,7 +50,37 @@
 
 <hr class="section-break">
 
+{# ── Add Clinical Resource ─────────────────────────────────── #}
 <h2 class="section-heading">FHIR Resources</h2>
+
+<div class="card mb-2">
+  <h3><i data-lucide="plus-circle"></i> Add Clinical Resource</h3>
+  <form method="post" action="{{ url_for('admin.add_resource', guid=patient.guid) }}">
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:0.5rem; align-items:end;">
+      <div class="form-group" style="margin:0">
+        <label for="resource_type">Type</label>
+        <select id="resource_type" name="resource_type" class="form-control">
+          <option value="Condition">Condition</option>
+          <option value="MedicationStatement">MedicationStatement</option>
+          <option value="AllergyIntolerance">AllergyIntolerance</option>
+          <option value="Observation">Observation</option>
+          <option value="Immunization">Immunization</option>
+          <option value="Procedure">Procedure</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="code_text">Display text</label>
+        <input type="text" id="code_text" name="code_text" class="form-control" placeholder="e.g. Diabetes mellitus" required>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="code_value">Code (SNOMED/ATC)</label>
+        <input type="text" id="code_value" name="code_value" class="form-control" placeholder="e.g. 73211009">
+      </div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Add</button>
+    </div>
+  </form>
+</div>
+
 {% if resources %}
 <div class="card">
   <div class="table-wrap">
@@ -86,7 +116,29 @@
 
 <hr class="section-break">
 
+{# ── IPS Cards ──────────────────────────────────────────────── #}
 <h2 class="section-heading">IPS Cards</h2>
+
+<div class="card mb-2">
+  <h3><i data-lucide="credit-card"></i> Create IPS Card</h3>
+  <form method="post" action="{{ url_for('admin.create_card', guid=patient.guid) }}">
+    <div style="display:grid; grid-template-columns:2fr 1fr auto; gap:0.5rem; align-items:end;">
+      <div class="form-group" style="margin:0">
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" class="form-control" value="International Patient Summary">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="mode">Mode</label>
+        <select id="mode" name="mode" class="form-control">
+          <option value="full">Full</option>
+          <option value="minimal">Minimal</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Create Card</button>
+    </div>
+  </form>
+</div>
+
 {% if cards %}
 <div class="card">
   <div class="table-wrap">
@@ -98,6 +150,7 @@
           <th>Status</th>
           <th>Snapshots</th>
           <th>Created</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -116,6 +169,13 @@
           </td>
           <td>{{ c.snapshots | length }}</td>
           <td>{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at else '—' }}</td>
+          <td>
+            {% if c.status == 'active' %}
+            <form method="post" action="{{ url_for('admin.create_snapshot', guid=patient.guid, card_guid=c.guid) }}" style="display:inline">
+              <button type="submit" class="btn btn-sm btn-primary"><i data-lucide="camera"></i> Snapshot</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -124,12 +184,14 @@
 </div>
 {% else %}
 <div class="card empty-state">
-  <p>No IPS cards for this patient.</p>
+  <p>No IPS cards for this patient. Create one above.</p>
 </div>
 {% endif %}
 
+{# ── Snapshots ──────────────────────────────────────────────── #}
 {% if snapshots %}
-<h3 class="mt-6">All Snapshots</h3>
+<hr class="section-break">
+<h2 class="section-heading">Snapshots</h2>
 <div class="card">
   <div class="table-wrap">
     <table>
@@ -139,8 +201,8 @@
           <th>Card</th>
           <th>Mode</th>
           <th>Resources</th>
-          <th>Composition Date</th>
           <th>Created</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -150,8 +212,22 @@
           <td>{{ s.card.title or '(untitled)' }}</td>
           <td><code>{{ s.mode }}</code></td>
           <td>{{ s.resource_count or '—' }}</td>
-          <td>{{ s.composition_date.strftime('%Y-%m-%d %H:%M') if s.composition_date else '—' }}</td>
           <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}</td>
+          <td>
+            {% if destinations %}
+            <form method="post" action="{{ url_for('admin.push_snapshot', guid=patient.guid) }}" style="display:inline" class="inline-form">
+              <input type="hidden" name="snapshot_guid" value="{{ s.guid }}">
+              <select name="destination_guid" class="form-control" style="width:auto;display:inline-block;font-size:0.85em">
+                {% for d in destinations %}
+                <option value="{{ d.guid }}">{{ d.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-secondary"><i data-lucide="send"></i> Push</button>
+            </form>
+            {% else %}
+            <span class="text-muted" style="font-size:0.85em">No destinations — <a href="{{ url_for('admin.push_monitor') }}">create one</a></span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

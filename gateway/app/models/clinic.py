@@ -15,8 +15,9 @@ class Clinic(db.Model):
     guid: Mapped[uuid.UUID] = mapped_column(
         GUID(), primary_key=True, default=new_uuid
     )
+    organisation_guid: Mapped[str | None] = mapped_column(String(255), unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    identifier: Mapped[str | None] = mapped_column(String(255), unique=True)
+    identifier: Mapped[str | None] = mapped_column(String(255), unique=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -26,6 +27,7 @@ class Clinic(db.Model):
     def to_dict(self) -> dict:
         return {
             "guid": str(self.guid),
+            "organisation_guid": self.organisation_guid,
             "name": self.name,
             "identifier": self.identifier,
             "is_active": self.is_active,
