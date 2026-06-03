@@ -24,13 +24,21 @@ def health():
     except Exception:
         db_status = "disconnected"
 
-    return jsonify({
+    resp = jsonify({
         "status": "ok" if db_status == "connected" else "degraded",
         "database": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "ips-server",
         "version": "0.1.0",
     })
+    # Ticket #70 / CLAUDE.md §10: let www.pdhc.se/services.html read the JSON
+    # body cross-origin so it can drive real status/DB dots. Specific origin +
+    # Vary: Origin (not "*") keeps future Allow-Credentials spec-compliant.
+    resp.headers["Access-Control-Allow-Origin"] = "https://www.pdhc.se"
+    resp.headers["Access-Control-Allow-Methods"] = "GET"
+    resp.headers["Vary"] = "Origin"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @bp.route("/metrics")

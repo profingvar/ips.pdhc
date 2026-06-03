@@ -1,4 +1,4 @@
-version: "3.8"
+name: ips
 
 services:
   db:
@@ -32,3 +32,5 @@ services:
 
 volumes:
   pgdata:
+    name: ips_pgdata
+    external: true

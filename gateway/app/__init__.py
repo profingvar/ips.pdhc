@@ -3,8 +3,9 @@
 import os
 import logging
 
-from flask import Flask
+from flask import Flask, redirect, url_for
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import config_by_name
 from app.models.base import db
@@ -22,6 +23,9 @@ def create_app(config_name: str | None = None) -> Flask:
     )
     app.config.from_object(config_by_name[config_name])
 
+    # Trust proxy headers from nginx (X-Forwarded-For, X-Forwarded-Proto, etc.)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
     # Logging
     logging.basicConfig(
         level=logging.INFO,
@@ -31,6 +35,12 @@ def create_app(config_name: str | None = None) -> Flask:
     # Extensions
     db.init_app(app)
     CORS(app, origins=app.config.get("CORS_ORIGINS", []))
+
+    # Always rollback before removing — prevents PendingRollbackError on next request
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        db.session.rollback()
+        db.session.remove()
 
     # Register blueprints
     from app.api.health import bp as health_bp
@@ -49,13 +59,27 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(clinic_bp)
     app.register_blueprint(fhir_bp)
 
+    # SSO login/callback/logout
+    from app.api.sso_routes import bp as sso_bp
+    app.register_blueprint(sso_bp)
+
     # Register admin UI blueprint
     from app.admin import bp as admin_bp
     app.register_blueprint(admin_bp)
 
-    # Create tables and bootstrap on first request context
+    # Root URL → admin dashboard
+    @app.route("/")
+    def index():
+        return redirect(url_for("admin.dashboard"))
+
+    # Create tables and bootstrap — guarded for concurrent gunicorn workers
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception:
+            logging.getLogger(__name__).info(
+                "db.create_all() handled by another worker — skipping"
+            )
 
         from app.services.bootstrap_service import bootstrap_superuser
         bootstrap_superuser(

@@ -36,3 +36,6 @@ results/
 
 # Deployment tarballs
 *.tar.gz
+
+# Runtime logs
+gateway/logs/

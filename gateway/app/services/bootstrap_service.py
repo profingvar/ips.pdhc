@@ -20,14 +20,18 @@ def bootstrap_superuser(username: str, password: str) -> None:
         logger.info("Users already exist — skipping bootstrap SU creation")
         return
 
-    su = User(
-        username=username,
-        display_name="System Administrator",
-        password_hash=generate_password_hash(password),
-        role="admin",
-        is_active=True,
-        is_superuser=True,
-    )
-    db.session.add(su)
-    db.session.commit()
-    logger.info("Bootstrap superuser '%s' created successfully", username)
+    try:
+        su = User(
+            username=username,
+            display_name="System Administrator",
+            password_hash=generate_password_hash(password),
+            role="admin",
+            is_active=True,
+            is_superuser=True,
+        )
+        db.session.add(su)
+        db.session.commit()
+        logger.info("Bootstrap superuser '%s' created successfully", username)
+    except Exception:
+        db.session.rollback()
+        logger.info("Bootstrap SU already created by another worker — skipping")
