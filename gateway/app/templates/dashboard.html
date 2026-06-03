@@ -63,8 +63,14 @@
 <div class="card mb-2">
   <form method="post" action="{{ url_for('admin.generate_mock_data') }}">
     <p class="text-muted" style="margin-bottom:0.75rem">
-      Creates patients with full IPS data: conditions, medications, allergies, immunizations,
-      observations, procedures, diagnostic reports — plus IPS card and snapshot per patient.
+      Creates patients linked to the chosen organisation. Names sampled
+      uniquely from a combinatorial Swedish-name pool (up to 150 per
+      batch). Default mode also generates full IPS clinical data per
+      patient (conditions, medications, allergies, immunizations,
+      observations, procedures, diagnostic reports, IPS card +
+      snapshot). Tick <strong>"Skip clinical data"</strong> to create
+      just the Patient + clinic assignment — appropriate when sim.pdhc
+      or another upstream generator will provide the clinical data.
     </p>
     <div style="display:grid; grid-template-columns:2fr 1fr auto; gap:0.5rem; align-items:end;">
       <div class="form-group" style="margin:0">
@@ -80,17 +86,20 @@
         </select>
       </div>
       <div class="form-group" style="margin:0">
-        <label for="count">Patients</label>
-        <select id="count" name="count" class="form-control">
-          <option value="2">2</option>
-          <option value="4" selected>4</option>
-          <option value="8">8</option>
-          <option value="12">12</option>
-        </select>
+        <label for="count">Patients (1–150)</label>
+        <input type="number" id="count" name="count" class="form-control"
+               min="1" max="150" value="5" step="1">
       </div>
-      <button type="submit" class="btn btn-primary" onclick="return confirm('Generate mock patients with full clinical data?')">
+      <button type="submit" class="btn btn-primary">
         <i data-lucide="database"></i> Generate
       </button>
+    </div>
+    <div style="margin-top:0.5rem">
+      <label style="font-weight:normal; display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer">
+        <input type="checkbox" name="skip_clinical" value="on">
+        <span>Skip clinical data — Patient + clinic assignment only
+          (sim.pdhc / upstream generator provides observations)</span>
+      </label>
     </div>
   </form>
 </div>

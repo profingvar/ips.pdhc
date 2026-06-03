@@ -14,7 +14,7 @@ from sqlalchemy import text, func, or_
 from werkzeug.security import generate_password_hash
 
 from app.models.base import db
-from app.models.patient_index import PatientIndex
+from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.models.fhir_resource import FhirResource
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
@@ -167,6 +167,19 @@ def create_patient():
         }
 
     create_resource("Patient", patient_fhir)
+
+    # Link to clinic via PatientClinicAssignment so the patient shows
+    # up in GET /api/v1/clinics/<guid>/patients (cross-service consumers
+    # like sim.pdhc Cohort Builder query through that endpoint).
+    # `managingOrganization` on the FHIR resource alone is not enough.
+    if clinic:
+        pi = db.session.query(PatientIndex).filter_by(resource_id=resource_id).first()
+        if pi:
+            db.session.add(PatientClinicAssignment(
+                patient_guid=pi.guid,
+                clinic_guid=clinic.guid,
+            ))
+
     db.session.commit()
     flash(f"Patient {family}, {given} created.", "success")
     return redirect(url_for("admin.patients"))
@@ -445,20 +458,66 @@ def _sync_sso_organisations():
 
 # ── Mock Data Generator ──────────────────────────────────────
 
-_SWEDISH_NAMES = [
-    {"family": "Andersson", "given": "Erik", "gender": "male", "birth": "1958-03-14"},
-    {"family": "Johansson", "given": "Anna", "gender": "female", "birth": "1972-07-22"},
-    {"family": "Karlsson", "given": "Lars", "gender": "male", "birth": "1985-11-05"},
-    {"family": "Nilsson", "given": "Maria", "gender": "female", "birth": "1990-01-30"},
-    {"family": "Lindberg", "given": "Olof", "gender": "male", "birth": "1948-09-18"},
-    {"family": "Svensson", "given": "Karin", "gender": "female", "birth": "1965-12-01"},
-    {"family": "Bergström", "given": "Per", "gender": "male", "birth": "1978-06-11"},
-    {"family": "Pettersson", "given": "Eva", "gender": "female", "birth": "1993-04-25"},
-    {"family": "Lindqvist", "given": "Gunnar", "gender": "male", "birth": "1952-08-03"},
-    {"family": "Ekström", "given": "Ingrid", "gender": "female", "birth": "1968-10-19"},
-    {"family": "Holmgren", "given": "Anders", "gender": "male", "birth": "1981-02-27"},
-    {"family": "Nyström", "given": "Birgitta", "gender": "female", "birth": "1975-05-16"},
+# Combinatorial Swedish name pool — 40 family × (30 male + 30 female)
+# = 2400 unique (family, given) combinations. The mock-data endpoint
+# samples without replacement up to its cap (150) so every generated
+# patient has a unique name within a single batch.
+_SWEDISH_FAMILY = [
+    "Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson",
+    "Larsson", "Olsson", "Persson", "Svensson", "Gustafsson",
+    "Pettersson", "Jonsson", "Jansson", "Hansson", "Bengtsson",
+    "Jönsson", "Lindberg", "Jakobsson", "Magnusson", "Olofsson",
+    "Lindström", "Lindqvist", "Lindgren", "Berg", "Axelsson",
+    "Berglund", "Bergström", "Lundberg", "Lundgren", "Lundqvist",
+    "Mattsson", "Berggren", "Sandberg", "Henriksson", "Forsberg",
+    "Sjöberg", "Wallin", "Engström", "Eklund", "Holmgren",
 ]
+
+_SWEDISH_GIVEN_M = [
+    "Erik", "Lars", "Karl", "Anders", "Per", "Mikael", "Johan",
+    "Olof", "Nils", "Sven", "Jan", "Hans", "Gunnar", "Bo", "Bengt",
+    "Magnus", "Stefan", "Daniel", "Tomas", "Mats", "Niklas", "Fredrik",
+    "Henrik", "Andreas", "David", "Martin", "Oscar", "Jonas",
+    "Alexander", "Filip",
+]
+
+_SWEDISH_GIVEN_F = [
+    "Anna", "Eva", "Maria", "Karin", "Sara", "Lena", "Birgitta",
+    "Christina", "Ingrid", "Margareta", "Elisabeth", "Marianne",
+    "Kerstin", "Astrid", "Linda", "Susanne", "Ulla", "Inger",
+    "Helena", "Monica", "Cecilia", "Hanna", "Lisa", "Emma",
+    "Sofia", "Julia", "Lina", "Klara", "Elin", "Alva",
+]
+
+
+def _build_unique_patient_pool(count: int) -> list[dict]:
+    """Sample up to ``count`` unique (family, given, gender, birth)
+    dicts from the combinatorial Swedish-name pool.
+
+    The shape mirrors the original `_SWEDISH_NAMES` entries so the
+    callsite stays unchanged.
+    """
+    import random
+    male_pool = [(f, g, "male") for f in _SWEDISH_FAMILY for g in _SWEDISH_GIVEN_M]
+    female_pool = [(f, g, "female") for f in _SWEDISH_FAMILY for g in _SWEDISH_GIVEN_F]
+    pool = male_pool + female_pool
+    random.shuffle(pool)
+    n = min(count, len(pool))
+    out: list[dict] = []
+    for family, given, gender in pool[:n]:
+        # Birth years 1940–2010, random month/day. We don't try to be
+        # epidemiologically realistic — sim.pdhc owns the data semantics
+        # and just needs a valid birthDate to attach observations to.
+        year = random.randint(1940, 2010)
+        month = random.randint(1, 12)
+        day = random.randint(1, 28)
+        out.append({
+            "family": family,
+            "given": given,
+            "gender": gender,
+            "birth": f"{year:04d}-{month:02d}-{day:02d}",
+        })
+    return out
 
 _CONDITIONS = [
     ("73211009", "Diabetes mellitus type 2"),
@@ -654,18 +713,29 @@ def _mock_patient_resources(resource_id, patient_guid, org_name, mp):
 
 @bp.route("/mock-data", methods=["POST"])
 def generate_mock_data():
-    """Generate mock patients with full IPS clinical data for a chosen organisation."""
+    """Generate mock patients for a chosen organisation.
+
+    Two modes:
+    - Default: full IPS — Patient + clinical resources + IPS card + snapshot.
+    - `skip_clinical=on`: just Patient + PatientClinicAssignment. Used
+      when sim.pdhc (or another generator) will provide the clinical
+      data downstream — avoids polluting cdr_6 with two sources of
+      truth for the same patient's observations.
+
+    Cap is 150 to match sim.pdhc's typical cohort smoke runs.
+    """
     import random
 
     clinic_guid = request.form.get("clinic_guid", "")
-    count = min(int(request.form.get("count", "4")), 12)
+    count = min(int(request.form.get("count", "4")), 150)
+    skip_clinical = request.form.get("skip_clinical", "").lower() in {"on", "1", "true"}
 
     # Resolve clinic — carries both org_guid and name
     clinic = db.session.query(Clinic).filter_by(guid=clinic_guid).first() if clinic_guid else None
     org_guid = clinic.organisation_guid if clinic else ""
     org_name = clinic.name if clinic else "Demo Clinic"
 
-    patients_pool = random.sample(_SWEDISH_NAMES, min(count, len(_SWEDISH_NAMES)))
+    patients_pool = _build_unique_patient_pool(count)
     created_count = 0
 
     for mp in patients_pool:
@@ -702,29 +772,40 @@ def generate_mock_data():
         if not patient:
             continue
 
-        # Generate all clinical resource types
-        _mock_patient_resources(resource_id, patient.guid, org_name, mp)
+        # Link to clinic via PatientClinicAssignment (same reason as the
+        # admin create_patient path: cross-service consumers query the
+        # /api/v1/clinics/<guid>/patients endpoint which joins on this
+        # table, not on FHIR managingOrganization).
+        if clinic:
+            db.session.add(PatientClinicAssignment(
+                patient_guid=patient.guid,
+                clinic_guid=clinic.guid,
+            ))
 
-        # Create IPS card + snapshot (linked to clinic)
-        card = IpsCard(
-            patient_guid=patient.guid,
-            clinic_guid=clinic.guid if clinic else None,
-            title=f"IPS — {mp['given']} {mp['family']}",
-            mode="full",
-        )
-        db.session.add(card)
-        db.session.flush()
+        if not skip_clinical:
+            # Generate all clinical resource types
+            _mock_patient_resources(resource_id, patient.guid, org_name, mp)
 
-        now = datetime.now(timezone.utc)
-        bundle = generate_ips_bundle(patient, mode="full", composition_date=now)
-        snapshot = IpsSnapshot(
-            card_guid=card.guid,
-            bundle_json=bundle,
-            composition_date=now,
-            mode="full",
-            resource_count=len(bundle.get("entry", [])),
-        )
-        db.session.add(snapshot)
+            # Create IPS card + snapshot (linked to clinic)
+            card = IpsCard(
+                patient_guid=patient.guid,
+                clinic_guid=clinic.guid if clinic else None,
+                title=f"IPS — {mp['given']} {mp['family']}",
+                mode="full",
+            )
+            db.session.add(card)
+            db.session.flush()
+
+            now = datetime.now(timezone.utc)
+            bundle = generate_ips_bundle(patient, mode="full", composition_date=now)
+            snapshot = IpsSnapshot(
+                card_guid=card.guid,
+                bundle_json=bundle,
+                composition_date=now,
+                mode="full",
+                resource_count=len(bundle.get("entry", [])),
+            )
+            db.session.add(snapshot)
         created_count += 1
 
     db.session.commit()
