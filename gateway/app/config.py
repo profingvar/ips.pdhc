@@ -14,6 +14,8 @@ class Config:
         "postgresql+psycopg://ips_user:dev@localhost:9041/ips_db"
     )
     OAUTH_BASE_URL = os.environ.get("OAUTH_BASE_URL", "https://sso.pdhc.se")
+    SSO_CLIENT_ID = os.environ.get("SSO_CLIENT_ID", "")
+    SSO_CLIENT_SECRET = os.environ.get("SSO_CLIENT_SECRET", "")
     API_KEY_SECRET = os.environ.get("API_KEY_SECRET", "")
     BOOTSTRAP_SU_USERNAME = os.environ.get("BOOTSTRAP_SU_USERNAME", "")
     BOOTSTRAP_SU_PASSWORD = os.environ.get("BOOTSTRAP_SU_PASSWORD", "")
@@ -33,6 +35,9 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
 
 
 class TestingConfig(Config):

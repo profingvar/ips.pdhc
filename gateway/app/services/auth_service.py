@@ -28,12 +28,21 @@ def hash_api_key(raw_key: str) -> str:
 def resolve_sso_user(token: str) -> dict | None:
     """Resolve a Bearer token via the SSO service. Returns user info or None."""
     base_url = current_app.config["OAUTH_BASE_URL"]
+    client_id = current_app.config.get("SSO_CLIENT_ID", "")
+    client_secret = current_app.config.get("SSO_CLIENT_SECRET", "")
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Use service endpoint when credentials are configured
+    if client_id and client_secret:
+        endpoint = f"{base_url}/api/auth/me/service"
+        headers["X-SSO-Client-Id"] = client_id
+        headers["X-SSO-Client-Secret"] = client_secret
+    else:
+        endpoint = f"{base_url}/api/auth/me"
+
     try:
-        resp = httpx.get(
-            f"{base_url}/api/auth/me",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10.0,
-        )
+        resp = httpx.get(endpoint, headers=headers, timeout=10.0)
         if resp.status_code == 200:
             return resp.json()
     except httpx.RequestError:
@@ -81,6 +90,12 @@ def require_auth(f):
             user_info = resolve_sso_user(token)
             if not user_info:
                 return _auth_error("Invalid or expired token")
+            # Ticket #53 / SSO #43: block API calls while SSO requires a
+            # password change. require_auth guards API+FHIR routes only;
+            # HTML admin routes have their own before_request.
+            mcp = _must_change_password_response(user_info)
+            if mcp is not None:
+                return mcp
             # Find or create local user record
             user = db.session.query(User).filter_by(
                 username=user_info.get("username", "")
@@ -117,6 +132,27 @@ def _auth_error(message: str):
             "diagnostics": message,
         }]
     }), 401
+
+
+def _must_change_password_response(blob: dict | None):
+    """Uniform response when SSO flags `must_change_password=True`.
+
+    require_auth is used on API/FHIR routes, so we return a 403
+    OperationOutcome carrying the SSO change-password URL in the
+    diagnostics. Returns None if no change required.
+    """
+    if not blob or not blob.get("must_change_password"):
+        return None
+    base = current_app.config.get("OAUTH_BASE_URL", "").rstrip("/")
+    return jsonify({
+        "resourceType": "OperationOutcome",
+        "issue": [{
+            "severity": "error",
+            "code": "forbidden",
+            "diagnostics": "Password change required before further actions",
+            "details": {"text": f"{base}/change-password"},
+        }]
+    }), 403
 
 
 def _synthetic_dev_user() -> User:
