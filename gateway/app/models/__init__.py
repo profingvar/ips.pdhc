@@ -12,6 +12,7 @@ from app.models.push_destination import PushDestination
 from app.models.push_job import PushJob
 from app.models.audit_log import AuditLog
 from app.models.capability_statement import CapabilityStatement
+from app.models.patient_block import PatientBlock
 
 __all__ = [
     "db",
@@ -28,4 +29,5 @@ __all__ = [
     "PushJob",
     "AuditLog",
     "CapabilityStatement",
+    "PatientBlock",
 ]
