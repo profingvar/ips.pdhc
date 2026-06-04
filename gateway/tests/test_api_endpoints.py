@@ -907,6 +907,92 @@ class TestClinicPatients:
         assert resp.get_json() == []
 
 
+class TestPatientClinics:
+    """GET /api/v1/patients/{guid}/clinics — list clinics a patient is
+    assigned to. Added per ticket #225 (request.pdhc patient-org check
+    at ServiceRequest create) — request.pdhc consumes this endpoint to
+    enforce PDL Ch 4 §§ 1-2 need-to-know on write-side endpoints."""
+
+    @staticmethod
+    def _create_patient(client, family, given, identifier):
+        resp = client.post(_url("/fhir/Patient"), json={
+            "resourceType": "Patient",
+            "name": [{"family": family, "given": [given]}],
+            "identifier": [{"system": "test", "value": identifier}],
+        })
+        assert resp.status_code == 201
+        return resp.get_json()["id"]
+
+    @staticmethod
+    def _assign(db, patient_resource_id, clinic_guid):
+        from app.models.patient_index import PatientIndex, PatientClinicAssignment
+        pi = db.session.query(PatientIndex).filter_by(resource_id=patient_resource_id).first()
+        assert pi is not None
+        db.session.add(PatientClinicAssignment(
+            patient_guid=pi.guid, clinic_guid=clinic_guid,
+        ))
+        db.session.commit()
+        return pi.guid
+
+    def test_lists_clinics_for_patient(self, client, db):
+        a = client.post(_url("/api/v1/clinics"), json={"name": "Alpha"}).get_json()
+        b = client.post(_url("/api/v1/clinics"), json={"name": "Beta"}).get_json()
+        rid = self._create_patient(client, "Two", "Tina", "DUAL-1")
+        pg = self._assign(db, rid, a["guid"])
+        self._assign(db, rid, b["guid"])
+
+        resp = client.get(_url(f"/api/v1/patients/{pg}/clinics"))
+        assert resp.status_code == 200
+        data = resp.get_json()
+        # Ordered by clinic name asc
+        names = [c["name"] for c in data]
+        assert names == ["Alpha", "Beta"]
+        # Shape matches Clinic.to_dict()
+        assert {"guid", "name"}.issubset(data[0].keys())
+
+    def test_does_not_leak_clinics_from_other_patients(self, client, db):
+        a = client.post(_url("/api/v1/clinics"), json={"name": "OnlyForP"}).get_json()
+        b = client.post(_url("/api/v1/clinics"), json={"name": "OnlyForQ"}).get_json()
+        rid_p = self._create_patient(client, "P", "Petra", "P-1")
+        rid_q = self._create_patient(client, "Q", "Quincy", "Q-1")
+        pg = self._assign(db, rid_p, a["guid"])
+        self._assign(db, rid_q, b["guid"])
+
+        resp = client.get(_url(f"/api/v1/patients/{pg}/clinics"))
+        assert resp.status_code == 200
+        names = [c["name"] for c in resp.get_json()]
+        assert names == ["OnlyForP"]
+
+    def test_patient_with_no_assignments_returns_empty(self, client, db):
+        rid = self._create_patient(client, "Solo", "Sam", "S-1")
+        from app.models.patient_index import PatientIndex
+        pg = db.session.query(PatientIndex).filter_by(resource_id=rid).first().guid
+
+        resp = client.get(_url(f"/api/v1/patients/{pg}/clinics"))
+        assert resp.status_code == 200
+        assert resp.get_json() == []
+
+    def test_unknown_patient_returns_404(self, client, db):
+        resp = client.get(_url(f"/api/v1/patients/{uuid.uuid4()}/clinics"))
+        assert resp.status_code == 404
+        assert resp.get_json()["error"] == "Patient not found"
+
+    def test_inactive_clinics_are_filtered_out(self, client, db):
+        live = client.post(_url("/api/v1/clinics"), json={"name": "Live"}).get_json()
+        dead = client.post(_url("/api/v1/clinics"), json={"name": "Dead"}).get_json()
+        # mark `dead` inactive
+        client.patch(_url(f"/api/v1/clinics/{dead['guid']}"),
+                     json={"is_active": False})
+        rid = self._create_patient(client, "Mixed", "Mira", "M-1")
+        pg = self._assign(db, rid, live["guid"])
+        self._assign(db, rid, dead["guid"])
+
+        resp = client.get(_url(f"/api/v1/patients/{pg}/clinics"))
+        assert resp.status_code == 200
+        names = [c["name"] for c in resp.get_json()]
+        assert names == ["Live"]
+
+
 class TestCreateClinicPatient:
     """POST /api/v1/clinics/{guid}/patients — programmatic create-patient
     endpoint used by sim.pdhc's Synthea importer."""
