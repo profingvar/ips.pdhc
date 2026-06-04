@@ -105,6 +105,10 @@ def require_auth(f):
             if not user.is_active:
                 return _auth_error("User account is inactive")
             g.current_user = user
+            # Ticket #203: stash the full SSO blob so downstream helpers
+            # (audit_service.current_session_id) can read session_id
+            # without revalidating the token.
+            g.access_blob = user_info
 
         elif auth_header.startswith("ApiKey "):
             raw_key = auth_header[7:]

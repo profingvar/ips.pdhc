@@ -16,6 +16,7 @@ class AuditLog(db.Model):
         Index("ix_audit_log_patient", "patient_guid"),
         Index("ix_audit_log_event_type", "event_type"),
         Index("ix_audit_log_created", "created_at"),
+        Index("ix_audit_log_session_id", "session_id"),
     )
 
     guid: Mapped[uuid.UUID] = mapped_column(
@@ -31,6 +32,13 @@ class AuditLog(db.Model):
     request_path: Mapped[str | None] = mapped_column(String(2048))
     request_method: Mapped[str | None] = mapped_column(String(10))
     ip_address: Mapped[str | None] = mapped_column(String(45))
+    # Ticket #203: SSO session_id (sid claim, see #191 + sso.pdhc
+    # integration-guide.md "Operator Session Correlation"). Nullable —
+    # legacy callers (API-key services without an X-Operator-Session-Id
+    # header, AUTH_DISABLED dev blob without the claim) leave it NULL.
+    # Indexed because the canonical PDL kontroller query is
+    # "all rows for session S".
+    session_id: Mapped[str | None] = mapped_column(String(128))
     detail: Mapped[dict | None] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -47,6 +55,7 @@ class AuditLog(db.Model):
             "request_path": self.request_path,
             "request_method": self.request_method,
             "ip_address": self.ip_address,
+            "session_id": self.session_id,
             "detail": self.detail,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
