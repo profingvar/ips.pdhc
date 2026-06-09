@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Confirm lift — PDHC IPS{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Confirm indispensable-care lift</h1>
+  </div>
+  <p class="lead">
+    Review the values below. When you click <strong>Lift</strong>, the
+    block becomes lifted, the audit row is written, and the patient
+    is notified with the text rendered at the bottom of this page.
+    This action is logged with your user GUID.
+  </p>
+
+  <div class="card">
+    <h2>Lift details</h2>
+    <table>
+      <tr><th>Patient</th><td>{{ patient_label }}</td></tr>
+      <tr><th>Source scope</th><td>{{ scope_label }}</td></tr>
+      <tr><th>Reason</th><td><em>{{ reason }}</em></td></tr>
+      <tr><th>Concept GUIDs</th><td>
+        <ul style="margin:0;padding-left:1.2rem;">
+          {% for g in concept_guids %}
+            <li><code>{{ g }}</code></li>
+          {% endfor %}
+        </ul>
+      </td></tr>
+      <tr><th>From date</th><td>{{ from_date_raw or '(unset — no lower bound)' }}</td></tr>
+      <tr><th>Until date</th><td>{{ until_date_raw or '(unset — no upper bound)' }}</td></tr>
+      <tr><th>Projected lift expires at</th><td><strong>{{ projected_lift_expires_at }}</strong> (in {{ expires_in_hours }} h)</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Patient will read</h2>
+    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:0.5rem;">
+      Verbatim preview of the indispensable-care notification (sv).
+      The patient sees exactly this text on their portal and via
+      whatever delivery channel they've configured.
+    </p>
+    <div style="background:var(--code-bg);border-radius:5px;padding:0.75rem;white-space:pre-wrap;font-family:inherit;">{{ notification_preview }}</div>
+  </div>
+
+  <div class="card">
+    <h2>Confirm</h2>
+    <form action="{{ url_for('admin.block_lift_submit', block_guid=block.guid) }}"
+          method="post" style="display:flex;gap:0.6rem;align-items:center;">
+      <input type="hidden" name="reason" value="{{ reason }}">
+      <input type="hidden" name="concept_guids" value="{{ concept_guids_raw }}">
+      <input type="hidden" name="expires_in_hours" value="{{ expires_in_hours }}">
+      <input type="hidden" name="from_date" value="{{ from_date_raw }}">
+      <input type="hidden" name="until_date" value="{{ until_date_raw }}">
+      <button type="submit" class="btn btn-danger">
+        Lift the block
+      </button>
+      <a href="{{ url_for('admin.block_lift_form', block_guid=block.guid) }}"
+         class="btn btn-secondary">
+        Back to form
+      </a>
+    </form>
+  </div>
+{% endblock %}

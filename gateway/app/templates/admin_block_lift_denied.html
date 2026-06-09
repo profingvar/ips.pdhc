@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Access denied — PDHC IPS{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Indispensable-care lift — access denied</h1>
+  </div>
+
+  <div class="card">
+    <p style="margin-bottom:0.5rem;">
+      You don't have the role required to perform an indispensable-care
+      block lift on this service.
+    </p>
+    <p style="margin-bottom:0.5rem;">
+      The lift is gated by <code>IPS_INDISPENSABLE_LIFT_ROLES</code>;
+      the current setting allows: <code>{{ allowed_roles }}</code>.
+      SU admins always pass.
+    </p>
+    <p style="margin-bottom:0.5rem;">
+      If you believe you should have access, ask your caregiver's
+      operator to either grant you the required role or add your
+      current role to <code>IPS_INDISPENSABLE_LIFT_ROLES</code> in
+      this service's <code>.env</code> (and restart).
+    </p>
+    <p>
+      See the
+      <a href="https://github.com/profingvar/ips.pdhc/blob/main/docs/sparr_operator_runbook.md#6-operator-config-knobs"
+         target="_blank" rel="noopener">operator runbook §6</a>
+      for the env-knob list.
+    </p>
+  </div>
+
+  <p>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">
+      Back to dashboard
+    </a>
+  </p>
+{% endblock %}

@@ -77,8 +77,12 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.sso_routes import bp as sso_bp
     app.register_blueprint(sso_bp)
 
-    # Register admin UI blueprint
+    # Register admin UI blueprint. Import side-modules that attach
+    # additional routes to the same blueprint BEFORE register; Flask
+    # locks the blueprint at register time so late attachment fails
+    # silently.
     from app.admin import bp as admin_bp
+    from app import admin_block_lift as _admin_block_lift_module  # noqa: F401 — registers /admin/blocks/<g>/lift*
     app.register_blueprint(admin_bp)
 
     # Root URL → admin dashboard

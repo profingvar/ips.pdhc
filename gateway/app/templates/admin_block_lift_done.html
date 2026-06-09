@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Lift completed — PDHC IPS{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Lift completed</h1>
+  </div>
+  <p class="lead">
+    The block on <strong>{{ scope_label }}</strong> is now lifted for
+    indispensable care. It will auto-re-impose at <strong>{{ block.lift_expires_at }}</strong>.
+  </p>
+
+  <div class="card">
+    <h2>Audit row</h2>
+    <p style="margin-bottom:0.4rem;">
+      Paste this GUID into the clinical note as the record of the
+      override:
+    </p>
+    <p>
+      <code style="background:var(--code-bg);padding:0.4rem 0.6rem;border-radius:5px;display:inline-block;font-size:1.05em;">{{ audit_guid }}</code>
+      <button type="button" class="btn btn-sm btn-secondary"
+              onclick="navigator.clipboard.writeText('{{ audit_guid }}')">
+        Copy
+      </button>
+    </p>
+    <p style="color:var(--text-muted);font-size:0.9em;margin-top:0.6rem;">
+      The same row is visible to the patient on the portal audit
+      page, to your clinic colleagues via the staff audit endpoint,
+      and to your caregiver's PDL kontroller. It cannot be edited.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Next</h2>
+    <ul style="margin:0;padding-left:1.2rem;">
+      <li>Read the data you came for — but stay within the concept
+        scope you listed. Every read against the lifted scope is
+        audited under the same window.</li>
+      <li>If the indispensable need resolves before the auto-re-impose
+        fires, you may re-impose the block early from the same form
+        (the audit notes the early re-impose).</li>
+      <li>If the need persists past the lift window, you may lift
+        again — but each new lift is a fresh audit row, and repeated
+        lifts on the same block are a compliance flag.</li>
+    </ul>
+  </div>
+
+  <p>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">
+      Back to dashboard
+    </a>
+  </p>
+{% endblock %}

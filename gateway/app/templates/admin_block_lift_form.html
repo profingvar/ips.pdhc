@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Indispensable-care block lift — PDHC IPS{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Indispensable-care block lift</h1>
+  </div>
+  <p class="lead">
+    PDL Ch 4 § 5: a clinician may override a patient block when the
+    blocked data is <strong>indispensable</strong> for the care the
+    patient needs <em>now</em>. Read the
+    <a href="https://github.com/profingvar/ips.pdhc/blob/main/docs/sparr_operator_runbook.md"
+       target="_blank" rel="noopener">operator runbook</a>
+    before submitting — particularly §1 (what counts as indispensable)
+    and §3 (what makes a good reason). The lift auto-re-imposes after
+    the chosen expiry.
+  </p>
+
+  <div class="card">
+    <h2>Block under review</h2>
+    <table>
+      <tr><th>Patient</th><td>{{ patient_label }}</td></tr>
+      <tr><th>Source scope</th><td>{{ scope_label }}</td></tr>
+      <tr><th>Block GUID</th><td><code>{{ block.guid }}</code></td></tr>
+      <tr><th>Block created</th><td>{{ block.created_at }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Lift form</h2>
+    <form action="{{ url_for('admin.block_lift_confirm', block_guid=block.guid) }}"
+          method="post">
+      <div class="form-group">
+        <label for="reason">
+          Reason
+          <span style="color:var(--danger);font-weight:400;">required</span>
+        </label>
+        <textarea id="reason" name="reason" class="form-control" rows="4"
+                  placeholder="Indispensable care because&hellip;"
+                  required></textarea>
+        <p style="color:var(--text-muted);font-size:0.9em;margin-top:0.2rem;">
+          Persisted verbatim into the audit row and the patient
+          notification. A compliance reviewer six months from now must
+          be able to read this and understand why the lift was
+          indispensable. Avoid &ldquo;background&rdquo; / &ldquo;patient
+          consented verbally&rdquo;; see runbook §3 for examples.
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label for="concept_guids">
+          Concept GUIDs (one per line)
+          <span style="color:var(--danger);font-weight:400;">required</span>
+        </label>
+        <textarea id="concept_guids" name="concept_guids" class="form-control"
+                  rows="5"
+                  placeholder="e.g.&#10;0bb7c4d4-1a4f-4b8e-9c1d-2a3b4c5d6e7f&#10;1cc8d5e5-2b5g-5c9f-0d2e-3b4c5d6e7f80"
+                  required></textarea>
+        <p style="color:var(--text-muted);font-size:0.9em;margin-top:0.2rem;">
+          Mechanical filter (legal 2026-06-04, required). The lift
+          exposes ONLY these concepts. Resolve concept names against
+          plan.pdhc before pasting — over-broad concept lists are the
+          most common pre-launch audit finding.
+        </p>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="expires_in_hours">Expires in (hours)</label>
+          <input id="expires_in_hours" name="expires_in_hours"
+                 class="form-control" type="number" min="1" step="1"
+                 value="{{ default_expires_in_hours }}">
+          <p style="color:var(--text-muted);font-size:0.9em;margin-top:0.2rem;">
+            Default 24h. Shorten if the indispensable need is briefer;
+            don't lengthen without a per-case justification in the
+            reason.
+          </p>
+        </div>
+        <div class="form-group">
+          <label for="from_date">From date <span style="color:var(--text-muted);font-weight:400;">optional</span></label>
+          <input id="from_date" name="from_date" class="form-control"
+                 type="text" placeholder="2024-01-01T00:00:00Z">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="until_date">Until date <span style="color:var(--text-muted);font-weight:400;">optional</span></label>
+          <input id="until_date" name="until_date" class="form-control"
+                 type="text" placeholder="2026-12-31T00:00:00Z">
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <p style="color:var(--text-muted);font-size:0.9em;">
+            Date range narrows the lift further — useful when the
+            relevant clinical event is from a known prior episode.
+          </p>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.6rem;margin-top:1rem;">
+        <button type="submit" class="btn btn-primary">
+          Review &rarr;
+        </button>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+{% endblock %}
