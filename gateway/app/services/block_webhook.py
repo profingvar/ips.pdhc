@@ -29,6 +29,8 @@ Event types emitted:
                         ``lifted_at`` (#202)
   block.re_imposed    — sweep detected an indispensable_care lift past
                         ``lift_expires_at`` (#202)
+  block.extended      — patient pushed ``expires_at`` forward via the
+                        patient portal (#199)
 
 Body shape (sorted keys, canonical JSON):
   {
@@ -59,6 +61,7 @@ log = logging.getLogger(__name__)
 _VALID_EVENTS = (
     "block.created", "block.lifted",
     "block.expired", "block.re_imposed",
+    "block.extended",
 )
 
 

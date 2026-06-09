@@ -126,16 +126,80 @@ def require_auth(f):
     return decorated
 
 
-def _auth_error(message: str):
+def require_patient(f):
+    """Decorator for the patient-portal surface (IPS Renov 3, #199).
+
+    Distinct from ``require_auth``: the patient identity comes from the
+    SSO access blob, not from a local IPS ``users`` row. A patient SSO
+    blob carries ``user_type == 'patient'`` and a top-level
+    ``patient_guid`` (see sso.pdhc auth_service.build_access_blob); we
+    expose those on ``g.access_blob`` and ``g.patient_guid``.
+
+    Auth failures are 401; user_type mismatch (e.g. a staff token hitting
+    a patient-portal endpoint) is 403 so the operator and the caller can
+    tell them apart in the logs.
+
+    Dev mode (``AUTH_DISABLED``): if the request carries an
+    ``X-Dev-Patient-Guid`` header, treat it as the authenticated patient.
+    Tests use this; production never sets ``AUTH_DISABLED``.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if current_app.config.get("AUTH_DISABLED"):
+            dev_guid = request.headers.get("X-Dev-Patient-Guid")
+            if not dev_guid:
+                return _auth_error("X-Dev-Patient-Guid required in AUTH_DISABLED dev mode")
+            g.access_blob = {
+                "user_type": "patient",
+                "patient_guid": dev_guid,
+                "session_id": request.headers.get("X-Operator-Session-Id"),
+            }
+            g.patient_guid = dev_guid
+            g.current_user = None
+            return f(*args, **kwargs)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header:
+            return _auth_error("Missing Authorization header")
+        if not auth_header.startswith("Bearer "):
+            return _auth_error("Patient-portal endpoints require a Bearer token")
+
+        token = auth_header[7:]
+        blob = resolve_sso_user(token)
+        if not blob:
+            return _auth_error("Invalid or expired token")
+        mcp = _must_change_password_response(blob)
+        if mcp is not None:
+            return mcp
+        if blob.get("user_type") != "patient":
+            return _auth_error(
+                "This endpoint is reserved for patient-portal callers", 403
+            )
+        patient_guid = blob.get("patient_guid")
+        if not patient_guid:
+            # SSO blob missing patient_guid — usually a misconfigured
+            # patient account on the SSO side, or a blob from a
+            # pre-#188 SSO. Refuse rather than silently fall through.
+            return _auth_error(
+                "SSO blob is missing patient_guid", 403
+            )
+        g.access_blob = blob
+        g.patient_guid = patient_guid
+        g.current_user = None
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _auth_error(message: str, code: int = 401):
     """Return a FHIR-style OperationOutcome for auth failures."""
     return jsonify({
         "resourceType": "OperationOutcome",
         "issue": [{
             "severity": "error",
-            "code": "security",
+            "code": "security" if code == 401 else "forbidden",
             "diagnostics": message,
         }]
-    }), 401
+    }), code
 
 
 def _must_change_password_response(blob: dict | None):
