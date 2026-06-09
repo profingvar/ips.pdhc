@@ -92,3 +92,39 @@ All edited files with full paths, updated after each change.
 - 2026-06-02: gateway/app/templates/docs_technical.html — bumped Clinics row in API surface table (4 → 5 endpoints), added "Patient ↔ clinic (organisation) relationship" sub-section under Data Model explaining many-to-many shape, clinic-as-organisation vocabulary, cross-service query path, and why FHIR `GET /Patient` deliberately has no clinic filter.
 - 2026-06-03: gateway/app/api/clinic_routes.py — new endpoint `POST /api/v1/clinics/<guid>/patients` for programmatic patient import. Accepts either a flat shape (family_name/given_name/gender/birth_date/identifier_*) or a full FHIR Patient resource under `fhir:`. Creates the PatientIndex via `create_resource("Patient", ...)` then INSERTs PatientClinicAssignment so the patient is queryable via the GET sibling. Used by sim.pdhc's Synthea importer (Shape C of the Synthea hookup, see sim.pdhc commit 5ae4822). Logs `clinic_patient_create` events; same `@require_auth` as siblings.
 - 2026-06-03: gateway/tests/test_api_endpoints.py — new `TestCreateClinicPatient` class, 5 tests: create from flat fields lands in roster, create from full FHIR body lands in roster, missing required fields → 400, unknown clinic → 404, full FHIR with wrong resourceType → 400. Brings ips.pdhc suite to 179/179.
+
+- 2026-06-09 (#198 IPS Renov 2 — PatientConsent schema + API + audit):
+  - gateway/app/models/patient_consent.py (NEW): peer model to PatientBlock.
+    Columns: guid pk, patient_guid (FK PatientIndex), grantee_caregiver_guid,
+    contract_guid (nullable, references contract.pdhc), granted_at,
+    granted_by_user_guid, granted_via enum('portal'|'in_person'|'paper'|'phone'|'other'),
+    granted_note, expires_at, revoked_at, revoked_by_user_guid,
+    revoked_reason, consented_concept_guids JSONB|NULL. `is_active()`
+    returns True iff revoked_at is NULL AND (expires_at is NULL OR > now).
+    `to_dict()` mirrors the block shape.
+  - gateway/app/models/__init__.py: register PatientConsent.
+  - gateway/app/api/consents_routes.py (NEW): three endpoints under
+    /api/v1/patients/<guid>/consents:
+      * POST                                       — grant
+      * GET ?active=true|false                     — list
+      * POST /<consent_guid>/revoke                — revoke
+    Auth mirrors blocks_routes: SU admin OR staff with a PatientClinicAssignment
+    to the patient. Duplicate active consent to the same grantee → 409. Concept-
+    narrowed grants accept a list of concept guids; full-caregiver grants leave
+    consented_concept_guids NULL. expires_at parsed via ISO-8601 (trailing Z
+    accepted). Each route emits an AuditLog event: consent.granted /
+    consent.revoked. Schema lands via the existing create_all bootstrap (ips
+    does not maintain Alembic versions despite having the harness — every
+    model addition since PatientBlock was added this way).
+  - gateway/app/__init__.py: register consents_bp.
+  - gateway/tests/test_consents_api.py (NEW, 19 tests):
+      * Grant: admin happy + audit row; staff-with-relationship; unrelated
+        staff 403; missing/invalid grantee 400; invalid granted_via 400;
+        duplicate active 409; concept-narrowed; bad concept guids 400;
+        expires_at parse; bad expires_at 400; patient 404.
+      * List: admin sees all; unrelated staff 403; active filter excludes
+        revoked rows; active=false includes them.
+      * Revoke: admin happy + audit row; double-revoke 409; not-found 404.
+      * Expiry: a past expires_at makes is_active() False; default active
+        list filter hides it.
+    Full ips suite 229/229 green (up from 179/179).
