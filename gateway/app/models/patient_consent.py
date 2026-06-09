@@ -39,8 +39,12 @@ def _as_aware(dt: datetime) -> datetime:
 
 
 # How the consent was captured. Validated at the API layer; kept as
-# plain strings (portable across PG/SQLite).
-CONSENT_GRANTED_VIA = ("portal", "in_person", "paper", "phone", "other")
+# plain strings (portable across PG/SQLite). 'contract' is the
+# auto-emit channel from contract.pdhc when a patient is in the
+# contract's signer[] (#231).
+CONSENT_GRANTED_VIA = (
+    "portal", "in_person", "paper", "phone", "contract", "other",
+)
 
 
 class PatientConsent(db.Model):
