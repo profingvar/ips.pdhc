@@ -78,6 +78,20 @@ def create_app(config_name: str | None = None) -> Flask:
     def index():
         return redirect(url_for("admin.dashboard"))
 
+    # Ticket #202 — `flask sweep-blocks` CLI.
+    from app.services.block_expiry_service import sweep as _sweep_blocks
+
+    @app.cli.command("sweep-blocks")
+    def _sweep_blocks_cli():  # noqa: D401
+        """Expire past-deadline blocks and re-impose timed-out
+        indispensable_care lifts. Run hourly from cron."""
+        import click as _click
+        out = _sweep_blocks()
+        _click.echo(
+            f"sweep-blocks expired={out['expired']['expired']} "
+            f"re_imposed={out['re_imposed']['re_imposed']}"
+        )
+
     # Create tables and bootstrap — guarded for concurrent gunicorn workers
     with app.app_context():
         try:

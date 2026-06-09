@@ -128,3 +128,57 @@ All edited files with full paths, updated after each change.
       * Expiry: a past expires_at makes is_active() False; default active
         list filter hides it.
     Full ips suite 229/229 green (up from 179/179).
+
+- 2026-06-09 (#202 IPS Renov 6 — background block expiry + cache-invalidation webhook):
+  - gateway/app/models/patient_block.py: new `expires_at` column
+    (nullable, mirrors PatientConsent shape). `is_active()` now
+    short-circuits to False when `expires_at` has passed regardless
+    of lift state. `to_dict()` surfaces the field.
+  - gateway/app/services/block_expiry_service.py (NEW):
+      * `expire_blocks()` flips rows where `expires_at < now AND
+        lifted_at IS NULL` to `lifted_at=expires_at`,
+        `lifted_reason='expired'`, `lift_kind=None`. Emits a
+        `block.expired` AuditLog row + dispatches the webhook.
+      * `re_impose_indispensable_lifts()` flips rows where
+        `lift_kind='indispensable_care' AND lift_expires_at < now`
+        back to fresh-active (clears the entire lift record).
+        Emits `block.re_imposed`.
+      * `sweep()` runs both passes; consumed by the CLI.
+  - gateway/app/services/block_webhook.py (NEW): outbound HMAC-SHA256
+    signed notifications. Header `X-PDHC-Signature: sha256=<hex>` +
+    `X-PDHC-Event: <event_type>`. Body is sorted-keys canonical JSON
+    carrying `event_type`, `block_guid`, `patient_guid`,
+    `source_scope_{type,id}`, `is_active`, `occurred_at`. One shared
+    IPS-level secret (`IPS_WEBHOOK_SECRET`) and a comma-separated
+    target list (`IPS_WEBHOOK_TARGETS`). Best-effort: per-target
+    failures count + log, never raise; `safe_dispatch()` wraps for
+    callers who must not surface errors. Uses `httpx` (matches ips
+    requirements.txt).
+  - gateway/app/api/blocks_routes.py: `create_block` and `lift_block`
+    now call `safe_dispatch('block.created'|'block.lifted', block)`
+    after `db.session.commit()` so a webhook failure can't roll back
+    the state change.
+  - gateway/app/__init__.py: registers the `flask sweep-blocks` CLI.
+    Operator cron snippet (hourly is fine for v1; ticket calls for
+    minute-cadence in v2 if blocks routinely carry short
+    expires_at):
+        0 * * * * cd /usr/local/www/pdhcips/gateway \
+                 && docker exec ips-app-1 flask sweep-blocks \
+                 >> shared/logs/block_sweep.log 2>&1
+  - gateway/app/config.py: new `IPS_WEBHOOK_SECRET` / `IPS_WEBHOOK_TARGETS`
+    / `IPS_WEBHOOK_TIMEOUT` config knobs.
+  - gateway/tests/test_block_expiry_and_webhook.py (NEW, 18 tests):
+      * Signing (2): signature format + value; canonical body shape.
+      * Dispatch (6): signs + posts each target; identical body and
+        signature across targets; skips when secret missing; skips
+        when target list empty; counts HTTP failures; rejects unknown
+        event_type; safe_dispatch swallows exceptions.
+      * Sweep — expire (4): past deadline -> flip + audit; future
+        deadline untouched; already-lifted untouched; no expires_at
+        untouched.
+      * Sweep — re-impose (3): past lift_expires_at -> clear lift +
+        audit; still-in-window untouched; consent lifts never re-imposed.
+      * Sweep one-shot (1): runs both passes in one call.
+      * Route end-to-end (2): create_block fires block.created;
+        lift_block fires block.lifted.
+    Full ips suite 247/247 green (up from 229/229).

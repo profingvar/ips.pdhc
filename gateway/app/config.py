@@ -28,6 +28,22 @@ class Config:
     APP_PORT = int(os.environ.get("APP_PORT", "9040"))
     ADMIN_PORT = int(os.environ.get("ADMIN_PORT", "9042"))
 
+    # Ticket #202 — block-state webhooks.
+    # IPS_WEBHOOK_SECRET: shared HMAC-SHA256 signing secret. Empty -> the
+    #   dispatcher logs a warning and skips delivery (the sweep + state
+    #   transitions still run; only the outbound notification is muted).
+    # IPS_WEBHOOK_TARGETS: comma-separated subscriber URLs. Each receives
+    #   the same signed payload.
+    IPS_WEBHOOK_SECRET = os.environ.get("IPS_WEBHOOK_SECRET", "")
+    IPS_WEBHOOK_TARGETS = [
+        u.strip()
+        for u in os.environ.get("IPS_WEBHOOK_TARGETS", "").split(",")
+        if u.strip()
+    ]
+    IPS_WEBHOOK_TIMEOUT = float(
+        os.environ.get("IPS_WEBHOOK_TIMEOUT", "5"),
+    )
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

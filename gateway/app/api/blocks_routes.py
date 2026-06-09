@@ -31,6 +31,7 @@ from app.models.patient_block import (
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services.audit_service import log_event
 from app.services.auth_service import require_auth
+from app.services.block_webhook import safe_dispatch as _emit_block_webhook
 
 
 bp = Blueprint("blocks_api", __name__, url_prefix="/api/v1/patients")
@@ -183,6 +184,9 @@ def create_block(patient_guid):
         },
     )
     db.session.commit()
+    # Ticket #202: invalidation hint for consumer caches (best-effort,
+    # post-commit so a webhook failure can't roll back the block write).
+    _emit_block_webhook("block.created", block)
     return jsonify(block.to_dict()), 201
 
 
@@ -348,6 +352,8 @@ def lift_block(patient_guid, block_guid):
         },
     )
     db.session.commit()
+    # Ticket #202: invalidation hint for consumer caches.
+    _emit_block_webhook("block.lifted", block)
     return jsonify(block.to_dict()), 200
 
 

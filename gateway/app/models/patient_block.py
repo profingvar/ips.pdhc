@@ -83,6 +83,14 @@ class PatientBlock(db.Model):
     created_by_user_guid: Mapped[uuid.UUID | None] = mapped_column(GUID())
     created_reason: Mapped[str | None] = mapped_column(Text)
 
+    # Optional time bound on the block itself. NULL = open-ended until
+    # explicitly lifted. When set and ``expires_at < now`` the IPS
+    # background sweep (#202) flips the row to ``lifted`` with
+    # ``lifted_reason='expired'`` and fires a block.expired webhook.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
     lifted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lifted_by_user_guid: Mapped[uuid.UUID | None] = mapped_column(GUID())
     lifted_reason: Mapped[str | None] = mapped_column(Text)
@@ -116,12 +124,25 @@ class PatientBlock(db.Model):
     def is_active(self, at: datetime | None = None) -> bool:
         """True when the block is currently blocking reads.
 
-        Returns False if the row has been lifted AND either the lift
-        is permanent (consent) OR an indispensable_care lift whose
-        ``lift_expires_at`` is still in the future. Indispensable-care
-        lifts whose expiry has passed are treated as re-imposed (the
-        background re-imposition job in #202 will persist this).
+        Returns False when:
+          - the row has been lifted AND the lift is permanent
+            (consent), OR
+          - the row has been lifted via indispensable_care and the
+            lift has not yet auto-re-asserted, OR
+          - the block itself has an ``expires_at`` that has passed
+            (treated as expired-by-time; #202).
+
+        Indispensable-care lifts whose ``lift_expires_at`` has passed
+        are treated as re-imposed (the IPS sweep job in #202 will
+        persist this; ``is_active`` reflects the truth even before the
+        sweep runs).
         """
+        now = at or utcnow()
+        # Time-bound expiry on the block itself wins over lift state —
+        # an expired block is no longer blocking, period.
+        if self.expires_at is not None and \
+                _as_aware(self.expires_at) <= _as_aware(now):
+            return False
         if self.lifted_at is None:
             return True
         if self.lift_kind == "consent":
@@ -129,7 +150,6 @@ class PatientBlock(db.Model):
         # indispensable_care: re-imposed once the lift expires
         if self.lift_expires_at is None:
             return False
-        now = at or utcnow()
         return _as_aware(self.lift_expires_at) < _as_aware(now)
 
     def to_dict(self) -> dict:
@@ -144,6 +164,9 @@ class PatientBlock(db.Model):
                 if self.created_by_user_guid else None
             ),
             "created_reason": self.created_reason,
+            "expires_at": (
+                self.expires_at.isoformat() if self.expires_at else None
+            ),
             "lifted_at": self.lifted_at.isoformat() if self.lifted_at else None,
             "lifted_by_user_guid": (
                 str(self.lifted_by_user_guid)
