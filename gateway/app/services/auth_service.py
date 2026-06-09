@@ -190,6 +190,94 @@ def require_patient(f):
     return decorated
 
 
+def require_patient_html(f):
+    """HTML-rendering counterpart of :func:`require_patient` (#245).
+
+    Used by the patient-portal HTML routes under /patient/*. Differs
+    from ``require_patient`` in three ways:
+
+      - On failure, renders an HTML page (``patient_portal_denied.html``)
+        instead of a JSON OperationOutcome.
+      - In prod, the identity comes from the Flask session
+        (``sso_token`` set by sso_routes.callback) — we then
+        re-validate it against SSO on each request, per the standing
+        ``/auth/me`` re-validation contract (CLAUDE.md §11). No
+        cached blob.
+      - Missing-session redirects to ``sso.login`` instead of returning
+        401, so a logged-out browser lands on the login page cleanly.
+
+    Dev mode (``AUTH_DISABLED``): ``session['dev_patient_guid']`` carries
+    the identity. Tests set it via ``client.session_transaction()``.
+    Falls back to the ``X-Dev-Patient-Guid`` header so API+HTML tests
+    share fixtures.
+    """
+    from flask import redirect, render_template, session, url_for
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if current_app.config.get("AUTH_DISABLED"):
+            dev_guid = (
+                session.get("dev_patient_guid")
+                or request.headers.get("X-Dev-Patient-Guid")
+            )
+            if not dev_guid:
+                return render_template(
+                    "patient_portal_denied.html",
+                    message=(
+                        "Dev mode: set session['dev_patient_guid'] or "
+                        "send X-Dev-Patient-Guid header."
+                    ),
+                ), 401
+            g.access_blob = {
+                "user_type": "patient",
+                "patient_guid": dev_guid,
+                "session_id": None,
+            }
+            g.patient_guid = dev_guid
+            g.current_user = None
+            return f(*args, **kwargs)
+
+        token = session.get("sso_token")
+        if not token:
+            session["sso_next"] = request.url
+            return redirect(url_for("sso.login"))
+
+        blob = resolve_sso_user(token)
+        if not blob:
+            session["sso_next"] = request.url
+            return redirect(url_for("sso.login"))
+
+        mcp = _must_change_password_response(blob)
+        if mcp is not None:
+            # In an HTML context, redirect the user to the
+            # change-password page rather than returning a JSON
+            # OperationOutcome.
+            base = current_app.config.get("OAUTH_BASE_URL", "").rstrip("/")
+            return redirect(f"{base}/change-password")
+
+        if blob.get("user_type") != "patient":
+            return render_template(
+                "patient_portal_denied.html",
+                message=(
+                    "This is the patient portal. You're signed in as "
+                    f"user_type={blob.get('user_type', '?')!r}."
+                ),
+            ), 403
+
+        patient_guid = blob.get("patient_guid")
+        if not patient_guid:
+            return render_template(
+                "patient_portal_denied.html",
+                message="SSO blob is missing patient_guid.",
+            ), 403
+
+        g.access_blob = blob
+        g.patient_guid = patient_guid
+        g.current_user = None
+        return f(*args, **kwargs)
+    return decorated
+
+
 def _auth_error(message: str, code: int = 401):
     """Return a FHIR-style OperationOutcome for auth failures."""
     return jsonify({

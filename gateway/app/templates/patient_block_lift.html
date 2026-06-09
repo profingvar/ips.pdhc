@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Häv spärr — PDHC{% endblock %}
+
+{% block content %}
+  {% include "_patient_portal_banners.html" %}
+
+  <div class="page-header">
+    <h1>Häv spärr</h1>
+  </div>
+  <p class="lead">
+    Du håller på att häva din spärr av <strong>{{ scope_label }}</strong>.
+    Efter detta kan vårdpersonal utanför den mottagningen återigen läsa
+    de uppgifter som registrerats där. Spärren kan återinföras när som
+    helst.
+  </p>
+
+  <div class="card">
+    <form action="{{ url_for('patient_portal.block_lift_submit', block_guid=block.guid) }}"
+          method="post">
+      <div class="form-group">
+        <label for="reason">Anledning (frivilligt)</label>
+        <textarea id="reason" name="reason" class="form-control"
+                  rows="2"
+                  placeholder="t.ex. 'Vill dela igen efter ny bedömning'"></textarea>
+      </div>
+      <div style="display:flex;gap:0.5rem;">
+        <button type="submit" class="btn btn-danger">Häv spärren</button>
+        <a href="{{ url_for('patient_portal.blocks_list') }}"
+           class="btn btn-secondary">Avbryt</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

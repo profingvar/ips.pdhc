@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Mina spärrar — PDHC{% endblock %}
+
+{% block content %}
+  {% include "_patient_portal_banners.html" %}
+
+  <div class="page-header">
+    <h1>{{ block_list_copy.title or 'Mina spärrar' }}</h1>
+  </div>
+
+  <div class="card">
+    <h2>Aktiva och tidigare spärrar</h2>
+    {% if not blocks %}
+      <p style="color:var(--text-muted);">
+        {{ block_list_copy.empty_state or 'Du har inga aktiva spärrar.' }}
+      </p>
+    {% else %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Mottagning</th>
+              <th>Status</th>
+              <th>Skapad</th>
+              <th>Förfaller</th>
+              <th>Åtgärd</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in blocks %}
+              <tr>
+                <td>{{ b.source_scope_name }}</td>
+                <td><span class="badge {{ b.status_class }}">{{ b.status_label }}</span></td>
+                <td>{{ b.created_at.strftime('%Y-%m-%d') if b.created_at else '—' }}</td>
+                <td>{{ b.expires_at.strftime('%Y-%m-%d') if b.expires_at else 'Tills vidare' }}</td>
+                <td>
+                  {% if b.is_active %}
+                    <a href="{{ url_for('patient_portal.block_lift_form', block_guid=b.guid) }}"
+                       class="btn btn-sm btn-secondary">{{ block_list_copy.lift_button or 'Häv' }}</a>
+                    <a href="{{ url_for('patient_portal.block_extend_form', block_guid=b.guid) }}"
+                       class="btn btn-sm btn-secondary">{{ block_list_copy.extend_button or 'Förläng' }}</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>{{ block_create_copy.title or 'Skapa ny spärr' }}</h2>
+    <p style="color:var(--text-muted);font-size:0.95em;">
+      {{ block_create_copy.intro|default('') }}
+    </p>
+    <form action="{{ url_for('patient_portal.blocks_create') }}" method="post">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="source_scope_id">Mottagning</label>
+          <select id="source_scope_id" name="source_scope_id"
+                  class="form-control" required>
+            <option value="">— välj —</option>
+            {% for c in clinics %}
+              <option value="{{ c.guid }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="expires_at">Förfaller (frivilligt)</label>
+          <input id="expires_at" name="expires_at" class="form-control"
+                 type="date" placeholder="YYYY-MM-DD">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="reason">Anledning (frivilligt)</label>
+        <textarea id="reason" name="reason" class="form-control"
+                  rows="2"></textarea>
+      </div>
+
+      {% if block_create_copy.what_happens %}
+        <div style="background:var(--code-bg);border-radius:5px;padding:0.6rem 0.75rem;margin:0.5rem 0;font-size:0.95em;">
+          <strong>Vad händer:</strong>
+          <ul style="margin:0.3rem 0 0 1.2rem;">
+            {% for line in block_create_copy.what_happens %}
+              <li>{{ line }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      {% if block_create_copy.what_still_works %}
+        <div style="background:#fffbeb;border-radius:5px;padding:0.6rem 0.75rem;margin:0.5rem 0;font-size:0.95em;">
+          <strong>Vad fungerar fortfarande:</strong>
+          <ul style="margin:0.3rem 0 0 1.2rem;">
+            {% for line in block_create_copy.what_still_works %}
+              <li>{{ line }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <p style="font-size:0.85em;color:var(--text-muted);margin-top:0.5rem;">
+        {{ block_create_copy.legal_basis|default('') }}
+      </p>
+
+      <button type="submit" class="btn btn-primary">
+        {{ block_create_copy.confirm_button or 'Bekräfta spärren' }}
+      </button>
+    </form>
+  </div>
+{% endblock %}

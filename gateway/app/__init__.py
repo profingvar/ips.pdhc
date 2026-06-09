@@ -56,6 +56,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.patient_blocks_routes import bp as patient_blocks_bp
     from app.api.patient_consents_routes import bp as patient_consents_bp
     from app.api.copy_routes import bp as copy_bp
+    from app.patient_portal import bp as patient_portal_bp
     from app.fhir.fhir_routes import bp as fhir_bp
 
     app.register_blueprint(health_bp)
@@ -71,6 +72,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(patient_blocks_bp)
     app.register_blueprint(patient_consents_bp)
     app.register_blueprint(copy_bp)
+    app.register_blueprint(patient_portal_bp)
     app.register_blueprint(fhir_bp)
 
     # SSO login/callback/logout

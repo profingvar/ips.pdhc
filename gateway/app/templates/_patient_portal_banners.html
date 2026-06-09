@@ -1,0 +1,23 @@
+{# Banners shared across all patient-portal pages (#245).
+   - legal_review_status banner when the #210 copy bundle hasn't
+     been legally cleared.
+   - Active indispensable-care lift notification — patient sees
+     the access on every portal page until the lift expires. #}
+
+{% if not copy_approved %}
+  <div class="flash flash-warning" role="alert" aria-live="polite">
+    <strong>Förhandsversion av text:</strong>
+    Texten i denna portal är inte juridiskt slutgranskad
+    (<code>legal_review_status: {{ copy_metadata.legal_review_status or '?' }}</code>).
+    Detta är förväntat under utveckling. Produktionsanvändning kräver godkänd version.
+  </div>
+{% endif %}
+
+{% if indispensable_banner %}
+  <div class="flash flash-error" role="alert" aria-live="polite"
+       style="white-space:pre-wrap;">
+    <strong>{{ indispensable_banner.subject }}</strong>
+
+{{ indispensable_banner.body }}
+  </div>
+{% endif %}

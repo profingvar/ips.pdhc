@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Återkalla samtycke — PDHC{% endblock %}
+
+{% block content %}
+  {% include "_patient_portal_banners.html" %}
+
+  <div class="page-header">
+    <h1>Återkalla samtycke</h1>
+  </div>
+  <p class="lead">
+    Du håller på att återkalla ditt samtycke till
+    <code>{{ consent.grantee_caregiver_guid }}</code>. Efter detta
+    kan vårdgivaren inte längre läsa dina uppgifter via sammanhållen
+    journalföring (lag 2022:913 § 5).
+  </p>
+  <p style="color:var(--text-muted);font-size:0.95em;">
+    Tidigare uppslag som vårdgivaren redan gjort förblir i loggen —
+    återkallande gäller framåt i tiden, inte retroaktivt.
+  </p>
+
+  <div class="card">
+    <form action="{{ url_for('patient_portal.consent_revoke_submit', consent_guid=consent.guid) }}"
+          method="post">
+      <div class="form-group">
+        <label for="reason">Anledning (frivilligt)</label>
+        <textarea id="reason" name="reason" class="form-control"
+                  rows="2"></textarea>
+      </div>
+      <div style="display:flex;gap:0.5rem;">
+        <button type="submit" class="btn btn-danger">Återkalla</button>
+        <a href="{{ url_for('patient_portal.consents_list') }}"
+           class="btn btn-secondary">Avbryt</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

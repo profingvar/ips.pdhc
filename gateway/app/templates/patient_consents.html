@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Mina samtycken — PDHC{% endblock %}
+
+{% block content %}
+  {% include "_patient_portal_banners.html" %}
+
+  <div class="page-header">
+    <h1>Mina samtycken</h1>
+  </div>
+  <p class="lead">
+    Här kan du ge samtycke åt en annan vårdgivare att läsa dina
+    vårduppgifter (sammanhållen vård enligt lag 2022:913 § 5).
+    Samtycket kan återkallas när som helst.
+  </p>
+
+  <div class="card">
+    <h2>Aktiva samtycken</h2>
+    {% if not consents %}
+      <p style="color:var(--text-muted);">
+        Du har inga aktiva samtycken.
+      </p>
+    {% else %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Vårdgivare</th>
+              <th>Status</th>
+              <th>Skapad</th>
+              <th>Förfaller</th>
+              <th>Åtgärd</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in consents %}
+              <tr>
+                <td><code>{{ c.grantee_caregiver_guid }}</code></td>
+                <td>
+                  {% if c.is_active %}
+                    <span class="badge badge-info">Aktivt</span>
+                  {% elif c.revoked_at %}
+                    <span class="badge badge-success">Återkallat</span>
+                  {% else %}
+                    <span class="badge badge-warning">Utgånget</span>
+                  {% endif %}
+                </td>
+                <td>{{ c.granted_at[:10] if c.granted_at else '—' }}</td>
+                <td>{{ c.expires_at[:10] if c.expires_at else 'Tills vidare' }}</td>
+                <td>
+                  {% if c.is_active %}
+                    <a href="{{ url_for('patient_portal.consent_revoke_form', consent_guid=c.guid) }}"
+                       class="btn btn-sm btn-secondary">Återkalla</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Ge nytt samtycke</h2>
+    <p style="color:var(--text-muted);font-size:0.95em;">
+      Genom att ge samtycke tillåter du att den valda vårdgivaren får
+      läsa dina vårduppgifter från andra vårdgivare som ingår i
+      sammanhållen journalföring. Du kan återkalla samtycket när som
+      helst — tidigare uppslag förblir i loggen.
+    </p>
+    <form action="{{ url_for('patient_portal.consents_create') }}" method="post">
+      <div class="form-group">
+        <label for="grantee_caregiver_guid">Vårdgivarens GUID</label>
+        <input id="grantee_caregiver_guid" name="grantee_caregiver_guid"
+               class="form-control" type="text"
+               placeholder="00000000-0000-0000-0000-000000000000"
+               required>
+        <p style="color:var(--text-muted);font-size:0.85em;margin-top:0.2rem;">
+          Du får detta GUID från vårdgivaren. (Senare version: sökruta som
+          slår upp vårdgivare via SSO.)
+        </p>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="expires_at">Förfaller (frivilligt)</label>
+          <input id="expires_at" name="expires_at" class="form-control"
+                 type="date">
+        </div>
+        <div class="form-group">
+          <label for="granted_note">Anteckning (frivilligt)</label>
+          <input id="granted_note" name="granted_note" class="form-control"
+                 type="text" placeholder="t.ex. 'för diabetesmottagningen'">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">
+        Registrera samtycke
+      </button>
+    </form>
+  </div>
+{% endblock %}

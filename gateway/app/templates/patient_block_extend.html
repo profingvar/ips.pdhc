@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Förläng spärr — PDHC{% endblock %}
+
+{% block content %}
+  {% include "_patient_portal_banners.html" %}
+
+  <div class="page-header">
+    <h1>Förläng spärr</h1>
+  </div>
+  <p class="lead">
+    Du håller på att förlänga din spärr av <strong>{{ scope_label }}</strong>.
+    {% if block.expires_at %}
+      Nuvarande förfallodatum: <strong>{{ block.expires_at.strftime('%Y-%m-%d %H:%M UTC') }}</strong>.
+    {% else %}
+      Spärren har för närvarande inget förfallodatum.
+    {% endif %}
+  </p>
+
+  <div class="card">
+    <h2>Snabbval</h2>
+    <p style="color:var(--text-muted);font-size:0.95em;">
+      Förläng med ett fast antal dagar från nuvarande förfallodatum
+      (eller från nu om inget är satt).
+    </p>
+    <form action="{{ url_for('patient_portal.block_extend_submit', block_guid=block.guid) }}"
+          method="post" style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;">
+      {% for n in [7, 30, 90, 365] %}
+        <button type="submit" name="quick_days" value="{{ n }}"
+                class="btn btn-secondary">+{{ n }} dagar</button>
+      {% endfor %}
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Exakt datum</h2>
+    <p style="color:var(--text-muted);font-size:0.95em;">
+      Ange ett specifikt förfallodatum.
+    </p>
+    <form action="{{ url_for('patient_portal.block_extend_submit', block_guid=block.guid) }}"
+          method="post">
+      <div class="form-group">
+        <label for="expires_at">Nytt förfallodatum</label>
+        <input id="expires_at" name="expires_at" class="form-control"
+               type="date" required>
+      </div>
+      <div style="display:flex;gap:0.5rem;">
+        <button type="submit" class="btn btn-primary">Förläng</button>
+        <a href="{{ url_for('patient_portal.blocks_list') }}"
+           class="btn btn-secondary">Avbryt</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

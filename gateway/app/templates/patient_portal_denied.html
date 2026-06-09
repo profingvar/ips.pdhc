@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Patientportal — åtkomst nekad{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Patientportal — åtkomst nekad</h1>
+  </div>
+  <div class="card">
+    <p>{{ message }}</p>
+    <p style="margin-top:0.6rem;">
+      <a href="{{ url_for('sso.login') }}" class="btn btn-primary">
+        Logga in
+      </a>
+    </p>
+  </div>
+{% endblock %}
