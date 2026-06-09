@@ -211,3 +211,38 @@ All edited files with full paths, updated after each change.
         the #202 sweep flips the block back to fresh-active.
       * Webhook (1): block.lifted fires post-commit.
     Full ips suite 264/264 green (up from 247/247).
+
+- 2026-06-09 (#204 IPS Renov 8 — cross-caregiver block check):
+  - gateway/app/api/blocks_routes.py: new endpoint
+    `GET /api/v1/patients/<guid>/blocks/check?source_clinic_id=&source_caregiver_id=`
+    that answers "is data from source X readable for patient P?" in
+    one round-trip, consulting BOTH clinic-level AND caregiver-level
+    blocks. The consumer resolves `source_caregiver_id` from the SSO
+    Phase 1 (#188) `organization_caregivers` blob; passing it lets
+    one query cover the entire caregiver subtree without enumerating
+    its clinics. Returns `{is_blocked, blocking_scopes: [{scope_type,
+    scope_id, block_guid, lift_kind, lift_concept_guids,
+    lift_from_date, lift_until_date, lift_expires_at}]}`. Tightened
+    matching: clinic-scope rows match clinic candidate; caregiver-scope
+    rows match caregiver candidate; no cross-bleed if guids collide.
+    Auth: no PatientClinicAssignment required — this is the predicate
+    consulted on cross-caregiver reads where the relationship is the
+    very thing being protected.
+  - gateway/tests/test_blocks_check_cross_caregiver.py (NEW, 13 tests):
+      * Round-trip (1): create + list + lift a caregiver-scope block;
+        AuditLog has block.created and block.lifted rows.
+      * Shape (5): no blocks → not blocked; missing/bad clinic id
+        → 400; bad caregiver id → 400; unknown patient → 404.
+      * Clinic-level (1): clinic-scope block blocks only that clinic.
+      * Caregiver-level (3): caregiver-scope block hides every
+        clinic under that caregiver; doesn't bleed to other caregivers'
+        clinics; consumer that omits source_caregiver_id is
+        backwards-compatible (sees clinic-level only).
+      * Lift propagation (1): lifting a caregiver-level block clears
+        the verdict for every clinic in the subtree in one action.
+      * Combined blocks (1): both scopes blocked → both surface;
+        consumer can pick whichever lift it consults.
+      * Lift surfaces in check (1): an active indispensable_care
+        lift surfaces with its concept_guids + date narrowing + expiry
+        so the consumer can apply the mechanical filter downstream.
+    Full ips suite 277/277 (was 264/264).

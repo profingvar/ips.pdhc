@@ -394,6 +394,159 @@ def block_metadata(patient_guid):
 
 
 # ---------------------------------------------------------------------------
+# Cross-caregiver block check — IPS Renov 8 (#204)
+# ---------------------------------------------------------------------------
+
+@bp.route("/<patient_guid>/blocks/check", methods=["GET"])
+@require_auth
+def check_block(patient_guid):
+    """Answer "is data from source X readable for patient P?" in one
+    round-trip, consulting BOTH clinic-level AND caregiver-level
+    blocks (Lag 2022:913 § 5 cohesive-care semantics).
+
+    Query string:
+      source_clinic_id        (required)  — the clinic that authored the data
+      source_caregiver_id     (optional)  — the caregiver under which that
+                                            clinic sits. Consumers resolve
+                                            this from the SSO Phase 1 #188
+                                            ``organization_caregivers`` blob
+                                            field. When omitted, only
+                                            clinic-level blocks are
+                                            considered.
+
+    A caregiver-level block hides ALL clinics under that caregiver —
+    the consumer doesn't have to enumerate them; passing
+    ``source_caregiver_id`` is enough.
+
+    Response::
+
+      {
+        "patient_guid": "...",
+        "source_clinic_id": "...",
+        "source_caregiver_id": "..." | null,
+        "is_blocked": true | false,
+        "blocking_scopes": [
+          {"scope_type": "clinic"|"caregiver",
+           "scope_id": "...",
+           "block_guid": "...",
+           "lift_kind": "consent"|"indispensable_care"|null,
+           "lift_concept_guids": [...] | null,
+           "lift_from_date": "..." | null,
+           "lift_until_date": "..." | null,
+           "lift_expires_at": "..." | null}
+        ]
+      }
+
+    ``is_blocked`` is True iff at least one of the matching scopes
+    has ``is_active()`` true at request time. ``blocking_scopes``
+    lists EVERY matching scope (whether currently active or lifted)
+    so the consumer can apply the mechanical filter from any
+    indispensable_care lift.
+
+    Auth: no patient-clinic relationship required. This is a
+    read-only predicate against the patient's *own* block list and
+    is consulted on every cross-caregiver read; it must work for
+    callers who don't yet have a relationship to the patient (that's
+    precisely the case the spärr is protecting against).
+    """
+    patient = _patient_or_404(patient_guid)
+    if patient is None:
+        return _bad("Patient not found", 404)
+
+    source_clinic_id_raw = (
+        request.args.get("source_clinic_id") or ""
+    ).strip()
+    source_caregiver_id_raw = (
+        request.args.get("source_caregiver_id") or ""
+    ).strip()
+
+    if not source_clinic_id_raw:
+        return _bad("source_clinic_id is required", 400)
+
+    try:
+        source_clinic_id = UUID(str(source_clinic_id_raw))
+    except (ValueError, TypeError):
+        return _bad("source_clinic_id must be a valid UUID", 400)
+
+    source_caregiver_id = None
+    if source_caregiver_id_raw:
+        try:
+            source_caregiver_id = UUID(str(source_caregiver_id_raw))
+        except (ValueError, TypeError):
+            return _bad(
+                "source_caregiver_id must be a valid UUID", 400,
+            )
+
+    candidate_ids = [source_clinic_id]
+    if source_caregiver_id is not None:
+        candidate_ids.append(source_caregiver_id)
+
+    rows = (
+        db.session.query(PatientBlock)
+        .filter(
+            PatientBlock.patient_guid == patient.guid,
+            PatientBlock.source_scope_id.in_(candidate_ids),
+        )
+        .all()
+    )
+
+    # Tighten the match: a clinic-scope block only counts when the
+    # scope_id matches the clinic candidate; a caregiver-scope block
+    # only when it matches the caregiver candidate. (Without this a
+    # caregiver block whose guid happened to equal the clinic guid
+    # would be a false hit — unlikely in practice but cheap to be
+    # principled about.)
+    matching = []
+    for r in rows:
+        if (
+            r.source_scope_type == "clinic"
+            and r.source_scope_id == source_clinic_id
+        ):
+            matching.append(r)
+        elif (
+            r.source_scope_type == "caregiver"
+            and source_caregiver_id is not None
+            and r.source_scope_id == source_caregiver_id
+        ):
+            matching.append(r)
+
+    blocking_scopes = [
+        {
+            "scope_type": r.source_scope_type,
+            "scope_id": str(r.source_scope_id),
+            "block_guid": str(r.guid),
+            "lift_kind": r.lift_kind,
+            "lift_concept_guids": r.lift_concept_guids,
+            "lift_from_date": (
+                r.lift_from_date.isoformat()
+                if r.lift_from_date else None
+            ),
+            "lift_until_date": (
+                r.lift_until_date.isoformat()
+                if r.lift_until_date else None
+            ),
+            "lift_expires_at": (
+                r.lift_expires_at.isoformat()
+                if r.lift_expires_at else None
+            ),
+        }
+        for r in matching
+    ]
+    is_blocked = any(r.is_active() for r in matching)
+
+    return jsonify({
+        "patient_guid": str(patient.guid),
+        "source_clinic_id": str(source_clinic_id),
+        "source_caregiver_id": (
+            str(source_caregiver_id)
+            if source_caregiver_id else None
+        ),
+        "is_blocked": is_blocked,
+        "blocking_scopes": blocking_scopes,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
