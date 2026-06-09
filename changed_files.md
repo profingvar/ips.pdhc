@@ -182,3 +182,32 @@ All edited files with full paths, updated after each change.
       * Route end-to-end (2): create_block fires block.created;
         lift_block fires block.lifted.
     Full ips suite 247/247 green (up from 229/229).
+
+- 2026-06-09 (#201 IPS Renov 5 — admin indispensable-care block lift):
+  - gateway/app/api/admin_blocks_routes.py (NEW): new blueprint
+    `admin_blocks_api` at `/api/v1/admin/blocks/<block_guid>/lift`.
+    POST endpoint restricted to SU admin OR roles in
+    `IPS_INDISPENSABLE_LIFT_ROLES` (default `physician,admin`).
+    Body: `reason` (required, non-empty), `concept_guids` (required,
+    non-empty, all valid UUIDs), `expires_in` (seconds, default 24h),
+    optional `from_date` / `until_date` (ISO-8601 narrowing).
+    On success: sets `lift_kind='indispensable_care'`, `lifted_by_user_guid`,
+    `lifted_reason`, `lift_concept_guids`, `lift_expires_at`. Audit row
+    has `event_type='block.lifted'`, `detail.mechanism='indispensable_care'`,
+    `detail.actor_user_guid`, `detail.reason` verbatim, `detail.admin_route=True`.
+    Webhook (#202) fires `block.lifted` post-commit.
+    Returns 200 (lifted), 400 (missing/invalid field), 403 (role gate),
+    404 (block not found / bad guid), 409 (already lifted).
+  - gateway/app/__init__.py: register `admin_blocks_bp`.
+  - gateway/tests/test_admin_blocks_lift.py (NEW, 17 tests):
+      * Role gate (3): SU admin lifts, physician role lifts, operator 403.
+      * Validation (9): missing/whitespace reason 400; missing concepts 400;
+        bad concept-guid shape 400; negative expires_in 400; bad ISO date 400;
+        invalid block_guid format 404; unknown block 404; double-lift 409.
+      * State + audit (3): persists all lift fields with 24h default;
+        custom expires_in honoured; audit row carries mechanism + actor +
+        reason verbatim + admin_route=True.
+      * Auto-re-impose integration (1): after lift_expires_at passes,
+        the #202 sweep flips the block back to fresh-active.
+      * Webhook (1): block.lifted fires post-commit.
+    Full ips suite 264/264 green (up from 247/247).
