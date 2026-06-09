@@ -6,6 +6,11 @@ with a written justification, *only* for an explicit concept set,
 and *only* for 24 hours by default (the lift auto-re-asserts via the
 #202 background sweep at ``lift_expires_at``).
 
+**Operator runbook**: ``docs/sparr_operator_runbook.md`` (ticket #209).
+When the admin lift HTML form is built, it must link to that runbook
+so the clinician sees the legal framing + "what counts as
+indispensable" examples before submitting the form.
+
 Distinct from the patient-scoped lift route in ``blocks_routes`` —
 that route handles ``lift_kind='consent'`` (the patient ok'ing the
 read) AND ``lift_kind='indispensable_care'``, but auth there only
