@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "version": "0.1.0-draft",
+    "language_primary": "sv",
+    "languages": ["sv", "en"],
+    "legal_review_status": "draft",
+    "legal_review_notes": "Provisional copy for ticket #210. Wording must not promise more protection than PDL Ch 4 §§ 4-5 + Lag (2022:913) § 5 actually provide. Counsel review required before this copy is rendered on patient-portal surfaces in production. Pay particular attention to the indispensable_care_notification block — it must remain factual ('a staff member accessed your data, this is allowed under § 5') rather than apologetic or promissory.",
+    "ticket": "#210",
+    "depends_on": ["#197", "#199", "#202"]
+  },
+
+  "block_create_confirmation": {
+    "sv": {
+      "title": "Spärr av din vårddata",
+      "intro": "Du håller på att spärra din vårddata från {source_scope_name}.",
+      "what_happens": [
+        "Vårdpersonal utanför {source_scope_name} kommer inte att kunna läsa data som registrerats där om dig.",
+        "Vårdpersonal vid {source_scope_name} kan fortfarande läsa och dokumentera i din journal där.",
+        "Att en spärr finns syns för all vårdpersonal som söker på dig, men de ser inte vilken vårdgivare eller mottagning du har spärrat (PDL kap 4 § 4 tredje stycket)."
+      ],
+      "what_still_works": [
+        "Vid oundgänglig vård får vårdpersonal tillgång till spärrade uppgifter (PDL kap 4 § 5). Du får i så fall en notis och kan granska loggen.",
+        "Du kan när som helst häva spärren helt själv, eller låta den gå ut vid det förfallodatum du har valt."
+      ],
+      "legal_basis": "Patientdatalagen (2008:355) kap 4 § 4.",
+      "confirm_button": "Bekräfta spärren",
+      "cancel_button": "Avbryt"
+    },
+    "en": {
+      "title": "Block your care data",
+      "intro": "You are about to block data from {source_scope_name}.",
+      "what_happens": [
+        "Care staff outside {source_scope_name} will not be able to read data recorded there about you.",
+        "Care staff at {source_scope_name} itself can still read and write your record there.",
+        "That a block exists is visible to any care professional who looks you up, but they cannot see which caregiver or clinic you have blocked (PDL Ch 4 § 4 third paragraph)."
+      ],
+      "what_still_works": [
+        "In cases of indispensable care, staff may access the blocked data (PDL Ch 4 § 5). You will be notified and can review the access log.",
+        "You can lift the block yourself at any time, or let it expire on the date you choose."
+      ],
+      "legal_basis": "Patient Data Act (2008:355) Chapter 4 § 4.",
+      "confirm_button": "Confirm the block",
+      "cancel_button": "Cancel"
+    }
+  },
+
+  "block_list": {
+    "sv": {
+      "title": "Dina spärrar",
+      "empty_state": "Du har inga aktiva spärrar.",
+      "active_label": "Aktiv",
+      "lifted_label": "Hävd",
+      "expired_label": "Utgången",
+      "indispensable_lift_active_label": "Tillfälligt tillgänglig (oundgänglig vård)",
+      "row_format": "{source_scope_name} — spärrad sedan {created_at}",
+      "expires_at_format": "Spärren upphör automatiskt {expires_at}.",
+      "open_audit_link": "Visa logg",
+      "lift_button": "Häv spärren",
+      "extend_button": "Förläng spärren"
+    },
+    "en": {
+      "title": "Your blocks",
+      "empty_state": "You have no active blocks.",
+      "active_label": "Active",
+      "lifted_label": "Lifted",
+      "expired_label": "Expired",
+      "indispensable_lift_active_label": "Temporarily accessible (indispensable care)",
+      "row_format": "{source_scope_name} — blocked since {created_at}",
+      "expires_at_format": "This block will expire automatically on {expires_at}.",
+      "open_audit_link": "View log",
+      "lift_button": "Lift the block",
+      "extend_button": "Extend the block"
+    }
+  },
+
+  "indispensable_care_notification": {
+    "sv": {
+      "subject": "Spärrad vårddata har använts vid oundgänglig vård",
+      "body": "En vårdpersonal vid {caregiver_name} har {accessed_at} läst din spärrade vårddata. Anledningen som angavs var: \"{reason}\".\n\nDetta är tillåtet enligt patientdatalagen kap 4 § 5 när det är oundgängligt för att den vård du behöver ska kunna ges. Vad personalen fick se var begränsat till de uppgifter som klassificeras som oundgängliga ({concept_summary}) inom tidsfönstret {from_date}–{until_date}.\n\nÅtkomsten är tidsbegränsad och löper ut {expires_at} — därefter återinträder spärren automatiskt.\n\nDu kan granska hela loggen för åtkomsten här: {audit_link}\n\nOm du har frågor om åtkomsten, kontakta {caregiver_contact}.",
+      "audit_link_label": "Granska logg",
+      "footer": "Detta är en automatiskt utskickad notis från PDHC."
+    },
+    "en": {
+      "subject": "Blocked care data was accessed under indispensable care",
+      "body": "A care professional at {caregiver_name} accessed your blocked care data on {accessed_at}. The reason given was: \"{reason}\".\n\nThis is allowed under the Patient Data Act Chapter 4 § 5 when it is indispensable for the care you need to receive. What the staff could see was limited to the data items classified as indispensable ({concept_summary}) within the time window {from_date}–{until_date}.\n\nThis access is time-bound and expires on {expires_at} — the block re-imposes itself automatically afterwards.\n\nYou can review the full access log here: {audit_link}\n\nIf you have questions about this access, contact {caregiver_contact}.",
+      "audit_link_label": "Open access log",
+      "footer": "This is an automated notification from PDHC."
+    }
+  },
+
+  "common": {
+    "sv": {
+      "legal_reference_label": "Rättslig grund",
+      "audit_link_label": "Granska logg",
+      "language_name": "Svenska"
+    },
+    "en": {
+      "legal_reference_label": "Legal basis",
+      "audit_link_label": "View log",
+      "language_name": "English"
+    }
+  }
+}
