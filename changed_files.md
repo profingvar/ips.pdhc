@@ -246,3 +246,17 @@ All edited files with full paths, updated after each change.
         lift surfaces with its concept_guids + date narrowing + expiry
         so the consumer can apply the mechanical filter downstream.
     Full ips suite 277/277 (was 264/264).
+
+- 2026-06-09 (#208 Spärr ops — historical-data migration confirmation):
+  - docs/technical.md (NEW): negative-confirmation note in the
+    "Spärr — historical data migration confirmation" section. Swept
+    `ips_db`, `dashboard_pdhc_db`, `gateway_pdhc_db`,
+    `request_pdhc_db` schemas for any column name matching
+    share/hidden/opt/nopat/exclud/spar/no_disclose — 0 hits across
+    all 4 schemas. Swept IPS `fhir_resources.resource_json` for
+    Patient rows carrying `NOPAT`/`confidentiality`/`restricted` or
+    any populated `meta.tag[]` — 0 hits. Swept dashboard
+    `observation_cache.raw` for the same security-label strings — 0
+    hits. Documented the sweep SQL for reproducibility. No one-off
+    PatientBlock migration owed from legacy data; conclusion records
+    that future audits don't need to re-ask the question.
