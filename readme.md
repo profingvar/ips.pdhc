@@ -76,6 +76,33 @@ Single script: kill ports 9040–9043, activate venv, start Docker (DB), start F
 
 Models: `User`, `Clinic`, `UserClinicAssignment`, `ApiKey`, `FhirResource`, `PatientIndex`, `PatientClinicAssignment`, `IpsCard`, `IpsSnapshot`, `PushDestination`, `PushJob`, `AuditLog`, `CapabilityStatement`.
 
+#### Note on `clinic_guid` vs the platform-canonical `provider_org_guid` (#294 RFC H3, 2026-06-28)
+
+`Clinic.guid` (and `PatientClinicAssignment.clinic_guid`,
+`UserClinicAssignment.clinic_guid`) semantically **equals**
+`provider_org_guid` in the platform-wide canonical clinical-context
+schema (see `T7_sidewinder/plans/pdhc_clinical_context_harmonisation_plan.md`).
+
+ips.pdhc keeps the name `clinic_guid` internally because this service
+is the only place that models the **patient-org assignment roster**
+(`PatientClinicAssignment` is M2M between Patient and Clinic), and
+"clinic" is the natural local term inside this roster. The canonical
+schema is NOT expanded to a 13th field — downstream consumers that
+need the platform-wide identifier should read `clinic_guid` from this
+service's APIs and treat it as `provider_org_guid` semantically.
+
+Equivalences:
+
+| ips.pdhc name | Canonical schema name | Notes |
+|---|---|---|
+| `Clinic.guid`                          | `provider_org_guid` | The organisation that performs measurements. |
+| `PatientClinicAssignment.clinic_guid`  | `provider_org_guid` | Roster row linking a patient to a clinic. |
+| `UserClinicAssignment.clinic_guid`     | `provider_org_guid` | Roster row linking a user to a clinic. |
+
+Rule: do not rename `clinic_guid` inside ips.pdhc. Do not introduce
+`clinic_guid` as a new column anywhere outside ips.pdhc — use
+`provider_org_guid`.
+
 ### 2.b Initialise Alembic and create initial migration
 
 ### 2.c Write bootstrap superuser logic
