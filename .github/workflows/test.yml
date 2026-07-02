@@ -1,0 +1,50 @@
+name: pytest
+
+# Ticket #389 (rollup #349) — first CI for ips.pdhc. Runs the pytest
+# suite on every push and PR. Mirrors the pattern established by
+# plan.pdhc's test.yml, termbank's (#358), and request.pdhc's (#376).
+
+on:
+  push:
+    paths:
+      - 'gateway/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'gateway/**'
+      - '.github/workflows/test.yml'
+  workflow_dispatch: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          # 3.12 matches the Dockerfile base image (python:3.12-slim).
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: gateway/requirements.txt
+
+      - name: Install dependencies
+        working-directory: gateway
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: gateway
+        env:
+          # Test config — config.TestingConfig selects sqlite:///:memory:
+          # and forces AUTH_DISABLED=True. These envs mostly defend
+          # against a stray CI env leaking into production behaviour.
+          FLASK_ENV: 'testing'
+          SECRET_KEY: 'ci-only-not-secret'
+        run: |
+          PYTHONPATH=. pytest tests -q

@@ -1,0 +1,229 @@
+{
+  "date": "2026-07-02T12:45:12Z",
+  "description": "PDHC patient-registry FHIR R5 service. Stores Patient plus the IPS clinical resources (Condition, Observation, MedicationStatement, AllergyIntolerance, Immunization, Procedure, DocumentReference), implements $ips per HL7 uv/ips, and owns per-clinic org-scoping + PDL block/consent (spärr). See ips.pdhc/description_of_IPS.md for the full contract.",
+  "fhirVersion": "5.0.0",
+  "format": [
+    "json"
+  ],
+  "id": "ips-pdhc",
+  "implementation": {
+    "description": "ips.pdhc production instance",
+    "url": "https://ips.pdhc.se"
+  },
+  "kind": "instance",
+  "name": "IpsPDHCCapabilityStatement",
+  "publisher": "PDHC",
+  "resourceType": "CapabilityStatement",
+  "rest": [
+    {
+      "mode": "server",
+      "resource": [
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            },
+            {
+              "code": "update"
+            }
+          ],
+          "operation": [
+            {
+              "definition": "http://hl7.org/fhir/uv/ips/OperationDefinition/summary",
+              "name": "ips"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "identifier",
+              "type": "token"
+            },
+            {
+              "name": "family",
+              "type": "string"
+            },
+            {
+              "name": "given",
+              "type": "string"
+            },
+            {
+              "name": "birthdate",
+              "type": "date"
+            }
+          ],
+          "type": "Patient"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "Condition"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "Observation"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "MedicationStatement"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "AllergyIntolerance"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "Immunization"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "Procedure"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "DocumentReference"
+        },
+        {
+          "interaction": [
+            {
+              "code": "read"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "patient",
+              "type": "reference"
+            }
+          ],
+          "type": "DiagnosticReport"
+        }
+      ]
+    }
+  ],
+  "status": "active",
+  "title": "ips.pdhc — PDHC patient registry (FHIR R5)",
+  "url": "https://ips.pdhc.se/fhir/metadata",
+  "version": "1.0.0"
+}
