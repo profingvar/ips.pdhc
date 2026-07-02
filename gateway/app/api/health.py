@@ -38,7 +38,11 @@ def health():
     resp.headers["Access-Control-Allow-Methods"] = "GET"
     resp.headers["Vary"] = "Origin"
     resp.headers["Cache-Control"] = "no-store"
-    return resp
+    # Ticket #349 §2.1 — return HTTP 503 on DB disconnect so status-code
+    # monitoring sees the outage. Previously always 200-with-degraded
+    # (the false-green pattern documented in CLAUDE.md §10).
+    status_code = 200 if db_status == "connected" else 503
+    return resp, status_code
 
 
 @bp.route("/metrics")

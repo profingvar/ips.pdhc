@@ -260,3 +260,37 @@ All edited files with full paths, updated after each change.
     hits. Documented the sweep SQL for reproducibility. No one-off
     PatientBlock migration owed from legacy data; conclusion records
     that future audits don't need to re-ask the question.
+
+## 2026-07-02 — rollup #349 commit-1 (7 surgical child tickets)
+
+  - #382 §1.1 gateway/Dockerfile: gunicorn --bind changed from
+    `0.0.0.0:9040` to `127.0.0.1:9040`. Layering-violation fix per
+    platform CLAUDE.md §3.
+  - #383 §1.2 gateway/Dockerfile: added
+    `--access-logfile -` + `--access-logformat` so HTTP requests are
+    audit-visible in `docker logs`. Matches request.pdhc #370.
+  - #384 §1.3 gateway/docker-compose.yml: replaced
+    `${POSTGRES_PASSWORD:-dev}` (silent fallback) with
+    `${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}` on
+    both the `db` env and the `app` DATABASE_URL. Fail-fast per
+    platform CLAUDE.md §9.
+  - #385 §1.4 gateway/Dockerfile: added HEALTHCHECK block (curl
+    /api/v1/health, 10s interval, 3s timeout, 3 retries) + curl to
+    the apt install list (needed for the healthcheck itself).
+  - #386 §2.1 gateway/app/api/health.py: /api/v1/health now returns
+    HTTP 503 when db_status != connected. Was always 200 with
+    `status:degraded` — the CLAUDE.md §10 false-green pattern.
+    Regression guard added in gateway/tests/test_health.py.
+  - #387 §3.1 gateway/app/fhir/fhir_routes.py: CapabilityStatement
+    .date now derives from `os.path.getmtime(__file__)`, stable
+    across workers and requests, advancing only on real image
+    rebuild. Matches request.pdhc #367 + memory
+    `infra_gunicorn_worker_fork_freezes_datetime`.
+  - #388 §3.3 gateway/app/fhir/fhir_routes.py: CapabilityStatement
+    now carries id / url / version / name / title / publisher /
+    description + `implementation` block (satisfies cpb-14 for
+    kind=instance).
+  - gateway/tests/test_health.py: added
+    `test_health_returns_503_when_db_disconnected` — regression
+    guard for the false-green fix. 4/4 pass, full 358/358 suite
+    still green.

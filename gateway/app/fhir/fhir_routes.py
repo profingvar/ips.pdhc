@@ -1,5 +1,8 @@
 """FHIR REST surface — /fhir/... endpoints (FHIR R5)."""
 
+import os
+from datetime import datetime, timezone
+
 from flask import Blueprint, jsonify, request
 
 from app.models.base import db
@@ -18,6 +21,15 @@ from app.services.fhir_service import (
 from app.services.ips_generator import generate_ips_bundle
 
 bp = Blueprint("fhir_api", __name__, url_prefix="/fhir")
+
+
+# Ticket #349 §3.1 — CapabilityStatement.date via file mtime. Stable across
+# gunicorn workers (default fork model would make datetime.now() drift per
+# worker; memory `infra_gunicorn_worker_fork_freezes_datetime`) AND stable
+# across requests. Only advances on a real image rebuild.
+_CAPABILITYSTATEMENT_DATE = datetime.fromtimestamp(
+    os.path.getmtime(__file__), tz=timezone.utc
+).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _operation_outcome(severity: str, code: str, diagnostics: str, status: int = 400):
@@ -240,9 +252,31 @@ def _default_capability_statement() -> dict:
 
     return {
         "resourceType": "CapabilityStatement",
+        "id": "ips-pdhc",
+        "url": "https://ips.pdhc.se/fhir/metadata",
+        "version": "1.0.0",
+        "name": "IpsPDHCCapabilityStatement",
+        "title": "ips.pdhc — PDHC patient registry (FHIR R5)",
         "status": "active",
-        "date": "2026-03-20",
+        # Ticket #349 §3.1 — see _CAPABILITYSTATEMENT_DATE definition
+        # at top of module for the mtime rationale.
+        "date": _CAPABILITYSTATEMENT_DATE,
+        "publisher": "PDHC",
+        "description": (
+            "PDHC patient-registry FHIR R5 service. Stores Patient plus "
+            "the IPS clinical resources (Condition, Observation, "
+            "MedicationStatement, AllergyIntolerance, Immunization, "
+            "Procedure, DocumentReference), implements $ips per HL7 uv/ips, "
+            "and owns per-clinic org-scoping + PDL block/consent (spärr). "
+            "See ips.pdhc/description_of_IPS.md for the full contract."
+        ),
         "kind": "instance",
+        # cpb-14: kind=instance requires implementation. Added in
+        # #349 §3.3 as part of the R5 validator baseline.
+        "implementation": {
+            "description": "ips.pdhc production instance",
+            "url": "https://ips.pdhc.se",
+        },
         "fhirVersion": "5.0.0",
         "format": ["json"],
         "rest": [{

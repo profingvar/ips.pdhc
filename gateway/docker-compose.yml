@@ -6,7 +6,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ips_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev}
+      # Ticket #349 §1.3: POSTGRES_PASSWORD must be set in .env. Silent
+      # fallback to a fixed default made prod deploys unsafe under
+      # platform CLAUDE.md §9 (credential-drift trap).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-ips_db}
     ports:
       - "127.0.0.1:9041:5432"
@@ -28,7 +31,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ips_user}:${POSTGRES_PASSWORD:-dev}@db:5432/${POSTGRES_DB:-ips_db}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ips_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-ips_db}
 
 volumes:
   pgdata:
