@@ -6,7 +6,7 @@ from datetime import datetime, date
 from sqlalchemy import String, Boolean, DateTime, Date, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import db, new_uuid, utcnow, GUID
+from app.models.base import db, new_uuid, utcnow, GUID, JSONB
 
 
 class PatientIndex(db.Model):
@@ -30,6 +30,28 @@ class PatientIndex(db.Model):
     birth_date: Mapped[date | None] = mapped_column(Date)
     gender: Mapped[str | None] = mapped_column(String(20))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # --- Access-model reform D1 (#404): patient opt-outs ----------------
+    # These are the two consent flags with NO pre-existing model. The other
+    # two consents from the v3 spec are already modelled richer here and are
+    # NOT duplicated as new columns:
+    #   allow_sharing_in_care  -> existing PatientConsent (per-caregiver
+    #     cohesive-care consent, Lag 2022:913 §5 — more precise than a global
+    #     bool; the reform's "allow_sharing" = "has an active PatientConsent
+    #     for the relevant caregiver").
+    #   primary_care_unit_guids -> existing PatientClinicAssignment rows.
+    # ehds_opt_out: EHDS secondary-use opt-out; honoured at Analysis phase.
+    ehds_opt_out: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # quality_registry_opt_out: PDL kap 7; honoured by the Quality-registry-
+    # reporter role before any external report.
+    quality_registry_opt_out: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # consented_research_projects: per-study research consent — list of
+    # ResearchProject GUIDs (registry in sso.pdhc, S4). Intersected with the
+    # researcher's affiliation research_project_guids at analysis read time
+    # (v3 spec §5.3). JSONB list; a per-project table with revocation audit is
+    # the upgrade path if needed.
+    consented_research_projects: Mapped[list | None] = mapped_column(JSONB)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -48,9 +70,18 @@ class PatientIndex(db.Model):
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
             "gender": self.gender,
             "is_active": self.is_active,
+            "ehds_opt_out": self.ehds_opt_out,
+            "quality_registry_opt_out": self.quality_registry_opt_out,
+            "consented_research_projects": self.consented_research_projects or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+    def primary_care_unit_guids(self) -> list:
+        """The patient's care units (Zone-1 inner circle) = the clinics they
+        are assigned to (existing PatientClinicAssignment). Reform D1 models
+        this via the existing assignment rows rather than a new column."""
+        return [str(a.clinic_guid) for a in self.clinic_assignments]
 
 
 class PatientClinicAssignment(db.Model):

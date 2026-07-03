@@ -10,7 +10,7 @@ from app.models.user import User
 from app.models.clinic import Clinic, UserClinicAssignment
 from app.models.api_key import ApiKey
 from app.models.fhir_resource import FhirResource
-from app.models.patient_index import PatientIndex
+from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
 from app.models.push_destination import PushDestination
@@ -106,6 +106,84 @@ class TestPatientIndexModel:
         db.session.flush()
         assert pi.guid is not None
         assert pi.family_name == "Svensson"
+
+    def test_reform_consent_flags_default(self, client, db):
+        """D1 (#404): the two genuinely-new consent flags default to False and
+        the research list defaults to empty in to_dict()."""
+        res = FhirResource(
+            resource_type="Patient",
+            resource_id=str(uuid.uuid4()),
+            resource_json={"resourceType": "Patient"},
+        )
+        db.session.add(res)
+        db.session.flush()
+
+        pi = PatientIndex(fhir_resource_guid=res.guid, resource_id=res.resource_id)
+        db.session.add(pi)
+        db.session.flush()
+
+        assert pi.ehds_opt_out is False
+        assert pi.quality_registry_opt_out is False
+        assert pi.consented_research_projects is None
+
+        d = pi.to_dict()
+        assert d["ehds_opt_out"] is False
+        assert d["quality_registry_opt_out"] is False
+        assert d["consented_research_projects"] == []  # None -> [] in to_dict
+
+    def test_reform_consent_flags_set(self, client, db):
+        """D1 (#404): flags round-trip and the research-project list persists."""
+        res = FhirResource(
+            resource_type="Patient",
+            resource_id=str(uuid.uuid4()),
+            resource_json={"resourceType": "Patient"},
+        )
+        db.session.add(res)
+        db.session.flush()
+
+        proj = str(uuid.uuid4())
+        pi = PatientIndex(
+            fhir_resource_guid=res.guid,
+            resource_id=res.resource_id,
+            ehds_opt_out=True,
+            quality_registry_opt_out=True,
+            consented_research_projects=[proj],
+        )
+        db.session.add(pi)
+        db.session.flush()
+
+        d = pi.to_dict()
+        assert d["ehds_opt_out"] is True
+        assert d["quality_registry_opt_out"] is True
+        assert d["consented_research_projects"] == [proj]
+
+    def test_primary_care_unit_guids_from_assignments(self, client, db):
+        """D1 (#404): primary_care_unit_guids() derives Zone-1 units from the
+        existing PatientClinicAssignment rows, not a new column."""
+        res = FhirResource(
+            resource_type="Patient",
+            resource_id=str(uuid.uuid4()),
+            resource_json={"resourceType": "Patient"},
+        )
+        db.session.add(res)
+        db.session.flush()
+
+        pi = PatientIndex(fhir_resource_guid=res.guid, resource_id=res.resource_id)
+        db.session.add(pi)
+        db.session.flush()
+
+        assert pi.primary_care_unit_guids() == []
+
+        clinic = Clinic(name="Vårdcentral Nord")
+        db.session.add(clinic)
+        db.session.flush()
+        db.session.add(
+            PatientClinicAssignment(patient_guid=pi.guid, clinic_guid=clinic.guid)
+        )
+        db.session.flush()
+        db.session.refresh(pi)
+
+        assert pi.primary_care_unit_guids() == [str(clinic.guid)]
 
 
 class TestIpsCardModel:

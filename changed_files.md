@@ -348,3 +348,18 @@ All edited files with full paths, updated after each change.
     "don't design for hypothetical future requirements" rationale.
     If push-cred encryption ever ships, add the key handling fresh.
     Tests: 363/363 unchanged.
+
+## 2026-07-03 — Access-model reform D1 (#404): patient opt-out flags
+- gateway/app/models/patient_index.py — added ehds_opt_out (Bool default
+  False), quality_registry_opt_out (Bool default False),
+  consented_research_projects (JSONB list) to PatientIndex; updated
+  to_dict(); added primary_care_unit_guids() derived from existing
+  PatientClinicAssignment rows. Reconciliation documented in-file: the
+  other two v3-spec consents already exist richer — allow_sharing_in_care
+  → PatientConsent (#198, per-caregiver), primary_care_unit_guids →
+  PatientClinicAssignment. Only the 2 booleans + research list are new.
+- gateway/migrations/add_reform_patient_flags.sql — NEW. Idempotent ALTER
+  (IF NOT EXISTS) for prod, since ips uses db.create_all() which never
+  alters existing tables. Operator runs it after deploy.
+- gateway/tests/test_models.py — added 3 D1 tests (defaults, set/round-trip,
+  primary_care_unit_guids from assignments). 17/17 pass.
