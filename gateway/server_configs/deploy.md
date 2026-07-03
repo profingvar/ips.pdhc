@@ -63,7 +63,6 @@ If this is a fresh `.env`, generate secrets and set:
 | `FLASK_ENV` | `production` |
 | `SECRET_KEY` | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 | `POSTGRES_PASSWORD` | `python3 -c "import secrets; print(secrets.token_hex(16))"` |
-| `API_KEY_SECRET` | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 | `BOOTSTRAP_SU_USERNAME` | `admin` |
 | `BOOTSTRAP_SU_PASSWORD` | Strong password (remove after first login) |
 | `AUTH_DISABLED` | `false` |

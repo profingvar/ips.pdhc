@@ -334,3 +334,17 @@ All edited files with full paths, updated after each change.
   Local `make conformance` result: 0 errors, 0 warnings, 1 note.
   Full pytest: 363/363 pass (+5 vs commit-1 baseline: 4 truth test +
   1 health 503 guard).
+
+## 2026-07-03 — rollup #349 close-out (#392 delete dead API_KEY_SECRET)
+
+  - #392 gateway/app/config.py + gateway/.env.example +
+    gateway/server_configs/deploy.md: dropped the `API_KEY_SECRET`
+    env var / config attribute / .env.example line / deploy.md
+    row. It was reserved for Fernet-encrypting push-destination
+    credentials (readme.md §5.d, ticket #6) but never wired to any
+    code path (verified via `grep -rn API_KEY_SECRET` — only its own
+    declaration, no readers). Kept a short comment in config.py
+    where the line was removed, pointing at #392 and stating the
+    "don't design for hypothetical future requirements" rationale.
+    If push-cred encryption ever ships, add the key handling fresh.
+    Tests: 363/363 unchanged.

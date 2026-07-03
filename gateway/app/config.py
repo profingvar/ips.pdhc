@@ -16,7 +16,12 @@ class Config:
     OAUTH_BASE_URL = os.environ.get("OAUTH_BASE_URL", "https://sso.pdhc.se")
     SSO_CLIENT_ID = os.environ.get("SSO_CLIENT_ID", "")
     SSO_CLIENT_SECRET = os.environ.get("SSO_CLIENT_SECRET", "")
-    API_KEY_SECRET = os.environ.get("API_KEY_SECRET", "")
+    # API_KEY_SECRET (#349 §4.3 / #392) — removed 2026-07-03.
+    # Was reserved for Fernet-encrypting push-destination credentials
+    # (readme.md §5.d, ticket #6), never implemented. Deleted to avoid
+    # a stale placeholder confusing future readers. If push-cred
+    # encryption ever ships, add the config fresh alongside the
+    # feature — don't design for hypothetical future requirements.
     BOOTSTRAP_SU_USERNAME = os.environ.get("BOOTSTRAP_SU_USERNAME", "")
     BOOTSTRAP_SU_PASSWORD = os.environ.get("BOOTSTRAP_SU_PASSWORD", "")
     CORS_ORIGINS = [
