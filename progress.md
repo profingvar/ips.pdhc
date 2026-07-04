@@ -331,3 +331,24 @@ Pre-existing drift on `gateway/` (≈1100 lines across 15 unrelated
 files including `admin.py +597`) **not committed in this pass** — it
 predates this session and is the same uncommitted-but-deployed pattern
 seen on contract.pdhc / plan.pdhc; needs a separate audit.
+
+---
+
+## Access-model reform D1 (#404) — 2026-07-04 (commit fccb302)
+
+Added patient opt-out flags to `PatientIndex` for the SSO reform (rollup
+#396): `ehds_opt_out`, `quality_registry_opt_out` (Bool, default False)
+and `consented_research_projects` (JSONB list of ResearchProject GUIDs).
+Added `to_dict()` fields + `primary_care_unit_guids()` helper.
+
+Reconciliation — the other two v3-spec consents already exist richer and
+were NOT duplicated: `allow_sharing_in_care` → existing `PatientConsent`
+(#198, per-caregiver cohesive-care consent); primary care units →
+existing `PatientClinicAssignment` rows.
+
+ips uses `db.create_all()` (never alters existing tables) → prod needs
+the idempotent ALTER `gateway/migrations/add_reform_patient_flags.sql`
+(operator runs it post-deploy). Tests: +3 in `test_models.py` (17/17).
+Ticket #404 closed. D2 (#405, personnummer confinement) verified ips is
+the correct pnr home; guard test lives in sso. Wave-3 staff-route
+adoption tracked in #420.
