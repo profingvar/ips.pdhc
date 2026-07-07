@@ -363,3 +363,15 @@ All edited files with full paths, updated after each change.
   alters existing tables. Operator runs it after deploy.
 - gateway/tests/test_models.py — added 3 D1 tests (defaults, set/round-trip,
   primary_care_unit_guids from assignments). 17/17 pass.
+
+## 2026-07-07 — #422 analysis-enforcement foundation (consent policy in ips)
+- gateway/app/services/consent_policy.py — NEW canonical policy
+  evaluate_patient(flags, purpose, reader_research_project_guids): the 3 rules
+  (EHDS opt-out blocks secondary-use; research needs project-consent
+  intersection; quality_registry_opt_out blocks qreg). ips owns the flags so it
+  owns the policy — one legal source of truth.
+- gateway/app/api/patient_routes.py — NEW POST /api/v1/patients/analysis-filter:
+  analysis services POST {patient_guids, purpose, research_project_guids} and
+  get back {allowed, excluded:[{patient_guid, reason}]}.
+- gateway/tests/test_consent_policy.py — NEW, 8 tests (policy + endpoint).
+- Suite 374/374.
