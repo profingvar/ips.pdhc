@@ -53,6 +53,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.blocks_routes import bp as blocks_bp
     from app.api.admin_blocks_routes import bp as admin_blocks_bp
     from app.api.consents_routes import bp as consents_bp
+    from app.api.care_access_routes import bp as care_access_bp  # D3 #406
     from app.api.patient_blocks_routes import bp as patient_blocks_bp
     from app.api.patient_consents_routes import bp as patient_consents_bp
     from app.api.copy_routes import bp as copy_bp
@@ -69,6 +70,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(blocks_bp)
     app.register_blueprint(admin_blocks_bp)
     app.register_blueprint(consents_bp)
+    app.register_blueprint(care_access_bp)  # D3 #406
     app.register_blueprint(patient_blocks_bp)
     app.register_blueprint(patient_consents_bp)
     app.register_blueprint(copy_bp)
