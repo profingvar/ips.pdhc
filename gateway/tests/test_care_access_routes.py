@@ -164,3 +164,28 @@ def test_emergency_expiry_bounds(client, db, patient):
     assert _grant(client, patient, expires_in=0).status_code == 400
     assert _grant(client, patient,
                   expires_in=8 * 24 * 3600).status_code == 400
+
+
+def test_sso_bearer_resolves_local_user_by_email(client, db, patient,
+                                                 monkeypatch):
+    """The SSO blob has no `username` — the bearer lookup falls back to
+    email (kontroller demo finding, 2026-07-10)."""
+    from app.models.user import User
+    from app.services import auth_service
+
+    db.session.add(User(username="pro@example.se", display_name="Pro",
+                        role="operator", is_active=True, is_superuser=False))
+    db.session.commit()
+    monkeypatch.setitem(client.application.config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(auth_service, "resolve_sso_user",
+                        lambda tok: {"email": "pro@example.se",
+                                     "user_type": "professional",
+                                     "session_id": "sid-bearer-1"})
+    r = client.post(
+        f"/api/v1/patients/{patient.guid}/care-access-check",
+        headers={"Authorization": "Bearer t"},
+        json={"reader_care_unit_guid": UNIT_B1,
+              "reader_care_organisation_guid": ORG_B,
+              "author_clinic_guid": UNIT_A1,
+              "author_caregiver_guid": ORG_A})
+    assert r.status_code == 200

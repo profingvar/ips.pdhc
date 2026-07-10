@@ -96,10 +96,16 @@ def require_auth(f):
             mcp = _must_change_password_response(user_info)
             if mcp is not None:
                 return mcp
-            # Find or create local user record
+            # Resolve the local user record. The SSO blob carries no
+            # `username` field (it identifies by email), so the historical
+            # username-only lookup could never match an SSO professional —
+            # the bearer API path was dead for operators (found by the
+            # 2026-07-10 kontroller chain demo). ips usernames are
+            # email-shaped, so fall back to the blob email.
+            ident = (user_info.get("username")
+                     or user_info.get("email") or "")
             user = db.session.query(User).filter_by(
-                username=user_info.get("username", "")
-            ).first()
+                username=ident).first()
             if not user:
                 return _auth_error("User not found in local system")
             if not user.is_active:
