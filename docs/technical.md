@@ -86,3 +86,14 @@ WHERE raw::text ILIKE '%hidden%'
    OR raw::text ILIKE '%confidentiality%'
    OR raw::text ILIKE '%NOPAT%';
 ```
+
+## Port Allocation
+
+All ports bind to `127.0.0.1` (loopback only); external traffic arrives
+via the reverse proxy.
+
+| Port | Service |
+|------|---------|
+| 9040 | Flask application (Gunicorn) |
+| 9041 | PostgreSQL database |
+| 9042 | Admin API (`ADMIN_PORT`) |

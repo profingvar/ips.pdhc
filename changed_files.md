@@ -375,3 +375,4 @@ All edited files with full paths, updated after each change.
   get back {allowed, excluded:[{patient_guid, reason}]}.
 - gateway/tests/test_consent_policy.py — NEW, 8 tests (policy + endpoint).
 - Suite 374/374.
+- ips.pdhc/docs/technical.md (Port Allocation section)
