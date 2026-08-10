@@ -392,3 +392,91 @@ class TestExpiry:
             f"/api/v1/patients/{seed['patient'].guid}/consents",
         )
         assert r.get_json()["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Cross-service consent predicate — /consents/check (#558)
+# ---------------------------------------------------------------------------
+
+class TestCheckConsent:
+    def test_relationship_free_unrelated_staff_sees_consent(
+        self, client, db, seed, as_user,
+    ):
+        """The check endpoint is relationship-free (mirror of /blocks/check):
+        an unrelated caller — exactly the cross-service dispatcher case — gets
+        the consent, whereas the staff /consents list 403s the same caller."""
+        pat = seed["patient"]
+        cg = _grantee_guid()
+        client.post(  # granted by default admin dev user
+            f"/api/v1/patients/{pat.guid}/consents",
+            json={"grantee_caregiver_guid": cg},
+        )
+        # Sanity: the clinic-gated list DOES refuse the unrelated staff.
+        with as_user(seed["staff_b"]):
+            denied = client.get(f"/api/v1/patients/{pat.guid}/consents")
+        assert denied.status_code == 403
+
+        with as_user(seed["staff_b"]):
+            r = client.get(
+                f"/api/v1/patients/{pat.guid}/consents/check",
+                query_string={"grantee_caregiver_guid": cg},
+            )
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["has_active_consent"] is True
+        assert len(body["consents"]) == 1
+        assert body["consents"][0]["grantee_caregiver_guid"] == cg
+
+    def test_filters_by_grantee(self, client, db, seed):
+        pat = seed["patient"]
+        cg1, cg2 = _grantee_guid(), _grantee_guid()
+        client.post(
+            f"/api/v1/patients/{pat.guid}/consents",
+            json={"grantee_caregiver_guid": cg1},
+        )
+        r = client.get(
+            f"/api/v1/patients/{pat.guid}/consents/check",
+            query_string={"grantee_caregiver_guid": cg2},
+        )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["has_active_consent"] is False
+        assert body["consents"] == []
+
+    def test_revoked_consent_not_returned(self, client, db, seed):
+        pat = seed["patient"]
+        cg = _grantee_guid()
+        created = client.post(
+            f"/api/v1/patients/{pat.guid}/consents",
+            json={"grantee_caregiver_guid": cg},
+        ).get_json()
+        client.post(
+            f"/api/v1/patients/{pat.guid}/consents/{created['guid']}/revoke",
+            json={"reason": "withdrawn"},
+        )
+        r = client.get(
+            f"/api/v1/patients/{pat.guid}/consents/check",
+            query_string={"grantee_caregiver_guid": cg},
+        )
+        assert r.status_code == 200
+        assert r.get_json()["has_active_consent"] is False
+
+    def test_missing_grantee_is_400(self, client, db, seed):
+        r = client.get(
+            f"/api/v1/patients/{seed['patient'].guid}/consents/check",
+        )
+        assert r.status_code == 400
+
+    def test_bad_grantee_uuid_is_400(self, client, db, seed):
+        r = client.get(
+            f"/api/v1/patients/{seed['patient'].guid}/consents/check",
+            query_string={"grantee_caregiver_guid": "not-a-uuid"},
+        )
+        assert r.status_code == 400
+
+    def test_patient_not_found_is_404(self, client, db, seed):
+        r = client.get(
+            f"/api/v1/patients/{uuid.uuid4()}/consents/check",
+            query_string={"grantee_caregiver_guid": _grantee_guid()},
+        )
+        assert r.status_code == 404

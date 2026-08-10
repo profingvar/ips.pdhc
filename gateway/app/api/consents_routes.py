@@ -253,6 +253,66 @@ def list_consents(patient_guid):
 
 
 # ---------------------------------------------------------------------------
+# Cross-service consent predicate (#558) — the /blocks/check analogue
+# ---------------------------------------------------------------------------
+
+@bp.route("/<patient_guid>/consents/check", methods=["GET"])
+@require_auth
+def check_consent(patient_guid):
+    """Answer "does <grantee_caregiver_guid> hold an active consent from this
+    patient?" in one round-trip, for the cohesive-care dispatch gate
+    (request.pdhc #229, Lag 2022:913 § 5).
+
+    Query string:
+      grantee_caregiver_guid   (required) — the destination caregiver the
+                                            dispatch would forward to.
+
+    Auth: no patient-clinic relationship required — this is the exact mirror
+    of ``blocks_routes.check_block``. The dispatcher is a cross-service caller
+    (service-account api-key) that legitimately has no clinic relationship to
+    the patient; that's the whole point of the consent gate. Disclosure is
+    minimal: we return only the ACTIVE consents that name the *asking*
+    caregiver as grantee — a caregiver only learns about consents to itself,
+    never the patient's wider consent list.
+
+    Response::
+
+      { "patient_guid": "...",
+        "grantee_caregiver_guid": "...",
+        "has_active_consent": true|false,
+        "consents": [ <PatientConsent.to_dict()>, ... ] }   # active only
+
+    The consumer applies the concept-narrowing decision (whole-caregiver vs
+    concept-list) locally — this endpoint only supplies the filtered data.
+    """
+    patient = _patient_or_404(patient_guid)
+    if patient is None:
+        return _bad("Patient not found", 404)
+
+    grantee_raw = (request.args.get("grantee_caregiver_guid") or "").strip()
+    if not grantee_raw:
+        return _bad("grantee_caregiver_guid is required", 400)
+    try:
+        grantee = UUID(str(grantee_raw))
+    except (ValueError, TypeError):
+        return _bad("grantee_caregiver_guid must be a valid UUID", 400)
+
+    rows = (
+        db.session.query(PatientConsent)
+        .filter_by(patient_guid=patient.guid, grantee_caregiver_guid=grantee)
+        .order_by(PatientConsent.granted_at.desc())
+        .all()
+    )
+    active = [r for r in rows if r.is_active()]
+    return jsonify({
+        "patient_guid": str(patient.guid),
+        "grantee_caregiver_guid": str(grantee),
+        "has_active_consent": bool(active),
+        "consents": [r.to_dict() for r in active],
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # Revoke
 # ---------------------------------------------------------------------------
 
