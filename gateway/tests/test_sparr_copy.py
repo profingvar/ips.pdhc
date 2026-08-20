@@ -52,13 +52,14 @@ def test_metadata_shape():
     assert md["legal_review_status"] in ("draft", "approved")
 
 
-def test_shipped_bundle_is_draft_pending_legal_review():
-    """Pin the shipped state to "draft" — counsel sign-off is recorded
-    by flipping this AND updating this test in the same commit, so the
-    audit trail is git-grep-able.
+def test_shipped_bundle_is_legally_approved():
+    """Pin the shipped state to "approved" — legal sign-off recorded
+    2026-08-20 (#242). The git history of this test + the copy bundle is
+    the audit trail of when legal cleared each version. If the copy is
+    materially changed, this MUST revert to draft-pending until re-signed.
     """
-    assert sc.metadata()["legal_review_status"] == "draft"
-    assert sc.is_legally_approved() is False
+    assert sc.metadata()["legal_review_status"] == "approved"
+    assert sc.is_legally_approved() is True
 
 
 def test_every_section_in_both_languages():
@@ -149,7 +150,7 @@ def test_endpoint_returns_full_bundle_without_lang(client, db):
     resp = client.get("/api/v1/patient/copy/sparr")
     assert resp.status_code == 200, resp.get_data(as_text=True)
     body = resp.get_json()
-    assert body["metadata"]["legal_review_status"] == "draft"
+    assert body["metadata"]["legal_review_status"] == "approved"
     for name in SECTIONS:
         assert name in body
         # Multi-language bundle: both langs available

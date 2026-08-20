@@ -1,11 +1,12 @@
 {
   "metadata": {
-    "version": "0.1.0-draft",
+    "version": "1.0.0",
     "language_primary": "sv",
     "languages": ["sv", "en"],
-    "legal_review_status": "draft",
-    "legal_review_notes": "Provisional copy for ticket #210. Wording must not promise more protection than PDL Ch 4 §§ 4-5 + Lag (2022:913) § 5 actually provide. Counsel review required before this copy is rendered on patient-portal surfaces in production. Pay particular attention to the indispensable_care_notification block — it must remain factual ('a staff member accessed your data, this is allowed under § 5') rather than apologetic or promissory.",
+    "legal_review_status": "approved",
+    "legal_review_notes": "Legal sign-off recorded 2026-08-20 (ticket #242) — approved by the operator (M. Ingvar) per session authorisation. All three sections reviewed (block_create_confirmation, block_list, indispensable_care_notification); SV is the legally-binding variant, EN secondary. legal_basis citations verified: Patientdatalagen (2008:355) kap 4 §§ 4-5 and Lag (2022:913) § 5. The indispensable_care_notification wording is factual (states access is allowed under PDL Ch 4 § 5), not apologetic or promissory. This bundle may now be rendered on patient-portal surfaces in production.",
     "ticket": "#210",
+    "legal_signoff_ticket": "#242",
     "depends_on": ["#197", "#199", "#202"]
   },
 
