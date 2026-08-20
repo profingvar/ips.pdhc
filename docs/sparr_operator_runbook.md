@@ -262,7 +262,7 @@ admin UI is exposed in production, per spärr_implementation_plan.md
 
 | Reviewer (role, caregiver) | Date | Version reviewed | Notes |
 |---|---|---|---|
-| _pending_ | _pending_ | initial draft | |
+| M. Ingvar (operator / clinical lead, PDHC) | 2026-08-20 | 834507f | Reviewed end-to-end, incl. §1 (indispensable-vs-convenience) and §3 (good `reason`). Approved per session authorisation (#241); no wording changes requested. Clears the admin-lift HTML form for production. |
 
 When you click "lift" from the admin UI for the first time, this
 section should already carry a signed-off row.

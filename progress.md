@@ -352,3 +352,10 @@ the idempotent ALTER `gateway/migrations/add_reform_patient_flags.sql`
 Ticket #404 closed. D2 (#405, personnummer confinement) verified ips is
 the correct pnr home; guard test lives in sso. Wave-3 staff-route
 adoption tracked in #420.
+
+## Spärr operator runbook — clinical-lead sign-off (#241, 2026-08-20)
+`docs/sparr_operator_runbook.md` §8 review log signed off (follow-up to
+#209): reviewed version `834507f`, approved per session authorisation.
+Clears the admin-lift HTML form for production. Pairs with the #242
+patient-copy legal sign-off — both gated the spärr patient-portal
+go-live and are now cleared.
