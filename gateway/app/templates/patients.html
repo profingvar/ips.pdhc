@@ -123,6 +123,64 @@
 </div>
 
 
+{#
+  #797: generation batches. A batch has to be visible and undoable, or
+  "generate 100 patients" is a one-way action. The counts are shown BEFORE the
+  purge button so the operator agrees to a number rather than to a word --
+  the same compare-then-write shape the deploy scripts use.
+#}
+{% if batches %}
+<div class="card">
+  <h2><i data-lucide="layers"></i> Generation batches</h2>
+  <p class="text-muted" style="font-size:0.9em">
+    Each batch is one click of <strong>Generate Mock Patients</strong>.
+    <em>euIPS</em> counts how many carry all three required sections
+    (allergies, problems, medications) as content or as an explicit
+    &ldquo;none known&rdquo;.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Batch</th>
+          <th>Organisation</th>
+          <th>Patients</th>
+          <th>euIPS</th>
+          <th>Resources</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for b in batches %}
+        <tr>
+          <td><code style="font-size:0.75em">{{ b.batch_guid[:8] }}…</code></td>
+          <td>{{ b.clinic or '—' }}</td>
+          <td>{{ b.patients }}</td>
+          <td>
+            {% if b.conformant == b.patients %}
+              <span class="badge badge-approved">{{ b.conformant }}/{{ b.patients }}</span>
+            {% else %}
+              <span class="badge badge-pending">{{ b.conformant }}/{{ b.patients }}</span>
+            {% endif %}
+          </td>
+          <td>{{ b.resources }}</td>
+          <td>{{ (b.created_at or '')[:16] }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin.purge_mock_batch') }}"
+                  onsubmit="return confirm('Delete batch {{ b.batch_guid[:8] }}…?\n\n{{ b.patients }} patients and {{ b.resources }} clinical resources will be removed permanently.');">
+              <input type="hidden" name="batch_guid" value="{{ b.batch_guid }}">
+              <button type="submit" class="btn btn-sm btn-danger">Purge</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% if patients %}
 <div class="card">
   <div class="table-wrap">

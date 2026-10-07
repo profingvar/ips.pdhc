@@ -16,9 +16,9 @@ from werkzeug.security import generate_password_hash
 from app.models.base import db
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services import personnummer as pnr
-from app.services import (euips_eu_additions, euips_optional,
-                          euips_recommended, euips_required,
-                          euips_sections)
+from app.services import (euips_batch, euips_eu_additions,
+                          euips_optional, euips_recommended,
+                          euips_required, euips_sections)
 from app.models.fhir_resource import FhirResource
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
@@ -144,7 +144,9 @@ def patients():
     orgs = _sync_sso_organisations()
     clinics = orgs
     return render_template("patients.html", patients=patients_list, q=q,
-                           clinics=clinics, orgs=orgs)
+                           clinics=clinics, orgs=orgs,
+                           # #797: so a batch can be seen and undone.
+                           batches=euips_batch.list_batches())
 
 
 @bp.route("/patients/create", methods=["POST"])
@@ -589,6 +591,32 @@ def _build_unique_patient_pool(count: int) -> list[dict]:
 # attributable to no section. See euips_sections.section_matches.
 
 
+@bp.route("/mock-data/purge", methods=["POST"])
+def purge_mock_batch():
+    """#797 — delete a whole generation batch.
+
+    Destructive, so the batch guid must be given explicitly: there is no
+    "purge the last one" or "purge all", because either would make a mistake
+    cheap to commit and expensive to notice. The patients page shows each
+    batch's counts first, which is the same compare-then-write shape the
+    deploy scripts use.
+    """
+    batch_guid = (request.form.get("batch_guid") or "").strip()
+    removed = euips_batch.purge_batch(batch_guid)
+    if removed is None:
+        flash(f"No generation batch {batch_guid!r} — nothing was deleted.",
+              "error")
+    else:
+        flash(
+            f"Purged batch {removed['batch_guid']}: "
+            f"{removed['patients']} patients, "
+            f"{removed['clinical_resources']} clinical resources, "
+            f"{removed['patient_resources']} Patient resources, "
+            f"{removed['clinic_assignments']} clinic assignments.",
+            "success")
+    return redirect(url_for("admin.patients"))
+
+
 @bp.route("/mock-data", methods=["POST"])
 def generate_mock_data():
     """Generate mock patients for a chosen organisation.
@@ -616,6 +644,17 @@ def generate_mock_data():
     patients_pool = _build_unique_patient_pool(count)
     created_count = 0
     created_guids: list = []        # #793: for the conformance count below
+    # #797: ONE batch guid for this POST. Without it a batch cannot be undone
+    # except by recording its GUIDs by hand, which is what #791 added the
+    # column for.
+    #
+    # Name uniqueness is per BATCH, not global: _build_unique_patient_pool
+    # samples without replacement from 2400 combinations, so 100 is safe within
+    # one batch but two batches can repeat a name. Left that way deliberately
+    # -- a simulator wants plausible Swedish names more than globally unique
+    # ones, and the batch guid is what distinguishes the cohorts. Recorded as a
+    # decision rather than left as a surprise.
+    batch_guid = uuid.uuid4()
 
     for mp in patients_pool:
         resource_id = str(uuid.uuid4())
@@ -656,6 +695,7 @@ def generate_mock_data():
         patient = db.session.query(PatientIndex).filter_by(resource_id=resource_id).first()
         if not patient:
             continue
+        patient.generation_batch_guid = batch_guid      # #797
 
         # Link to clinic via PatientClinicAssignment (same reason as the
         # admin create_patient path: cross-service consumers query the
@@ -756,11 +796,16 @@ def generate_mock_data():
             conformant += 1
     detail = ("required sections only (skip_clinical)" if skip_clinical
               else "full euIPS section set")
+    resources = (db.session.query(FhirResource)
+                 .filter(FhirResource.patient_guid.in_(created_guids)).count()
+                 if created_guids else 0)
     flash(
         f"Generated {created_count} patients for {org_name} — {detail}. "
         f"{conformant}/{created_count} carry all three euIPS required sections "
         f"(allergies, problems, medications) either as content or as an "
-        f"explicit 'none known' statement.",
+        f"explicit 'none known' statement. "
+        f"{resources} clinical resources. "
+        f"Batch {batch_guid} — purgeable below.",
         "success" if conformant == created_count else "warning",
     )
     return redirect(url_for("admin.dashboard"))

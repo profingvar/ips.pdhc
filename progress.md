@@ -1042,3 +1042,66 @@ error lines.
 dedicated modules in obligation order. What remains is #797 (100-per-provider
 batches, which moves the 40/150 baseline), then #798 (pin the nine consumers)
 and #799 (the validator).
+
+## 2026-10-07 — #797: 100 patients per provider, as an undoable batch
+
+539 tests pass (522 + 17), same single pre-existing unrelated failure. 11 of
+the 17 new tests fail against the untouched tree.
+
+### The performance concern in the ticket does not materialise
+
+Measured rather than assumed. ~19 resources per patient (min 9, median 19, max
+29), so a 100-patient batch is **~2,220 rows — about 2.7× the entire live
+database**, which holds 831. That sounded like a background job.
+
+Timed: 5 patients 0.20s, 20 patients 0.29s, 50 patients 0.40s — roughly 1–4s
+for 100. So no background job, and the ticket's suggestion to build one is
+declined with a number rather than an opinion. **Caveat stated:** that timing is
+SQLite, so it is indicative, not conclusive; the real check is a Postgres
+round-trip in production.
+
+### The purge, and the two traps in the delete order
+
+Generating is the easy half; being able to undo it is what makes it usable
+more than once. Two things about this schema make a naive purge wrong:
+
+1. **`patient_index.fhir_resource_guid` -> `fhir_resources` cascades the OTHER
+   way.** Deleting the Patient resource removes the PatientIndex, so resources
+   must go after patients, not before.
+2. **`fhir_resources.patient_guid` has no foreign key at all** (Rule 18, GUID
+   references). Clinical resources are never cascaded, so a patients-only
+   delete leaves every Condition, Observation and AllergyIntolerance
+   orphaned, pointing at a patient that no longer exists.
+
+### And a third trap the test caught: SQLite does not enforce FKs
+
+The first version relied on the declared `ON DELETE CASCADE` for
+`patient_clinic_assignments`, `ips_cards` and `ips_snapshots`. The test left
+**8 of 8 assignments behind**.
+
+The FKs do declare CASCADE and PostgreSQL honours them — but SQLite does not
+enforce foreign keys unless `PRAGMA foreign_keys=ON`, and the test database is
+SQLite. So the purge would have **worked in production and leaked in tests**:
+the #730 shape exactly, a test engine behaving differently from the real one
+and hiding the defect instead of showing it. Here it showed, because the test
+asserted every table was empty rather than just the patients.
+
+Every dependent is now deleted **explicitly**, deepest first, which is
+identical on both engines and does not depend on FK enforcement being switched
+on anywhere.
+
+### Decisions recorded
+
+* **Names are unique per BATCH, not globally.** `_build_unique_patient_pool`
+  samples without replacement from 2400 combinations, so 100 is safe within one
+  batch while two batches can repeat a name. Left that way deliberately — a
+  simulator wants plausible Swedish names more than globally unique ones, and
+  the batch guid is what distinguishes cohorts. A decision rather than a
+  surprise.
+* **No "purge the last one" and no "purge all".** The batch guid must be given
+  explicitly, because either shortcut would make a mistake cheap to commit and
+  expensive to notice. The page shows each batch's counts first, which is the
+  same compare-then-write shape the deploy scripts use.
+* **A patient with a NULL batch is unreachable by any purge**, with its own
+  test. The 150 pre-existing production rows are NULL, which correctly means
+  "not from a tracked batch", and a purge must not reach them.

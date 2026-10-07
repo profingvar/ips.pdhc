@@ -423,3 +423,9 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/admin.py | EU additions wired into the generator |
 | 2026-10-07 | gateway/tests/test_eu_additions_796.py | NEW — 14 tests, 7 fail without the fix |
 | 2026-10-07 | gateway/tests/test_optional_sections_795.py | the travel placeholder test narrowed to the surviving invariant |
+
+## 2026-10-07 — euIPS #797 (100 per provider, as an undoable batch)
+| 2026-10-07 | gateway/app/services/euips_batch.py | NEW — list_batches / conformant_count / batch_preview / purge_batch with EXPLICIT dependent deletes |
+| 2026-10-07 | gateway/app/admin.py | one batch guid per run, stamped on each patient; `POST /admin/mock-data/purge`; batch list passed to the template; flash reports the batch guid and resource count |
+| 2026-10-07 | gateway/app/templates/patients.html | generation-batch table with per-batch counts, euIPS conformance and a Purge button |
+| 2026-10-07 | gateway/tests/test_batches_797.py | NEW — 17 tests, 11 fail without the fix |
