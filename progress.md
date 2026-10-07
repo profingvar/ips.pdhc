@@ -804,3 +804,41 @@ concept, which would have made a cohort look as though it contained two
 different tests.
 
 `_OBSERVATIONS` stays: vital signs are an OPTIONAL section and #795 owns them.
+
+### 2026-10-07 — #794 DEPLOYED
+
+Live: `{"database":"connected","service":"ips-server","status":"ok"}`.
+Backup `miserver:~/backups/predeploy/ips.pdhc/20261007T194253Z/`.
+Verified by exercising the pure generator inside the container — no patients
+created in the production registry, nothing to clean up.
+
+Live code over 300 generated patients:
+
+```
+immunisations        PRESENT 224  EXPLICITLY_ABSENT 41   MISSING 35
+procedures           PRESENT 121  EXPLICITLY_ABSENT 99   MISSING 80
+devices              PRESENT  60  EXPLICITLY_ABSENT 121  MISSING 119
+diagnostic_results   PRESENT 198                         MISSING 102
+lab reports carrying results        : 198
+dangling references                 : 0
+reports saying nothing              : 0
+dates before birth or in the future : 0
+```
+
+All three outcomes occur for the three sections that have an IPS absent code;
+`diagnostic_results` has two, because IPS defines none for it.
+
+**A number in the deploy output that looks wrong and is not.** It reported
+"Device / DeviceUseStatement written : 181 / 60", and the builder emits those
+1:1, so 181 vs 60 reads like a defect. It is not: a device **absent
+assertion** also has `resourceType: Device`. Re-measured separately — 60 real
+Devices, 121 absent assertions, 60 use statements, and 60 + 121 = 181 exactly.
+Real devices pair 1:1 with a use statement as intended.
+
+The lesson is about the probe, not the code: counting by `resourceType` lumps
+content together with absent assertions, which is precisely the distinction
+#791 exists to make. A count that ignores `is_absent_assertion` will mislead
+every time.
+
+Consumers after the deploy: health 200, `/clinics` 401, `analysis-filter` 401
+on POST, zero error lines. `_OBSERVATIONS` confirmed still present for #795.
