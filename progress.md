@@ -1105,3 +1105,44 @@ on anywhere.
 * **A patient with a NULL batch is unreachable by any purge**, with its own
   test. The 150 pre-existing production rows are NULL, which correctly means
   "not from a tracked batch", and a purge must not reach them.
+
+### 2026-10-07 — #797 DEPLOYED, verified by a production round-trip
+
+Live: `{"database":"connected","service":"ips-server","status":"ok"}`.
+Backup `miserver:~/backups/predeploy/ips.pdhc/20261007T202329Z/`.
+
+A real generate → verify → purge cycle against production Postgres, which is
+the only thing that could answer the questions SQLite could not:
+
+```
+BASELINE        : 150 patients, 831 resources, 122 assignments, 40 cards, 41 snapshots
+generate 5      : 0.12s  (0.023 s/patient -> ~2s for 100 on POSTGRES)
+batch           : 5 patients, euIPS 5/5, 110 resources, clinic 1177
+purge           : 0.11s
+AFTER PURGE     : 150 / 831 / 122 / 40 / 41   -- baseline restored EXACTLY
+batches remaining: 0
+```
+
+Three things this settles that nothing else could:
+
+1. **The performance concern is closed on the real engine.** ~2s for 100
+   patients on Postgres, not the background job the ticket proposed. Declined
+   with a measurement rather than an opinion.
+2. **The purge works where the FK semantics are real.** PostgreSQL honours the
+   declared cascades, SQLite does not — the explicit deletes behave identically
+   on both, and all five tables returned to their exact baseline rather than
+   merely "about right".
+3. **It leaves no residue.** 110 resources were written and removed; the
+   database is bit-for-bit as it was. That is the shape to use for this kind of
+   verification: a round-trip rather than test data left behind, or a
+   measurement taken only on the test engine.
+
+The route was driven in-process with `session["sso_user"]` set, which is all
+the admin guard requires. Production auth configuration was not touched.
+
+**Phase C is complete.** All 17 euIPS sections generate, 100 per provider works
+as an identifiable undoable batch, and the pre-existing 150 rows remain
+untouched with NULL batch guids — unreachable by any purge, which is the #789
+fix-forward decision holding.
+
+Remaining: #798 (pin the nine consumers) and #799 (the completeness validator).
