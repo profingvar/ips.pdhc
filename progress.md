@@ -701,3 +701,36 @@ XHTML.
 It used to list the section types it had supposedly created. It now counts how
 many of the batch carry all three required sections and says so, and shows a
 warning rather than a success when that is not all of them.
+
+### 2026-10-07 — #793 DEPLOYED
+
+Live: `{"database":"connected","service":"ips-server","status":"ok"}`.
+Backup `miserver:~/backups/predeploy/ips.pdhc/20261007T193331Z/`.
+No migration — #793 adds no column, and the deploy script's ordering gate was
+removed rather than left in place asserting something untrue.
+
+**Verified in production WITHOUT writing any data.**
+`required_sections_for` is a pure function, so the live code could be exercised
+directly instead of generating patients into the production registry:
+
+| check | result |
+|---|---|
+| live code, normal mode | **200/200 conformant** |
+| live code, `skip_clinical` mode | **50/50 conformant** |
+| medications absent assertion detected | True — the #791 defect this ticket found |
+| every resource carries XHTML narrative | True |
+| dead `_CONDITIONS` / `_MEDICATIONS` / `_ALLERGIES` in admin.py | 0 remaining |
+| existing patients | 150, **40 conformant** — unchanged, by design |
+
+Consumers after the deploy: health 200, `/clinics` 401, `analysis-filter` 401
+on POST. Zero error lines.
+
+**The existing 150 are deliberately untouched.** 40/150 before, 40/150 after.
+That is the #789 fix-forward decision applied consistently: new patients are
+conformant, old synthetic rows are not restamped, and the number stays visible
+rather than assumed. Generating a batch is what will move it, which is #797.
+
+**Worth keeping from this deploy:** exercising a pure function inside the
+container is a far better production check than creating test data and deleting
+it. It proves the shipped code behaves, leaves no residue in a patient
+registry, and needs no cleanup that could itself go wrong.
