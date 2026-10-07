@@ -16,8 +16,9 @@ from werkzeug.security import generate_password_hash
 from app.models.base import db
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services import personnummer as pnr
-from app.services import (euips_optional, euips_recommended,
-                          euips_required, euips_sections)
+from app.services import (euips_eu_additions, euips_optional,
+                          euips_recommended, euips_required,
+                          euips_sections)
 from app.models.fhir_resource import FhirResource
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
@@ -705,6 +706,17 @@ def generate_mock_data():
             # for an 80-year-old woman, so the two are gated separately.
             for body in euips_optional.optional_sections_for(
                     f"Patient/{resource_id}", mp["birth"], mp["gender"]):
+                create_resource(body["resourceType"], body,
+                                patient_guid=patient.guid)
+
+            # #796: the three EU additions — medical alerts, travel history,
+            # patient-provided information. Every resource carries
+            # meta.tag urn:pdhc:provenance#simulated, because these are the
+            # platform's FIRST Flag resources and request.pdhc's computed
+            # alerting path is the MDR-relevant surface: a simulated alert must
+            # never be mistakable for a computed one.
+            for body in euips_eu_additions.eu_addition_sections_for(
+                    f"Patient/{resource_id}"):
                 create_resource(body["resourceType"], body,
                                 patient_guid=patient.guid)
 

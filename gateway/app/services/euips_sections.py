@@ -271,11 +271,15 @@ PREGNANCY_CODES = frozenset({
     "102874004",    # SNOMED Possible pregnancy
 })
 
-#: Travel-history codes. EMPTY on purpose: no code has been established for
-#: this EU addition, so the section correctly reads MISSING until #796 defines
-#: one. An empty set is honest; a guessed code would make the section claim
-#: resources that are not travel history.
-TRAVEL_CODES: frozenset[str] = frozenset()
+#: Travel-history codes. #795 left this EMPTY on purpose, because no code is
+#: established for this EU addition and a guess would make the section claim
+#: observations that are not travel history.
+#:
+#: #796 settles it PROVISIONALLY on SNOMED 420008001 ("Travel"). That is a
+#: choice, not a verified binding: it is covered by CODES_VERIFIED = False, and
+#: this is the single place to change when the terminology is checked against
+#: the published IG. Recorded rather than asserted.
+TRAVEL_CODES: frozenset[str] = frozenset({"420008001"})
 
 #: HL7 observation-category codes, used to tell Observation sections apart.
 _VITAL_SIGNS_CATEGORIES = frozenset({"vital-signs"})
@@ -284,6 +288,11 @@ _DIAGNOSTIC_CATEGORIES = frozenset({"laboratory", "imaging"})
 #: `survey` is the closest standard observation-category for functional status;
 #: HL7 defines no `functional-status` code. Recorded rather than invented.
 _SURVEY_CATEGORIES = frozenset({"survey", "activity"})
+
+#: Codes that belong to a section MORE SPECIFIC than social history, while
+#: still carrying the `social-history` category. `obs_social_history` subtracts
+#: these so the general section does not swallow the specific ones.
+_MORE_SPECIFIC_SOCIAL_CODES = PREGNANCY_CODES | TRAVEL_CODES
 
 _ACTIVE_CONDITION_STATUSES = frozenset({"active", "recurrence", "relapse"})
 _RESOLVED_CONDITION_STATUSES = frozenset({"inactive", "resolved", "remission"})
@@ -361,11 +370,33 @@ def section_matches(section: Section, resource_type: str,
     if d == "obs_vital_signs":
         return bool(_categories(resource_json) & _VITAL_SIGNS_CATEGORIES)
     if d == "obs_social_history":
-        return bool(_categories(resource_json) & _SOCIAL_HISTORY_CATEGORIES)
+        # SUBTRACTIVE. Pregnancy and travel history are MORE SPECIFIC sections
+        # that legitimately sit in the `social-history` category, so a
+        # category-only rule made one travel observation mark both
+        # `social_history` and `travel_history` PRESENT -- the third instance
+        # of this over-reporting class, after the seven-section Observation
+        # overlap and the active/resolved Condition overlap.
+        #
+        # The general section yields to the specific one: whatever carries a
+        # pregnancy or travel code belongs to that section and not to this.
+        if not (_categories(resource_json) & _SOCIAL_HISTORY_CATEGORIES):
+            return False
+        return not (_own_codes(resource_json) & _MORE_SPECIFIC_SOCIAL_CODES)
     if d == "obs_survey":
+        # SUBTRACTIVE, for the same reason as obs_social_history. A
+        # patient-reported outcome legitimately carries the `survey` category,
+        # so a category-only rule made one patient-provided observation mark
+        # both `functional_status` and `patient_provided`.
+        #
+        # `patient_provided` is a claim about PROVENANCE, and it is the more
+        # specific one: a clinician-recorded survey is functional status, while
+        # the same survey asserted by the patient belongs to the
+        # patient-provided section. The general yields to the specific.
         if resource_type == "ClinicalImpression":
             return True
-        return bool(_categories(resource_json) & _SURVEY_CATEGORIES)
+        if not (_categories(resource_json) & _SURVEY_CATEGORIES):
+            return False
+        return not _is_patient_asserted(resource_json)
     if d == "diagnostic":
         if resource_type == "DiagnosticReport":
             return True

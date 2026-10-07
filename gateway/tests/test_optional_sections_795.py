@@ -221,11 +221,18 @@ class TestObservationSectionsAreDistinguishable:
                         f"{s.key} shares {rtype} with {len(secs)-1} others " \
                         f"and has no discriminator"
 
-    def test_travel_history_stays_missing_until_796_defines_a_code(self):
-        """TRAVEL_CODES is empty on purpose: no code is established for this EU
-        addition, and a guessed one would make the section claim observations
-        that are not travel history."""
-        assert euips.TRAVEL_CODES == frozenset()
+    def test_an_ordinary_social_history_observation_is_not_travel_history(self):
+        """#795 asserted `TRAVEL_CODES == frozenset()` here, because no code
+        was established and a guess would have made the section claim
+        observations that are not travel history. **#796 settled the code
+        provisionally**, so that assertion became false for a correct reason —
+        the same shape as #793's problem-list test.
+
+        What survives is the invariant that actually matters: a smoking-status
+        observation is social history and NOT travel history, whatever
+        TRAVEL_CODES happens to contain. The "is it still unverified" question
+        is pinned in #796's own tests, where the decision lives.
+        """
         class Row:
             def __init__(s, t, j):
                 s.resource_type, s.resource_json = t, j
@@ -234,6 +241,9 @@ class TestObservationSectionsAreDistinguishable:
                                   "code": {"coding": [{"code": "72166-2"}]}})
         st = euips.status_for_resources([obs])
         assert st["travel_history"] == euips.MISSING
+        assert st["social_history"] == euips.PRESENT
+        # And the codes remain flagged unverified, wherever they are set.
+        assert euips.CODES_VERIFIED is False
 
 
 class TestOptionalMeansOptional:

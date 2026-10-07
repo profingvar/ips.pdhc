@@ -943,3 +943,72 @@ conditions. Worth checking rather than assuming the fix was conservative.
 
 Consumers: health 200, `/clinics` 401, `analysis-filter` 401 on POST, zero
 error lines.
+
+## 2026-10-07 — #796: the three EU additions, and the MDR reason alerts are tagged
+
+522 tests pass (508 + 14), same single pre-existing unrelated failure. 7 of the
+14 new tests fail against the untouched tree.
+
+### The finding that shaped medical alerts
+
+Measured before writing anything: **no `Flag` resource exists anywhere on the
+platform.** Zero rows in ips, and nothing in request.pdhc, cdr.pdhc or
+gateway.pdhc emits one. So these are the platform's FIRST Flags and the
+simulator is setting the convention.
+
+That is an MDR question rather than a tidiness one. plan.pdhc authors
+thresholds (out of scope); **request.pdhc applies them and alerts (in scope,
+likely Rule 11)**. If that path later emits computed alerts as Flags and the
+simulated ones carry no provenance, the ambiguity is created **retroactively**
+and test data that looks clinical pollutes the evidence for a technical file.
+
+So every Flag carries `meta.tag` = `urn:pdhc:provenance#simulated`, says
+"SIMULATED ALERT" in its narrative, and names the simulator as author. The tag
+is at resource level deliberately, so it survives being read out of a bundle,
+a search result or an export.
+
+`is_simulated()` is the read side, and a test pins that it does **not** default
+to true for an untagged resource — defaulting the other way would make a
+genuinely computed alert look like test data, which is the same error
+reversed.
+
+### Travel history: the code is settled PROVISIONALLY and labelled as such
+
+#795 left `TRAVEL_CODES` empty rather than guess. #796 had to settle something,
+so it uses SNOMED `420008001` ("Travel") — recorded as a provisional choice in
+one place, covered by `CODES_VERIFIED = False`, not asserted as a verified
+binding. Travel is stored as an `effectivePeriod` rather than an instant,
+because "when did you travel" is a window and the window is what relates it to
+an illness, which is the whole reason the section exists.
+
+### Two more instances of the over-reporting class
+
+Writing #796 turned up two more sections swallowing their neighbours, after the
+three #795 found:
+
+* **travel history carries the `social-history` category**, so a
+  category-only rule made one travel observation mark both `social_history`
+  and `travel_history` PRESENT;
+* **patient-provided information carries the `survey` category**, which
+  functional status also uses, so one patient-reported observation marked both.
+
+Both fixed by making the GENERAL section subtractive — it yields to the more
+specific one. `obs_social_history` excludes pregnancy and travel codes;
+`obs_survey` excludes patient-asserted resources. The cut direction matters and
+is tested: the same survey recorded by a clinician is functional status, while
+asserted by the patient it is patient-provided.
+
+**All six Observation-based sections now attribute to exactly one section**,
+with a test over one resource of each kind. That is the invariant worth
+holding; five separate overlaps were found by looking for it rather than
+assuming the discriminators were sufficient.
+
+### A #795 test superseded for a correct reason
+
+`test_travel_history_stays_missing_until_796_defines_a_code` asserted
+`TRAVEL_CODES == frozenset()`. That was the right guard while no code was
+chosen; #796 chooses one. Narrowed to the invariant that survives — a
+smoking-status observation is social history and not travel history, whatever
+`TRAVEL_CODES` contains — with the "is it still unverified" question pinned in
+#796's tests, where the decision lives. Same shape as the #793 problem-list
+test earlier today.

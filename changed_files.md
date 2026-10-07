@@ -416,3 +416,10 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/admin.py | optional sections wired; `_mock_patient_resources` and `_OBSERVATIONS` deleted — every section now has a dedicated module |
 | 2026-10-07 | gateway/tests/test_required_sections_793.py | the problem-list test narrowed to the real invariant |
 | 2026-10-07 | gateway/tests/test_optional_sections_795.py | NEW — 18 tests, 9 fail without the fix |
+
+## 2026-10-07 — euIPS #796 (the three EU additions) + two more discriminator subtractions
+| 2026-10-07 | gateway/app/services/euips_eu_additions.py | NEW — Flag alerts with simulated provenance, travel history as a period, patient-provided via performer==subject |
+| 2026-10-07 | gateway/app/services/euips_sections.py | `TRAVEL_CODES` settled provisionally (SNOMED 420008001); `obs_social_history` and `obs_survey` made SUBTRACTIVE |
+| 2026-10-07 | gateway/app/admin.py | EU additions wired into the generator |
+| 2026-10-07 | gateway/tests/test_eu_additions_796.py | NEW — 14 tests, 7 fail without the fix |
+| 2026-10-07 | gateway/tests/test_optional_sections_795.py | the travel placeholder test narrowed to the surviving invariant |
