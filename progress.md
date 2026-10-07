@@ -1226,3 +1226,58 @@ The recurring shape is worth naming: **a verification that depends on
 incidental data silently verifies nothing.** The script now selects the rows
 that exercise each assertion, and reports a skip in its notes rather than
 passing quietly.
+
+## 2026-10-07 — #799 DEPLOYED: the baseline, published
+
+567 tests pass, same single pre-existing unrelated failure. Backup
+`miserver:~/backups/predeploy/ips.pdhc/20261007T204809Z/`.
+`scripts/contract_check.py` green in the same run: 0 failures.
+
+### The baseline the ticket asked for, from production
+
+```
+150 patients
+  all required sections present : 40  (27%)
+  missing a required section    : 110
+  no content in ANY section     : 110
+
+REQUIRED      allergies / problems / medications    40 present, 110 missing
+RECOMMENDED   immunisations / procedures / diag.    40 present, 110 missing
+              devices                                0 present, 150 missing
+OPTIONAL      all seven                              0 present, 150 missing
+EU ADDITIONS  all three                              0 present, 150 missing
+```
+
+Two things this makes visible that the summary numbers did not:
+
+* **`devices` is 0 / 0 / 150** — not 110. It confirms #794's finding from the
+  other direction: the section never existed, so even the 40 patients with
+  clinical data have none.
+* **Every optional section and every EU addition is 0 / 0 / 150.** Nothing on
+  this platform had ever generated a CarePlan, a Consent, a Flag, a travel
+  history or a social history. The reform did not improve those sections; it
+  created them.
+
+### What the report refuses to say, and why that is the deliverable
+
+It prints **"all required sections present"**, never "EU-conformant". Both
+reasons are named in its own output: the EHDS implementing acts were not
+confirmed adopted as of October 2026, and `CODES_VERIFIED` is False. A tool
+that printed the second would hand someone a phrase to repeat in a technical
+file, and #783 exists because this platform has already been bitten by a status
+reported more confidently than it was known.
+
+And a MISSING **recommended** or **optional** section is not a failure — #794's
+conclusion, enforced here. Each obligation level is labelled in the output with
+what MISSING means at that level, so the reader does not have to know. Failing
+them would make a correct cohort look broken and train the reader to ignore the
+output.
+
+### The deploy bundle caught a path error of mine
+
+`contract_check.py` was written to the repo-root `scripts/`, which holds local
+deploy tooling and never enters the image — the Dockerfile's `COPY . .` runs
+from `gateway/`. The bundle refused it as `MISSING-NEW` and aborted before
+writing anything. Moved to `gateway/scripts/`, so it now runs as
+`docker exec ips-app-1 python /app/scripts/contract_check.py` without a
+`docker cp`.

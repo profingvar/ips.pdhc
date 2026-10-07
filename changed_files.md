@@ -433,3 +433,9 @@ All edited files with full paths, updated after each change.
 ## 2026-10-07 — euIPS #798 (pin the consumers)
 | 2026-10-07 | gateway/tests/test_consumer_contract_798.py | NEW — 13 tests pinning the verified consumer contract |
 | 2026-10-07 | gateway/scripts/contract_check.py | NEW — runs against a LIVE ips; route registration + response shapes |
+
+## 2026-10-07 — euIPS #799 (the completeness report)
+| 2026-10-07 | gateway/app/services/euips_report.py | NEW — per-obligation coverage, conformance, capped failure list, the disclaimer |
+| 2026-10-07 | gateway/app/__init__.py | `flask euips-report` and `euips-report-batch` |
+| 2026-10-07 | gateway/scripts/contract_check.py | MOVED here from the repo-root scripts/ so `COPY . .` ships it into the image |
+| 2026-10-07 | gateway/tests/test_euips_report_799.py | NEW — 15 tests |
