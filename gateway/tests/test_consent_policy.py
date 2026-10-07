@@ -113,3 +113,62 @@ def test_analysis_filter_research_needs_consent(client, db):
         "research_project_guids": [str(uuid.uuid4())]})
     assert no.get_json()["allowed"] == []
     assert no.get_json()["excluded"][0]["reason"] == "no_research_consent"
+
+
+# ---------------------------------------------------------------------------
+# A malformed guid must not be a 500 (found by cdr's sibling smoke 2026-10-07)
+# ---------------------------------------------------------------------------
+
+def test_a_malformed_guid_is_excluded_not_a_500(client, two_patients):
+    """`PatientIndex.guid` is a UUID column, so a non-UUID guid made the IN
+    clause raise at the driver and this endpoint answered **500**.
+
+    That is the worst answer a consent gate can give. The caller sees an
+    exception instead of a verdict, and a 500 is indistinguishable from ips
+    being down — cdr's `_analysis_filter` turns it into `IpsUnreachable` and
+    fail-closes the whole read, reporting a sibling outage. So one malformed
+    guid anywhere in a cohort denied the entire cohort and blamed the wrong
+    service.
+
+    Malformed guids are now treated as unknown: they fail closed for that
+    patient alone, and they are NAMED so the caller can tell it sent something
+    unusable rather than inferring an outage.
+    """
+    r = client.post("/api/v1/patients/analysis-filter", json={
+        "patient_guids": ["smoke-not-a-real-patient", two_patients["plain"]],
+        "purpose": "statistics",
+    })
+    assert r.status_code == 200, r.get_data(as_text=True)[:400]
+    body = r.get_json()
+    # The well-formed patient is still evaluated — one bad guid does not deny
+    # the cohort.
+    assert body["allowed"] == [two_patients["plain"]]
+    assert {"patient_guid": "smoke-not-a-real-patient",
+            "reason": "malformed_guid"} in body["excluded"]
+
+
+def test_a_malformed_guid_is_never_silently_dropped(client):
+    """It must appear in `excluded`, not vanish. A guid missing from both lists
+    would read as a shorter cohort, which is the kind of quiet difference
+    nobody notices."""
+    r = client.post("/api/v1/patients/analysis-filter", json={
+        "patient_guids": ["nope", "also-nope"],
+        "purpose": "statistics",
+    })
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["allowed"] == []
+    returned = {e["patient_guid"] for e in body["excluded"]}
+    assert returned == {"nope", "also-nope"}
+    assert all(e["reason"] == "malformed_guid" for e in body["excluded"])
+
+
+def test_an_all_malformed_request_still_answers_200(client):
+    """The degenerate case: every guid unusable. Still a verdict, still not a
+    500 — the caller learns its input was wrong instead of retrying against a
+    sibling it thinks is down."""
+    r = client.post("/api/v1/patients/analysis-filter", json={
+        "patient_guids": ["x"], "purpose": "research",
+    })
+    assert r.status_code == 200
+    assert r.get_json()["allowed"] == []

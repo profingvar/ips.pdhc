@@ -378,3 +378,5 @@ All edited files with full paths, updated after each change.
 - ips.pdhc/docs/technical.md (Port Allocation section)
 - gateway/app/api/consents_routes.py — NEW endpoint GET /api/v1/patients/<pid>/consents/check?grantee_caregiver_guid=<cg> (relationship-free cross-service consent predicate; #558, mirrors blocks_routes.check_block)
 - gateway/tests/test_consents_api.py — +TestCheckConsent (6 tests: relationship-free, grantee filter, active-only, 400/404). Suite 402/402.
+- gateway/app/api/patient_routes.py
+- gateway/tests/test_consent_policy.py

@@ -359,3 +359,44 @@ adoption tracked in #420.
 Clears the admin-lift HTML form for production. Pairs with the #242
 patient-copy legal sign-off — both gated the spärr patient-portal
 go-live and are now cleared.
+
+## 2026-10-07 — /analysis-filter answered 500 on a malformed guid
+
+Found while fixing cdr #730. `PatientIndex.guid` is a UUID column, so
+`.filter(PatientIndex.guid.in_(guids))` raised at the driver — "badly formed
+hexadecimal UUID string" — whenever any guid was not a well-formed UUID, and the
+endpoint answered **500**.
+
+That is the worst available answer for a consent gate. The caller gets an
+exception rather than a verdict, and a 500 is indistinguishable from ips being
+down: cdr's `_analysis_filter` converts it to `IpsUnreachable` and fail-closes
+the **whole read**, reporting a sibling outage. So one malformed guid anywhere
+in a cohort denied the entire cohort and blamed the wrong service.
+
+Malformed guids are now treated as **unknown** rather than fatal: they get empty
+flags, so they fail closed for that patient alone, and they are named in
+`excluded` with `reason: malformed_guid` so the caller can see it sent something
+unusable. Per-patient fail-closed beats per-request, and neither should be a
+500. A warning is logged with the first five offenders.
+
+Deliberately not a 400: refusing the request would also deny the whole cohort
+for one bad entry, which is the behaviour being removed.
+
+**The unit suite cannot reproduce the 500** — the test DB is SQLite, which does
+not coerce UUIDs, so the old code does not raise there. The three new tests pin
+the new contract (excluded-by-name, never silently dropped, all-malformed still
+200); two of them fail against the old code. Only Postgres reproduces the
+original bug, so cdr's production sibling smoke is the real verification, and it
+is what found it.
+
+    401 passed, 1 failed — the failure is PRE-EXISTING and unrelated
+    (test_patient_portal_html: a Swedish legal-review banner), verified by
+    stashing the change and re-running.
+
+Deployed to `/usr/local/www/pdhcips/gateway` (note: not `/usr/local/www/ips.pdhc`
+— that path does not exist; the compose working_dir is the source of truth).
+`patient_routes.py` was diffed against the local pre-change baseline first and
+was identical. Backup at `~/backups/predeploy/ips.pdhc/20261007T092918Z/`.
+
+Verified from all three CDRs in-container:
+`VERDICT OK allowed=0 excluded=1 reasons=['malformed_guid']`.
