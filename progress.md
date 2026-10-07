@@ -400,3 +400,98 @@ was identical. Backup at `~/backups/predeploy/ips.pdhc/20261007T092918Z/`.
 
 Verified from all three CDRs in-container:
 `VERDICT OK allowed=0 excluded=1 reasons=['malformed_guid']`.
+
+## 2026-10-07 — euIPS Phase A: #789 personnummer, #790 move the generator
+
+First work on epic #788. 455 tests pass (443 before + 12), with one
+pre-existing unrelated failure confirmed by stashing
+(`test_patient_portal_html::test_blocks_list_shows_legal_review_banner_when_draft`,
+fails identically on the untouched tree). Not deployed yet.
+
+### #789 — the production baseline is worse than the ticket said
+
+Ran the new validator's logic against the live database:
+
+```
+PRODUCTION BASELINE — 150 patients
+  valid Swedish personnummer : 0
+  foreign identifier system  : 10  (http://hl7.org/fhir/sid/us-ssn)
+  BROKEN Swedish personnummer:
+       140  malformed (wrong length or shape)
+```
+
+**Zero of 140 are valid**, not the ~90% the ticket estimated. The earlier 10%
+figure came from testing the Luhn digit *after* manually stripping the doubled
+century; in the data as it actually stands every value fails on shape before
+the check digit is reached. Worth correcting in the ticket rather than leaving
+a number that understates it.
+
+One line caused both halves (`admin.py:743`):
+
+```python
+personnummer = f"19{mp['birth'].replace('-', '')}-{random.randint(1000, 9999)}"
+```
+
+`mp['birth']` is already `YYYY-MM-DD`, so the `"19"` doubled the century, and
+the last digit is a Luhn checksum rather than a free number.
+
+`app/services/personnummer.py` is now the one definition — `build`,
+`normalise`, `is_valid`, `describe_invalid`, and the OID — used by all three
+paths that mint or accept one: the generator, the admin create form and
+`POST /api/v1/clinics/<guid>/patients`. Three copies of this would drift, which
+is what #784 and #786 both had to undo.
+
+**The decision on existing rows: fix forward.** Restamping would have to
+rewrite `PatientIndex.identifier_value` AND the identifier inside each Patient
+`resource_json` — a migration, not an update — and the rows are synthetic. Same
+choice #781 took for `patient_org_guid`. `flask check-personnummer` is the
+other half of that decision: leaving legacy rows is only defensible if the
+number is visible rather than assumed.
+
+**The 10 US SSNs are reported separately as a foreign identifier system, not as
+broken.** They are from the Synthea import. Counting them with the malformed
+rows would overstate the defect and imply a fix that would be wrong.
+
+**Validation warns, it does not reject**, on both accepting paths. An operator
+may be recording a real patient with imperfect details, and refusing the save
+would discard the rest of the record; `POST /clinics/<guid>/patients` is a live
+endpoint where turning a 201 into a 400 is a breaking change belonging in its
+own ticket. Validation is also scoped to the Swedish OID — a caller passing its
+own `identifier_system` is not asserting Swedish format and must not be judged
+against it.
+
+### #790 — moving it needed more than moving the markup
+
+The block's organisation select is labelled "synced from SSO", and that sync
+ran in the DASHBOARD view (`orgs = _sync_sso_organisations()`). The patients
+view passed only `clinics`, a plain DB read. Moving the markup alone would have
+rendered "No organisations — check SSO connection", and a newly created SSO
+organisation would not have appeared until somebody visited the dashboard.
+
+`_sync_sso_organisations()` ends with exactly the query `clinics` ran, so the
+two are the same list and the sync only refreshes it first — and it already
+degrades gracefully when SSO is unreachable. The patients view now calls it.
+
+### Three mistakes of mine, all caught before they shipped
+
+1. **A `NameError` hidden in error handling.** My new warning in
+   `clinic_routes.py` logged `clinic_guid`; the route parameter is `guid`. It
+   would have raised only on the warning path — that is, only when someone
+   submitted a bad personnummer. A crash reachable only once something is
+   already wrong. Found by scanning for unresolved names, not by a test.
+2. **A mangled import.** Inserting the new import after the anchor
+   `"from app.models.patient_index import PatientIndex"` matched the PREFIX of
+   `...import PatientIndex, PatientClinicAssignment`, splitting the line and
+   leaving `PatientClinicAssignment` attached to my import. Every test errored
+   at collection, so it was loud.
+3. **A test that passed for the wrong reason.** `"Akademiska" in body` on
+   `/admin/patients` passed against the untouched tree, because the Create
+   Patient form on that page already lists clinics. It matched the wrong form.
+   Now scoped to a slice of the generator's own `<form>`, and it fails on the
+   untouched tree as it should.
+
+With the fix stashed, 9 of the 12 endpoint tests fail. The 3 that pass either
+way are regression guards: the POST target and field names are unchanged, junk
+input does not 500, and the identifier in `resource_json` matches the index
+column (which was true before too — the old generator wrote the same wrong
+value to both places).

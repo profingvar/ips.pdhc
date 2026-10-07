@@ -15,6 +15,7 @@ from werkzeug.security import generate_password_hash
 
 from app.models.base import db
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
+from app.services import personnummer as pnr
 from app.models.fhir_resource import FhirResource
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
@@ -126,8 +127,21 @@ def patients():
         org = (pat_res.resource_json or {}).get("managingOrganization", {}) if pat_res else {}
         p.organisation = org.get("display", "—")
 
-    clinics = db.session.query(Clinic).filter_by(is_active=True).order_by(Clinic.name).all()
-    return render_template("patients.html", patients=patients_list, q=q, clinics=clinics)
+    # #790: the mock-patient generator moved here from the dashboard, and its
+    # organisation select is labelled "synced from SSO". That sync ran in the
+    # dashboard view, so simply moving the markup would have quietly dropped it
+    # and a newly created SSO organisation would not appear until somebody
+    # visited the dashboard.
+    #
+    # `_sync_sso_organisations()` ends with exactly the query this line used to
+    # run — active clinics by name — so `orgs` and `clinics` are the same list;
+    # the sync only refreshes it first, and it degrades gracefully (logs a
+    # warning, returns the local rows) when SSO is unreachable. Both names are
+    # passed because the Create form and the generator each use their own.
+    orgs = _sync_sso_organisations()
+    clinics = orgs
+    return render_template("patients.html", patients=patients_list, q=q,
+                           clinics=clinics, orgs=orgs)
 
 
 @bp.route("/patients/create", methods=["POST"])
@@ -156,9 +170,22 @@ def create_patient():
     if birth:
         patient_fhir["birthDate"] = birth
     if identifier:
+        # #789: this form stores whatever is typed under the Swedish
+        # personnummer OID, so a malformed value becomes a false claim about
+        # the identifier's system. Normalise the short form an operator
+        # naturally types (YYMMDD-NNNN) and WARN rather than reject: an
+        # operator may be recording a real patient whose details are
+        # imperfect, and refusing the save would lose the rest of the record.
+        normalised = pnr.normalise(identifier) or identifier
+        problem = pnr.describe_invalid(normalised, birth=birth or None)
+        if problem:
+            flash(f"Patient saved, but the personnummer looks wrong: {problem}",
+                  "warning")
+            current_app.logger.warning(
+                "patient create: questionable personnummer (%s)", problem)
         patient_fhir["identifier"] = [{
-            "system": "urn:oid:1.2.752.129.2.1.3.1",
-            "value": identifier,
+            "system": pnr.PERSONNUMMER_SYSTEM,
+            "value": normalised,
         }]
     if clinic:
         patient_fhir["managingOrganization"] = {
@@ -740,7 +767,13 @@ def generate_mock_data():
 
     for mp in patients_pool:
         resource_id = str(uuid.uuid4())
-        personnummer = f"19{mp['birth'].replace('-', '')}-{random.randint(1000, 9999)}"
+        # #789: was `f"19{mp['birth'].replace('-','')}-{randint(1000,9999)}"`.
+        # mp['birth'] is already YYYY-MM-DD, so the "19" doubled the century
+        # (1919611015-9638, 15 chars instead of 13), and the last digit is a
+        # Luhn checksum rather than a free number — valid in 6 of 60 sampled
+        # live rows, exactly chance. Worst case was a 2000s birth becoming
+        # "19"+"20xx", an identifier contradicting its own birth_date.
+        personnummer = pnr.build(mp["birth"])
 
         patient_fhir = {
             "resourceType": "Patient",

@@ -380,3 +380,13 @@ All edited files with full paths, updated after each change.
 - gateway/tests/test_consents_api.py — +TestCheckConsent (6 tests: relationship-free, grantee filter, active-only, 400/404). Suite 402/402.
 - gateway/app/api/patient_routes.py
 - gateway/tests/test_consent_policy.py
+
+## 2026-10-07 — euIPS Phase A (#789 personnummer, #790 move the generator)
+| 2026-10-07 | gateway/app/services/personnummer.py | NEW — build / normalise / is_valid / describe_invalid + the OID, one definition for three callers |
+| 2026-10-07 | gateway/app/admin.py | generator uses pnr.build (was a doubled century + random check digit); admin create normalises and warns; patients view syncs SSO orgs and passes `orgs` |
+| 2026-10-07 | gateway/app/api/clinic_routes.py | POST /clinics/<guid>/patients normalises + validates only on the Swedish OID; `current_app` imported (it was used and missing) |
+| 2026-10-07 | gateway/app/templates/dashboard.html | Generate Mock Patients block removed |
+| 2026-10-07 | gateway/app/templates/patients.html | generator block added beside Create Patient; empty-state no longer points at the dashboard |
+| 2026-10-07 | gateway/app/__init__.py | NEW `flask check-personnummer` — read-only report |
+| 2026-10-07 | gateway/tests/test_personnummer_789.py | NEW — 27 tests |
+| 2026-10-07 | gateway/tests/test_mock_generator_789_790.py | NEW — 12 tests, 9 fail without the fix |

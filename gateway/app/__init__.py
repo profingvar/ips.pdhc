@@ -108,6 +108,75 @@ def create_app(config_name: str | None = None) -> Flask:
             f"re_imposed={out['re_imposed']['re_imposed']}"
         )
 
+    # #789 — `flask check-personnummer`, read-only.
+    #
+    # The decision on the pre-existing rows is FIX FORWARD: they are synthetic
+    # and restamping would have to rewrite both PatientIndex.identifier_value
+    # and the identifier inside each Patient resource_json, which is a
+    # migration rather than an update. The same fill-forward choice #781 took
+    # for patient_org_guid. This command is the other half of that decision --
+    # leaving legacy rows is only defensible if their number is known and
+    # visible rather than quietly assumed.
+
+    @app.cli.command("check-personnummer")
+    def _check_personnummer_cli():  # noqa: D401
+        """Report how many patient identifiers are valid Swedish personnummer.
+
+        Read-only. Counts by failure reason, and separates FOREIGN identifier
+        systems (10 live patients carry US SSNs from the Synthea import) from
+        BROKEN Swedish ones -- a foreign identifier is not a defect, and
+        lumping the two together would overstate the problem.
+        """
+        import click as _click
+        from collections import Counter
+        from app.models.patient_index import PatientIndex
+        from app.services import personnummer as pnr
+
+        rows = db.session.query(PatientIndex).all()
+        valid = 0
+        foreign: Counter = Counter()
+        reasons: Counter = Counter()
+        no_identifier = 0
+        for p in rows:
+            if not p.identifier_value:
+                no_identifier += 1
+                continue
+            if p.identifier_system != pnr.PERSONNUMMER_SYSTEM:
+                foreign[p.identifier_system or "(no system)"] += 1
+                continue
+            why = pnr.describe_invalid(p.identifier_value, birth=p.birth_date)
+            if why is None:
+                valid += 1
+            else:
+                # Collapse to a class rather than the per-row message, so the
+                # output is a summary and not 140 lines.
+                if "check digit" in why:
+                    reasons["invalid check digit"] += 1
+                elif "not a personnummer" in why:
+                    reasons["malformed (wrong length or shape)"] += 1
+                elif "contradicts" in why or "says" in why:
+                    reasons["disagrees with the patient's birth_date"] += 1
+                elif "impossible date" in why:
+                    reasons["impossible date"] += 1
+                else:
+                    reasons["other"] += 1
+
+        _click.echo(f"patients: {len(rows)}")
+        _click.echo(f"  valid Swedish personnummer : {valid}")
+        _click.echo(f"  no identifier at all       : {no_identifier}")
+        for sysname, n in foreign.most_common():
+            _click.echo(f"  foreign identifier system  : {n}  ({sysname})")
+        if reasons:
+            _click.echo("  BROKEN Swedish personnummer:")
+            for reason, n in reasons.most_common():
+                _click.echo(f"      {n:>4}  {reason}")
+        else:
+            _click.echo("  BROKEN Swedish personnummer: 0")
+        _click.echo("")
+        _click.echo("Pre-existing rows are left as they are (#789: fix forward).")
+        _click.echo("Newly generated patients are built by "
+                    "app.services.personnummer.build and are valid.")
+
     # Create tables and bootstrap — guarded for concurrent gunicorn workers
     with app.app_context():
         try:

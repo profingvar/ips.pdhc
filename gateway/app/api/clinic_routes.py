@@ -2,7 +2,7 @@
 
 import uuid
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.models.base import db
 from app.models.clinic import Clinic
@@ -10,6 +10,7 @@ from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services.auth_service import require_auth
 from app.services.audit_service import log_event
 from app.services.fhir_service import create_resource
+from app.services import personnummer as pnr
 
 bp = Blueprint("clinic_api", __name__, url_prefix="/api/v1/clinics")
 
@@ -169,10 +170,30 @@ def create_clinic_patient(guid):
         if data.get("birth_date"):
             patient_fhir["birthDate"] = data["birth_date"]
         if data.get("identifier_value"):
+            # #789: this endpoint DEFAULTS the system to the Swedish
+            # personnummer OID, so an unqualified value is implicitly a claim
+            # that it is a personnummer. Normalise and validate only on that
+            # system — a caller passing its own identifier_system is not
+            # asserting anything about Swedish format and must not be judged
+            # against it (10 live patients carry US SSNs from the Synthea
+            # import, and those are foreign identifiers, not broken ones).
+            #
+            # Warn rather than reject: this is a live endpoint with external
+            # callers, and turning a 201 into a 400 is a breaking change that
+            # belongs in its own ticket, not in a format fix.
+            id_system = data.get("identifier_system") or pnr.PERSONNUMMER_SYSTEM
+            id_value = data["identifier_value"]
+            if id_system == pnr.PERSONNUMMER_SYSTEM:
+                id_value = pnr.normalise(id_value) or id_value
+                problem = pnr.describe_invalid(
+                    id_value, birth=data.get("birth_date") or None)
+                if problem:
+                    current_app.logger.warning(
+                        "patient create via clinic %s: questionable "
+                        "personnummer (%s)", guid, problem)
             patient_fhir["identifier"] = [{
-                "system": data.get("identifier_system")
-                          or "urn:oid:1.2.752.129.2.1.3.1",
-                "value": data["identifier_value"],
+                "system": id_system,
+                "value": id_value,
             }]
         if clinic.organisation_guid:
             patient_fhir["managingOrganization"] = {
