@@ -1146,3 +1146,83 @@ untouched with NULL batch guids — unreachable by any purge, which is the #789
 fix-forward decision holding.
 
 Remaining: #798 (pin the nine consumers) and #799 (the completeness validator).
+
+## 2026-10-07 — #798: pin the consumers, and two corrections it forced
+
+522+13 = 535 contract-relevant tests; full suite 552 pass with the one
+pre-existing unrelated failure. `scripts/contract_check.py` runs green against
+production: 10 routes registered, no `/api/v1/fhir` surface, and every pinned
+shape verified against the real database.
+
+### Correction 1: #788's consumer table was wrong
+
+It was built by grepping endpoint PATHS without distinguishing the target
+host, and it listed `/api/v1/fhir/Patient`, `/fhir/Observation` and
+`/fhir/Condition` as ips endpoints with four consumers.
+
+**ips has no `/api/v1/fhir/*` routes at all** — confirmed against the live URL
+map. Those paths exist on the CDRs, which expose an identical FHIR surface, and
+that is what analyse, dashboard, cdr and gateway read.
+
+So **this ticket's own item 4 rests on a false premise.** It asked for a test
+that #793's absent/unknown resources do not break `/fhir/Condition` for "the
+four services that read them". No service reads those from ips, so the risk
+does not exist and the test would have been theatre. What replaces it is a test
+that ips still has NO fhir surface — because if one is ever added, the
+absent/unknown resources become visible to whoever reads it, and that addition
+needs its own thought.
+
+Two other paths turned out not to be live calls: analyse's
+`/api/v1/observations/search` goes to a CDR node, and
+`/api/v1/blocks/check-bulk` appears only in a comment about a call #717
+retired.
+
+### Correction 2 — and a LIVE cross-service defect in contract.pdhc
+
+`contract.pdhc/app/backend/app/signer_resolver.py::_resolve_patient` GETs
+`{IPS_BASE_URL}/api/v1/patients/<guid>`. **ips has no such route.** Proved with
+a real patient guid from the live database, from inside the contract container:
+
+```
+/api/v1/patients/4d91c614-…            -> 404   (route does not exist)
+/api/v1/patients/4d91c614-…/clinics    -> 401   (route exists, auth-gated)
+```
+
+The 401 on the sibling path proves connectivity and base URL are fine; it is
+specifically the bare patient route that is missing.
+
+**And a second defect stacked on the same call:** `_ips_headers` sends the key
+as `X-API-Key`. ips's `require_auth` reads **only** `Authorization`
+(`Bearer …` or `ApiKey …`) and ignores `X-API-Key` silently — the trap already
+recorded in memory as `infra_ips_auth_header_scheme` and the same one #730 hit.
+So even with the route present, contract would get 401.
+
+Impact: `STRICT_SIGNER_VALIDATION` **defaults to True** and is unset in
+production, and `IPS_BASE_URL` is set (`http://host.docker.internal:9040`). So
+in strict mode every contract carrying a `Patient/<guid>` signer reference is
+rejected with "Patient/<guid> not found in IPS" — **for patients that
+demonstrably exist**.
+
+Why nobody noticed: contract's tests mock `http_requests.get` and return 200,
+so they verify contract's handling of a success rather than whether the
+endpoint exists. #704/#708's lesson precisely — real calls find what mocks
+cannot.
+
+Filed as its own ticket. Not fixed here: the fix is either in contract.pdhc or
+a new additive route on ips, and that is a decision rather than a tidy-up.
+
+### Three hollow checks in my own script, each caught by looking
+
+1. **The shape checks silently skipped.** I set `session["sso_user"]`, which
+   satisfies the admin blueprint but not `require_auth` — so all three shape
+   checks 401'd and the script printed a clean run while verifying nothing.
+2. **The #779 assertion skipped.** It picked any active patient; an unassigned
+   one returns `[]` and there is no row to inspect. That assertion —
+   `guid != organisation_guid` — is the single most valuable line in the file.
+3. **The sim patient-dict assertion skipped.** It picked the alphabetically
+   first clinic, which is "1177" with zero patients.
+
+The recurring shape is worth naming: **a verification that depends on
+incidental data silently verifies nothing.** The script now selects the rows
+that exercise each assertion, and reports a skip in its notes rather than
+passing quietly.

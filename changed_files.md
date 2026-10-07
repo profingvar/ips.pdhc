@@ -429,3 +429,7 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/admin.py | one batch guid per run, stamped on each patient; `POST /admin/mock-data/purge`; batch list passed to the template; flash reports the batch guid and resource count |
 | 2026-10-07 | gateway/app/templates/patients.html | generation-batch table with per-batch counts, euIPS conformance and a Purge button |
 | 2026-10-07 | gateway/tests/test_batches_797.py | NEW — 17 tests, 11 fail without the fix |
+
+## 2026-10-07 — euIPS #798 (pin the consumers)
+| 2026-10-07 | gateway/tests/test_consumer_contract_798.py | NEW — 13 tests pinning the verified consumer contract |
+| 2026-10-07 | gateway/scripts/contract_check.py | NEW — runs against a LIVE ips; route registration + response shapes |
