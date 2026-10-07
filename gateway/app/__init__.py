@@ -3,6 +3,7 @@
 import os
 import logging
 
+import click
 from flask import Flask, redirect, url_for
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -176,6 +177,31 @@ def create_app(config_name: str | None = None) -> Flask:
         _click.echo("Pre-existing rows are left as they are (#789: fix forward).")
         _click.echo("Newly generated patients are built by "
                     "app.services.personnummer.build and are valid.")
+
+    # #799 — `flask euips-report`, read-only.
+    @app.cli.command("euips-report")
+    def _euips_report_cli():  # noqa: D401
+        """Report euIPS section coverage for every patient.
+
+        Read-only. Says "all required sections present", never
+        "EU-conformant" -- see euips_report for why that distinction is
+        deliberate rather than cautious.
+        """
+        import click as _click
+        from app.services import euips_report
+        _click.echo(euips_report.format_report(euips_report.report()))
+
+    @app.cli.command("euips-report-batch")
+    @click.argument("batch_guid")
+    def _euips_report_batch_cli(batch_guid):  # noqa: D401
+        """Report euIPS section coverage for ONE generation batch (#797)."""
+        import click as _click
+        from app.services import euips_report
+        r = euips_report.report(batch_guid)
+        if r["patients"] == 0:
+            _click.echo(f"No patients in batch {batch_guid}.")
+            return
+        _click.echo(euips_report.format_report(r))
 
     # Create tables and bootstrap — guarded for concurrent gunicorn workers
     with app.app_context():
