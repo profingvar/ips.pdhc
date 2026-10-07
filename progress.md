@@ -908,3 +908,38 @@ module in obligation order — `euips_required` (#793), `euips_recommended`
 (#794), `euips_optional` (#795). The old helper emitted Observations with **no
 `category` at all**, so under the new discrimination its observations would
 have been attributable to no section — another reason it could not stay.
+
+### 2026-10-07 — #795 DEPLOYED
+
+Live: `{"database":"connected","service":"ips-server","status":"ok"}`.
+Backup `miserver:~/backups/predeploy/ips.pdhc/20261007T195723Z/`.
+
+The #791 bug asserted against the LIVE code after deploy:
+
+```
+one vital-sign Observation marks PRESENT: ['vital_signs']      (was 7 sections)
+one RESOLVED Condition: problems=MISSING past_illnesses=PRESENT conformant=False
+                                        (was problems=PRESENT, conformant=True)
+sections sharing a type with no discriminator: none
+```
+
+Live generator over 250 patients: vital_signs 226, past_illnesses 116,
+pregnancy 20, social_history 153, functional_status 61, plan_of_care 63,
+advance_directives 36 — each present for some patients and absent for others,
+which is what optional means. And the four invariants that would be nonsense:
+
+```
+pregnancy on a male patient         : 0
+pregnancy on a child                : 0
+CURRENT pregnancy over the age bound: 0
+Observations with no category        : 0
+```
+
+**The baseline is still 40/150, and that is the reassuring answer.** If the
+stricter discrimination had REDUCED the count, some of those 40 would have been
+counted conformant only because of the over-reporting bug. It did not, so all
+40 genuinely carry an active problem list rather than only resolved
+conditions. Worth checking rather than assuming the fix was conservative.
+
+Consumers: health 200, `/clinics` 401, `analysis-filter` 401 on POST, zero
+error lines.
