@@ -734,3 +734,73 @@ rather than assumed. Generating a batch is what will move it, which is #797.
 container is a far better production check than creating test data and deleting
 it. It proves the shipped code behaves, leaves no residue in a patient
 registry, and needs no cleanup that could itself go wrong.
+
+## 2026-10-07 — #794: the four RECOMMENDED sections
+
+490 tests pass (476 + 14), same single pre-existing unrelated failure. 6 of the
+14 new tests fail against the untouched tree — the three measured defects below,
+plus narrative.
+
+### Three defects, each measured in production first
+
+1. **Medical devices did not exist.** No `Device` or `DeviceUseStatement` had
+   ever been written: the live resource types were Observation, Patient,
+   MedicationStatement, Condition, Immunization, AllergyIntolerance,
+   DiagnosticReport, Procedure. One of the four recommended sections was simply
+   absent from the simulator. Now `Device` + a `DeviceUseStatement` that
+   references it, including a **continuous glucose monitoring sensor** —
+   deliberately, because cgm.pdhc is a live provider here and the simulator
+   should describe the same object as the real integration.
+2. **Diagnostic reports linked to nothing.** Queried
+   `jsonb_object_keys`: all 61 live rows carry `code`, `status`, `conclusion`,
+   `effectiveDateTime`, `subject` and **no `result`**. A diagnostic-results
+   section whose reports reference no observations is a header with a sentence
+   attached, and the results are the part a clinician reads. Lab panels now
+   emit their Observations first and the report references them, LOINC-coded
+   with UCUM units. Imaging reports keep a conclusion and no numeric result,
+   which is correct for imaging — the two are built from separate lists rather
+   than forced into one shape.
+3. **Immunisation dates were generation time.** 97 live rows across 40 distinct
+   dates, each the moment its batch ran, so an 80-year-old's childhood vaccine
+   was dated today. Dates now derive from the patient's birth date against a
+   rough Swedish schedule, clamped so nothing lands before birth or in the
+   future, and a vaccine the patient is too young for is skipped rather than
+   back-dated.
+
+### The distinction from #793, made explicit
+
+A required section may never be empty. A **recommended** one may. So each
+produces one of three outcomes — content, an explicit "none known", or nothing
+at all — and all three are valid. Verified across 200 generated patients that
+immunisations, procedures and devices each produce all three;
+`diagnostic_results` produces two, because IPS defines no absent code for it
+and inventing one is forbidden by the plan.
+
+This matters downstream: **#799 must not report a MISSING recommended section
+as a failure.**
+
+### A FHIR cardinality error caught by probing, not by a validator
+
+The immunisation absent-assertion initially had no `occurrenceDateTime`, and
+FHIR makes `Immunization.occurrence[x]` required (1..1) — so the resource was
+structurally invalid. There is no FHIR validator in this test path, so nothing
+would have said so; a probe over 400 generated patients found it. Fixed by
+setting a real date, with a note that IPS may instead use a
+`data-absent-reason` extension on `_occurrenceDateTime` and that satisfying the
+cardinality is the choice that cannot be silently wrong while
+`CODES_VERIFIED` is False.
+
+### Dead vocabularies removed, and what the comparison showed
+
+`_IMMUNIZATIONS`, `_PROCEDURES` and `_DIAGNOSTIC_REPORTS` had no remaining
+reader. Unlike the #793 removal these did **not** contradict the surviving
+lists — every shared code carried a compatible display, and the one apparent
+clash (`J07BM01` as "HPV vaccine" versus "Human papillomavirus") was my own
+string comparison failing, not a disagreement.
+
+One redundancy was dropped: the old list carried BOTH LOINC `58410-2`
+"Complete blood count" and `11502-2` "Full blood count" — two codes for one
+concept, which would have made a cohort look as though it contained two
+different tests.
+
+`_OBSERVATIONS` stays: vital signs are an OPTIONAL section and #795 owns them.

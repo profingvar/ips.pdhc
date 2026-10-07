@@ -404,3 +404,8 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/services/euips_sections.py | `is_absent_assertion` now covers `medication` (what this codebase writes) + CodeableReference; `_CODE_BEARING_FIELDS` |
 | 2026-10-07 | gateway/app/admin.py | required sections emitted in BOTH modes; removed from `_mock_patient_resources`; dead `_CONDITIONS`/`_MEDICATIONS`/`_ALLERGIES` deleted; flash reports conformance |
 | 2026-10-07 | gateway/tests/test_required_sections_793.py | NEW — 13 tests, 6 fail without the fix |
+
+## 2026-10-07 — euIPS #794 (the four RECOMMENDED sections)
+| 2026-10-07 | gateway/app/services/euips_recommended.py | NEW — immunisations (age-derived dates), procedures, Device + DeviceUseStatement, diagnostic results WITH linked Observations |
+| 2026-10-07 | gateway/app/admin.py | recommended sections wired in; immunisations/procedures/diagnostic reports removed from `_mock_patient_resources`; dead `_IMMUNIZATIONS`/`_PROCEDURES`/`_DIAGNOSTIC_REPORTS` deleted |
+| 2026-10-07 | gateway/tests/test_recommended_sections_794.py | NEW — 14 tests, 6 fail without the fix |
