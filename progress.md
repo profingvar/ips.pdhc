@@ -589,3 +589,50 @@ same single pre-existing unrelated failure. Full decision record in
 additive, nullable and idempotent, but it is still an ALTER on a table that
 nine services read, so it wants an explicit go rather than riding along with a
 code deploy.
+
+### 2026-10-07 — #791 migration applied and code DEPLOYED
+
+Live: `{"database":"connected","service":"ips-server","status":"ok"}`.
+Backups: `20261007T192237Z/patient_index_before.sql` (pg_dump before the ALTER)
+and `20261007T192346Z/` (the code).
+
+**Order mattered, and the script enforces it.** The new model selects
+`generation_batch_guid`, so shipping the code before the column exists would
+make EVERY `PatientIndex` query fail — a total outage of the service nine
+siblings depend on. The migration ran first, and `deploy_791.sh` carries an
+ordering gate that queries `information_schema` and aborts with exit 7 if the
+column is absent, rather than trusting that the migration was remembered.
+
+Applied: `ALTER TABLE patient_index ADD COLUMN IF NOT EXISTS
+generation_batch_guid UUID;` → `uuid`, nullable, no default. 150 patients, 0
+with a batch, which is correct: an existing row is not from a tracked batch.
+
+**The Phase C baseline, now measured by the shipped code in production:**
+
+```
+patients: 150
+euIPS-conformant (all 3 required present or explicitly absent): 40
+no content in ANY section: 110
+```
+
+This independently reproduces the figure derived from raw SQL earlier in the
+day, now computed by `euips_sections.status_for_resources` itself. That is the
+number #793 has to move.
+
+**Compatibility verified, not assumed.** Inside the container, against live
+data: the exact `/clinics` join request.pdhc uses for the #779 gate still
+returns, `Clinic.guid` and `Clinic.organisation_guid` are still distinct
+fields, a `PatientIndex` row loads with `generation_batch_guid=None`, and every
+`to_dict` key consumers read is still present with the new one added
+additively. Externally: health 200, `/clinics` 401, `analysis-filter` 405 on
+GET (it is POST-only; a POST gives 401), the new endpoint 401. Zero error lines
+in the logs.
+
+In-container checks confirm `CODES_VERIFIED: False` and 17 sections split
+3/4/7/3 — so the catalogue that shipped is the one the document describes, and
+the unverified-codes flag is live rather than a local-only intention.
+
+**Rollback asymmetry, stated because it is easy to get wrong:** the code
+rollback does NOT undo the migration, and should not. The column is nullable
+with no default, so the previous code simply ignores it. `DROP COLUMN` only if
+genuinely required.
