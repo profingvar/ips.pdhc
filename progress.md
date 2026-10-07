@@ -495,3 +495,53 @@ way are regression guards: the POST target and field names are unchanged, junk
 input does not 500, and the identifier in `resource_json` matches the index
 column (which was true before too — the old generator wrote the same wrong
 value to both places).
+
+### 2026-10-07 — Phase A DEPLOYED
+
+Live: `{"database":"connected","service":"ips-server","status":"ok"}`.
+Backup `miserver:~/backups/predeploy/ips.pdhc/20261007T191158Z/`.
+
+Live root is **`/usr/local/www/pdhcips/gateway`**, resolved from the container's
+compose label. `/usr/local/www/ips.pdhc` does not exist, and a hardcoded guess
+was wrong here once before (#730). There is also a stale nested copy at
+`/usr/local/www/pdhcips/pdhcips/gateway/` which is NOT what runs; the deploy
+touched only the path the container reports.
+
+Verified in production:
+
+| check | result |
+|---|---|
+| `app/services/personnummer.py` in the image | present |
+| the live personnummer assignment | `personnummer = pnr.build(mp["birth"])` |
+| `generate_mock_data` in `dashboard.html` | **0** |
+| `generate_mock_data` in `patients.html` | **1** |
+| `flask check-personnummer` against the live DB | runs; 150 patients, 0 valid, 10 foreign, 140 malformed |
+
+### Three of my verification steps were wrong, and two looked like failures
+
+None of these were deploy problems. All three were flaws in how I checked.
+
+1. **A check that matched its own explanation.** `grep -c "19{mp"` reported
+   "old doubled-century line still present: 1". It was matching the NEW code's
+   comment, which quotes the line it replaced. This is #729's trap exactly, and
+   I have cited it twice today and still walked into it. Fixed by grepping the
+   assignment with comment lines excluded — which shows the single live
+   assignment is `pnr.build`.
+2. **Grepping a literal path that the template never contains.** The form uses
+   `url_for('admin.generate_mock_data')`, so `grep "mock-data"` returned **0 on
+   both pages** and looked as though the move had failed entirely. Grepping the
+   endpoint name gives the real answer: 0 on the dashboard, 1 on patients.
+3. **Asking for an in-container pytest run that cannot work.** `tests/` is
+   listed in `.dockerignore`, so it is deliberately absent from the image and
+   the run reported "no tests ran" — which reads like a failure. The suite runs
+   on the development checkout. The test files are still copied to the host so
+   the server source matches git; they simply do not enter the image.
+
+The script in `scripts/deploy_789.sh` carries the corrected checks, with each
+of the three mistakes written down beside the check that replaced it.
+
+### Still true after the deploy
+
+The 140 malformed and 10 foreign identifiers are unchanged — that is the
+fix-forward decision, not an oversight. Newly generated patients are valid;
+`flask check-personnummer` is how that number is watched rather than assumed.
