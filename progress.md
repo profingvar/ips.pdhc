@@ -636,3 +636,68 @@ the unverified-codes flag is live rather than a local-only intention.
 rollback does NOT undo the migration, and should not. The column is nullable
 with no default, so the previous code simply ignores it. `DROP COLUMN` only if
 genuinely required.
+
+## 2026-10-07 — #793: the three REQUIRED sections may never be empty
+
+476 tests pass (463 + 13), same single pre-existing unrelated failure. 6 of the
+13 new tests fail against the untouched tree; the 7 that pass either way are
+regression guards, because the generator's FULL path was already conformant.
+
+### That sharpens what was actually wrong
+
+The 110 non-conformant production patients came from the **`skip_clinical`**
+path, which created a Patient and a clinic assignment and nothing else. The
+full path already emitted allergies, conditions and medications. So #793's real
+effect on live data is the skip_clinical case — worth stating precisely rather
+than implying the whole generator was broken.
+
+### The decision the ticket asked for
+
+`skip_clinical` now emits the three required sections as **explicit absent
+assertions** instead of skipping them. It exists so sim.pdhc can own the
+clinical data without two sources of truth, which is a good reason — and not a
+reason to create an invalid summary in the meantime. sim's real content
+supersedes them later, because `status_for_resources` prefers real content over
+a stale absent assertion. It still genuinely skips the optional content, with a
+test pinning that, or its purpose would be lost.
+
+### A defect in what #791 shipped, found by starting #793
+
+`is_absent_assertion` checked `code` and `medicationCodeableConcept`. This
+codebase writes **`medication`** — all 119 pre-existing MedicationStatement
+rows use it, confirmed by querying `jsonb_object_keys` in production. So a
+medications absent assertion was **undetectable**, silently turning
+EXPLICITLY_ABSENT back into MISSING for one of the three REQUIRED sections.
+#793 would have appeared to work while the status endpoint reported a hole.
+
+Now driven by `_CODE_BEARING_FIELDS`, covering `code`, `medication`,
+`medicationCodeableConcept`, `vaccineCode` and `type`, and handling both
+CodeableConcept and R5 CodeableReference (`{"concept": {...}}`). A plain string
+field (R4 `AllergyIntolerance.type`) is inert rather than an exception.
+
+### Two vocabularies that disagreed
+
+Moving generation into `euips_required.py` left `_CONDITIONS`, `_MEDICATIONS`
+and `_ALLERGIES` dead in `admin.py`. Deleting them turned up something worth
+recording: **the two copies disagreed.** `admin.py` labelled SNOMED
+`91936005` as "Peanuts"; the surviving list labels it "Allergy to penicillin".
+One is wrong, and nothing would have caught it.
+
+That is the concrete case for `CODES_VERIFIED = False`. The discrepancy is
+written at the deletion site as a specific item to settle when the terminology
+is verified against the IPS IG — the codes belong to plan.pdhc and
+termbank.pdhc, not here.
+
+### Narrative, not only codes
+
+Every resource carries `text.status` and an XHTML `text.div`, because euIPS is
+explicitly hybrid and the guideline calls the narrative the safety net — "what
+a clinician abroad sees". A coded-only entry passes a FHIR validator and fails
+the purpose of the section. Display strings are escaped, since they land inside
+XHTML.
+
+### The flash message no longer asserts what it does not check
+
+It used to list the section types it had supposedly created. It now counts how
+many of the batch carry all three required sections and says so, and shows a
+warning rather than a success when that is not all of them.

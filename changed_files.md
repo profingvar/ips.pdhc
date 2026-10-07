@@ -398,3 +398,9 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/api/patient_routes.py | + GET /patients/<guid>/euips-sections (computed); `_is_uuid` hoisted to module scope |
 | 2026-10-07 | gateway/tests/test_euips_sections_791.py | NEW — 20 tests |
 | 2026-10-07 | plans/euips_reform.md | the #791 decision record |
+
+## 2026-10-07 — euIPS #793 (the three REQUIRED sections)
+| 2026-10-07 | gateway/app/services/euips_required.py | NEW — the three required sections, content or explicit absence, with narrative |
+| 2026-10-07 | gateway/app/services/euips_sections.py | `is_absent_assertion` now covers `medication` (what this codebase writes) + CodeableReference; `_CODE_BEARING_FIELDS` |
+| 2026-10-07 | gateway/app/admin.py | required sections emitted in BOTH modes; removed from `_mock_patient_resources`; dead `_CONDITIONS`/`_MEDICATIONS`/`_ALLERGIES` deleted; flash reports conformance |
+| 2026-10-07 | gateway/tests/test_required_sections_793.py | NEW — 13 tests, 6 fail without the fix |

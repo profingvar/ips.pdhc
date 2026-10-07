@@ -198,23 +198,55 @@ def absent_coding(section_key: str) -> dict | None:
             "text": f"No information: {s.title}"}
 
 
+#: Every field on these resource types that can carry the section's own code.
+#: Resource types do NOT agree on the name, and getting this list wrong makes
+#: an absent assertion undetectable -- which silently turns EXPLICITLY_ABSENT
+#: back into MISSING for a REQUIRED section.
+#:
+#: `medication` is here because that is what this codebase actually writes:
+#: all 119 live MedicationStatement rows use it. The first version of this
+#: function checked only `code` and `medicationCodeableConcept`, so a
+#: medications absent-assertion -- one of the three required sections -- could
+#: never have been recognised. Found by starting #793, after #791 had shipped.
+_CODE_BEARING_FIELDS = (
+    "code",                      # AllergyIntolerance, Condition, Observation, Flag
+    "medication",                # MedicationStatement, as written here
+    "medicationCodeableConcept",  # the R4 spelling, tolerated on input
+    "vaccineCode",               # Immunization
+    "type",                      # Device; also AllergyIntolerance.type in R5
+)
+
+
+def _codings(value) -> list:
+    """Every coding in `value`, whether it is a CodeableConcept or an R5
+    CodeableReference (`{"concept": {...}}`). Returns [] for anything else,
+    including the plain strings some R4 fields hold (AllergyIntolerance.type),
+    so a wrong guess is inert rather than an exception.
+    """
+    if not isinstance(value, dict):
+        return []
+    if isinstance(value.get("concept"), dict):       # CodeableReference
+        value = value["concept"]
+    out = []
+    for coding in value.get("coding") or []:
+        if isinstance(coding, dict):
+            out.append(coding)
+    return out
+
+
 def is_absent_assertion(resource_json: dict | None) -> bool:
     """True when this resource asserts an absent/unknown section.
 
-    Looks for the IPS CodeSystem anywhere in the resource's own coding fields.
-    Checked across the handful of places a code sits on these resource types
-    rather than one, because AllergyIntolerance, Condition and
-    MedicationStatement do not agree on the field name.
+    Looks for the IPS CodeSystem across every field that can carry the
+    section's code — see `_CODE_BEARING_FIELDS` for why that list, and why
+    getting it wrong is worse than it looks.
     """
     if not isinstance(resource_json, dict):
         return False
-    for key in ("code", "medicationCodeableConcept"):
-        cc = resource_json.get(key)
-        if isinstance(cc, dict):
-            for coding in cc.get("coding") or []:
-                if isinstance(coding, dict) and \
-                        coding.get("system") == ABSENT_UNKNOWN_SYSTEM:
-                    return True
+    for key in _CODE_BEARING_FIELDS:
+        for coding in _codings(resource_json.get(key)):
+            if coding.get("system") == ABSENT_UNKNOWN_SYSTEM:
+                return True
     return False
 
 
