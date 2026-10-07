@@ -390,3 +390,11 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/__init__.py | NEW `flask check-personnummer` — read-only report |
 | 2026-10-07 | gateway/tests/test_personnummer_789.py | NEW — 27 tests |
 | 2026-10-07 | gateway/tests/test_mock_generator_789_790.py | NEW — 12 tests, 9 fail without the fix |
+
+## 2026-10-07 — euIPS #791 (the DB decision)
+| 2026-10-07 | gateway/app/services/euips_sections.py | NEW — the 17-section catalogue, absent-code helpers, computed status, is_conformant |
+| 2026-10-07 | gateway/app/models/patient_index.py | + `generation_batch_guid` (nullable UUID), surfaced additively in to_dict |
+| 2026-10-07 | gateway/migrations/add_generation_batch_guid.sql | NEW — idempotent ALTER; UUID not VARCHAR |
+| 2026-10-07 | gateway/app/api/patient_routes.py | + GET /patients/<guid>/euips-sections (computed); `_is_uuid` hoisted to module scope |
+| 2026-10-07 | gateway/tests/test_euips_sections_791.py | NEW — 20 tests |
+| 2026-10-07 | plans/euips_reform.md | the #791 decision record |

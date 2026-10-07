@@ -12,11 +12,28 @@ from flask import Blueprint, current_app, jsonify, request
 
 from app.models.base import db
 from app.models.clinic import Clinic
+from app.models.fhir_resource import FhirResource
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
+from app.services import euips_sections as euips
 from app.services.auth_service import require_auth
 from app.services.consent_policy import evaluate_patient
 
 bp = Blueprint("patient_api", __name__, url_prefix="/api/v1/patients")
+
+
+def _is_uuid(value) -> bool:
+    """True when `value` parses as a UUID.
+
+    Hoisted out of `analysis_filter` by #791, which needed it too. It was
+    defined inside that function when #730 added it; a second copy in the new
+    route would be two definitions of one rule, and the shape that cost #784
+    and #786 a day each.
+    """
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 @bp.route("/<guid>/clinics", methods=["GET"])
@@ -101,13 +118,6 @@ def analysis_filter():
     # named in `excluded` with their own reason so the caller can see that it
     # sent something unusable instead of inferring an outage. Per-patient
     # fail-closed beats per-request, and neither should be a 500.
-    def _is_uuid(value) -> bool:
-        try:
-            uuid.UUID(str(value))
-            return True
-        except (ValueError, AttributeError, TypeError):
-            return False
-
     queryable = [g for g in guids if _is_uuid(g)]
     malformed = {str(g) for g in guids if not _is_uuid(g)}
     if malformed:
@@ -151,4 +161,81 @@ def analysis_filter():
         "purpose": purpose,
         "allowed": allowed,
         "excluded": excluded,
+    })
+
+
+@bp.route("/<guid>/euips-sections", methods=["GET"])
+@require_auth
+def euips_section_status(guid):
+    """euIPS section coverage for one patient — #791. Read-only, COMPUTED.
+
+    Deliberately not backed by a table. A stored copy of a derivable fact is
+    the shape that produced #779 (two identifier spaces compared as if one) and
+    #771 (two GUIDs for one object), so the status is derived from the
+    patient's `fhir_resources` on every call.
+
+    Each section is PRESENT, EXPLICITLY_ABSENT or MISSING. That distinction is
+    the point: the euIPS guideline requires a required section to state "no
+    known allergies" rather than be empty, and before this "no row" could not
+    be told apart from "the clinician recorded nothing to report". Measured
+    2026-10-07, 110 of 150 patients had no rows in any section.
+
+    `conformant` reports only that every REQUIRED section is PRESENT or
+    EXPLICITLY_ABSENT. It is not a conformance claim: the source document
+    states the EHDS technical specifications were not confirmed adopted, and
+    the section codes in the catalogue are not yet verified against the
+    published IG (`codes_verified` below says so in the response rather than
+    leaving the caller to assume).
+    """
+    if not _is_uuid(guid):
+        return jsonify({"error": "malformed patient guid"}), 400
+
+    patient = db.session.query(PatientIndex).filter_by(guid=guid).first()
+    if not patient:
+        return jsonify({"error": "Patient not found"}), 404
+
+    rows = (db.session.query(FhirResource)
+            .filter(FhirResource.patient_guid == patient.guid)
+            .all())
+    status = euips.status_for_resources(rows)
+
+    sections = []
+    for s in euips.SECTIONS:
+        sections.append({
+            "key": s.key,
+            "title": s.title,
+            "obligation": s.obligation,
+            "status": status[s.key],
+            "resource_types": list(s.resource_types),
+        })
+
+    missing_required = [k for k in euips.REQUIRED_KEYS
+                        if status[k] == euips.MISSING]
+
+    return jsonify({
+        "patient_guid": str(patient.guid),
+        "generation_batch_guid": (str(patient.generation_batch_guid)
+                                  if patient.generation_batch_guid else None),
+        "sections": sections,
+        "summary": {
+            lvl: {
+                st: sum(1 for s in euips.SECTIONS
+                        if s.obligation == lvl and status[s.key] == st)
+                for st in (euips.PRESENT, euips.EXPLICITLY_ABSENT,
+                           euips.MISSING)
+            }
+            for lvl in euips.OBLIGATION_ORDER
+        },
+        "required_sections_missing": missing_required,
+        "conformant": euips.is_conformant(status),
+        # Stated in the response, not buried in a docstring: a caller must not
+        # read `conformant` as an EU conformance claim.
+        "codes_verified": euips.CODES_VERIFIED,
+        "disclaimer": (
+            "Checks the obligation levels described in "
+            "docs/EU_Patient_Summary_ICD11.docx. NOT a claim of EU/EHDS "
+            "conformance: the implementing acts were not confirmed adopted as "
+            "of October 2026, and the section codes are not yet verified "
+            "against the published IPS implementation guide."
+        ),
     })

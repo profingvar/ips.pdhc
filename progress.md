@@ -545,3 +545,47 @@ of the three mistakes written down beside the check that replaced it.
 The 140 malformed and 10 foreign identifiers are unchanged — that is the
 fix-forward decision, not an oversight. Newly generated patients are valid;
 `flask check-personnummer` is how that number is watched rather than assumed.
+
+## 2026-10-07 — #791 DECISION TAKEN and implemented (unblocks Phase C)
+
+Operator: "go with your recommendation for 791". 463 tests pass (443 + 20),
+same single pre-existing unrelated failure. Full decision record in
+`plans/euips_reform.md`; the short version:
+
+* **Section content stays in `fhir_resources`.** No new tables for clinical
+  content — it is already generic, every euIPS section is a FHIR resource, and
+  nine services read this service.
+* **An explicitly-absent section is a real resource carrying the IPS
+  absent/unknown code.** That makes PRESENT / EXPLICITLY_ABSENT / MISSING
+  distinguishable, which is the thing the reform needed: 110 of 150 patients
+  had no rows anywhere, and "no row" could not be told from "nothing to
+  report".
+* **Status is computed, not stored.** `GET
+  /api/v1/patients/<guid>/euips-sections`. A stored copy of a derivable fact is
+  the #779 / #771 shape.
+* **One schema addition:** `patient_index.generation_batch_guid`, nullable, no
+  default, no index.
+* **Codes flagged unverified** in the module AND in the endpoint's response.
+  EU-addition sections carry `None` rather than a guessed code, with a test.
+
+### Two of my own errors, caught before shipping
+
+1. **The migration said `VARCHAR(36)` where the column must be `UUID`.**
+   `models/base.py::GUID` resolves to `PG_UUID(as_uuid=True)` on postgresql,
+   and `patient_index.guid` is a real `uuid` column — confirmed against
+   `information_schema` rather than assumed. psycopg2 would have adapted bound
+   UUID objects to strings, so a varchar column would have *appeared* to work
+   while disagreeing with the model. That is exactly the UUID-versus-string
+   mismatch that hid #730's 500, and it would have surfaced later and
+   elsewhere.
+2. **`_is_uuid` was a nested function inside `analysis_filter`** (added there
+   by #730), and the new route called it at module scope — a `NameError` on
+   every request. Hoisted to module scope so there is one definition rather
+   than a second copy, which is what #784 and #786 each had to undo.
+
+### Not yet applied to production
+
+`gateway/migrations/add_generation_batch_guid.sql` has not been run. It is
+additive, nullable and idempotent, but it is still an ALTER on a table that
+nine services read, so it wants an explicit go rather than riding along with a
+code deploy.

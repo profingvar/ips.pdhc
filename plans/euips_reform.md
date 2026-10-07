@@ -95,3 +95,92 @@ absence of a row means "not generated", which is what it should mean.
 * **No invented terminology.** plan.pdhc and termbank.pdhc own codes. Where a
   real code set is unavailable, a simulator value is marked as such rather than
   passed off as SNOMED.
+
+---
+
+# #791 DECISION TAKEN — 2026-10-07
+
+Operator: "go with your recommendation for 791". Implemented in commit below.
+This unblocks Phase C.
+
+## 1. Section content lives in `fhir_resources`. No new tables.
+
+That table is already `resource_type` + `resource_json` (JSONB) +
+`patient_guid`, indexed on type, patient and type+patient. Every euIPS section
+IS a FHIR resource. Nine sibling services read ips; a per-section table would
+mean new endpoints, new serialisers, and a second source of truth for the same
+clinical facts.
+
+It also preserves the hybrid format. The guideline requires narrative *and*
+coded entries and calls the narrative the safety net — "what a clinician abroad
+sees". A FHIR resource carries both; typed columns would lose one.
+
+## 2. An explicitly-absent section is a real resource with the IPS absent code
+
+`absent-unknown-uv-ips`. The guideline is explicit: *"you must state 'no known
+allergies' rather than leave the section empty."* Written as an ordinary row it
+needs no new storage, and it makes three states distinguishable:
+
+| state | meaning |
+|---|---|
+| `PRESENT` | a clinical resource of that type exists |
+| `EXPLICITLY_ABSENT` | a resource exists carrying an absent/unknown code |
+| `MISSING` | no row — now unambiguously "not generated" |
+
+Before this, 110 of 150 patients had no rows in any section, and "no row" could
+not be told apart from "nothing to report".
+
+**Real content beats a stale absent assertion.** A patient may carry both; the
+data wins, or the summary hides a genuine allergy behind old bookkeeping. That
+is a safety question, and it has its own test.
+
+## 3. Section status is COMPUTED, never stored
+
+No `ips_section_status` table. `GET /api/v1/patients/<guid>/euips-sections`
+derives it per call. A stored copy of a derivable fact is the shape that
+produced #779 (two identifier spaces compared as one) and #771 (two GUIDs for
+one object).
+
+## 4. One schema addition: `patient_index.generation_batch_guid`
+
+Nullable, no default, no index. Generating "100 patients for an assigned care
+provider" has to be undoable, and there was no batch marker at all — removing a
+batch meant recording its GUIDs by hand. Nothing else about a batch needs
+storing: the timestamp is `created_at`, the organisation comes from the clinic
+assignment. A batch *table* would duplicate derivable facts.
+
+`UUID`, not `VARCHAR(36)`: `models/base.py::GUID` resolves to
+`PG_UUID(as_uuid=True)` on postgresql, and `patient_index.guid` is a real
+`uuid` column — confirmed against `information_schema`. My first draft of the
+migration said varchar; psycopg2 would have adapted bound UUIDs to strings so
+it would have *appeared* to work while disagreeing with the model. That is the
+UUID-versus-string mismatch that hid #730's 500.
+
+Applied by `gateway/migrations/add_generation_batch_guid.sql` — idempotent
+`ADD COLUMN IF NOT EXISTS`, the same pattern as `add_reform_patient_flags.sql`
+(#404), because ips builds schema with `db.create_all()`, which adds missing
+tables and never alters an existing one.
+
+## 5. Header items: JSON by default
+
+Contact persons → `RelatedPerson`, insurance → `Coverage`, author / legal
+authenticator / custodian → the `Composition` inside the bundle, which
+`ips_snapshots.bundle_json` already stores. A patient-level column only where
+something filters on it, and nullable when added.
+
+## 6. Codes are flagged UNVERIFIED, deliberately
+
+`euips_sections.CODES_VERIFIED = False`, and the endpoint says so in its own
+response rather than leaving a caller to assume. The LOINC section codes and
+absent/unknown codes are written from knowledge of the IPS IG, not from a fetch
+of the published CodeSystem, and the plan's rule is that terminology belongs to
+plan.pdhc and termbank.pdhc.
+
+The EU-addition sections (alerts, travel history, patient-provided) carry
+`loinc=None` and `absent_code=None` rather than a plausible guess, with a test
+pinning that nothing was invented there.
+
+`is_conformant()` is named for what it checks — every required section PRESENT
+or EXPLICITLY_ABSENT — and is not called `is_eu_conformant`. The source
+document states the EHDS implementing acts were not confirmed adopted as of
+October 2026.

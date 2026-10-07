@@ -52,6 +52,20 @@ class PatientIndex(db.Model):
     # the upgrade path if needed.
     consented_research_projects: Mapped[list | None] = mapped_column(JSONB)
 
+    # --- euIPS reform (#791): the ONE schema addition the reform needs ------
+    # Generating "up to 100 patients for an assigned care provider" has to be
+    # undoable. There was no batch or run marker on this table, so removing a
+    # batch meant recording its GUIDs by hand. sim.pdhc solved the same problem
+    # with a run id and `sim purge`.
+    #
+    # Nullable, no default, no index yet: the 150 existing rows keep NULL, and
+    # nine sibling services read this table — `analysis-filter` alone is read by
+    # cdr, cdr_6, analyse, dashboard and rosetta — so every change here is
+    # additive by rule. Nothing else about the batch needs storing: the
+    # timestamp is `created_at` and the organisation comes from the clinic
+    # assignment, so a second table would only duplicate derivable facts.
+    generation_batch_guid: Mapped[uuid.UUID | None] = mapped_column(GUID())
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -65,6 +79,10 @@ class PatientIndex(db.Model):
             "resource_id": self.resource_id,
             "identifier_system": self.identifier_system,
             "identifier_value": self.identifier_value,
+            # #791: additive. Existing keys are untouched -- sim.pdhc reads
+            # this dict via GET /api/v1/clinics/<guid>/patients.
+            "generation_batch_guid": (str(self.generation_batch_guid)
+                                      if self.generation_batch_guid else None),
             "family_name": self.family_name,
             "given_name": self.given_name,
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
