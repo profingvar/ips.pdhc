@@ -143,17 +143,39 @@ class TestTheHybridFormat:
 class TestActiveVersusPast:
     def test_the_problem_list_contains_only_active_conditions(self, client, db):
         """problems and past_illnesses share Condition and are separated ONLY
-        by clinicalStatus, so a resolved condition emitted here would land in
-        the active problem list."""
+        by clinicalStatus, so a resolved condition must not land in the active
+        problem list.
+
+        This test originally asserted that EVERY Condition row was active,
+        which was true while #793 was the only thing emitting them. #795 adds
+        past illnesses as resolved Conditions, so that assertion became false
+        for a correct reason -- it was testing the absence of a feature rather
+        than the separation. Narrowed to the actual invariant: whatever the
+        `problems` SECTION matches is active, and resolved conditions are
+        attributed to `past_illnesses` instead.
+        """
         c = _clinic(db)
         _generate(client, c, 20)
         rows = (_db.session.query(FhirResource)
                 .filter(FhirResource.resource_type == "Condition").all())
         assert rows
+        problems = euips.BY_KEY["problems"]
+        past = euips.BY_KEY["past_illnesses"]
+        matched_problems = 0
         for r in rows:
-            codings = (r.resource_json.get("clinicalStatus") or {}).get("coding") or []
-            codes = {cd.get("code") for cd in codings}
-            assert codes == {"active"}, f"{codes} in the active problem list"
+            rj = r.resource_json
+            if euips.is_absent_assertion(rj):
+                continue
+            in_problems = euips.section_matches(problems, "Condition", rj)
+            in_past = euips.section_matches(past, "Condition", rj)
+            # A condition belongs to exactly one of the two, never both.
+            assert not (in_problems and in_past), rj.get("clinicalStatus")
+            if in_problems:
+                matched_problems += 1
+                codes = {cd.get("code") for cd in
+                         (rj.get("clinicalStatus") or {}).get("coding") or []}
+                assert codes <= {"active", "recurrence", "relapse"}, codes
+        assert matched_problems, "no condition was attributed to the problem list"
 
 
 class TestNoDuplicateGeneration:

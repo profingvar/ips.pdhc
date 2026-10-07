@@ -409,3 +409,10 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/services/euips_recommended.py | NEW — immunisations (age-derived dates), procedures, Device + DeviceUseStatement, diagnostic results WITH linked Observations |
 | 2026-10-07 | gateway/app/admin.py | recommended sections wired in; immunisations/procedures/diagnostic reports removed from `_mock_patient_resources`; dead `_IMMUNIZATIONS`/`_PROCEDURES`/`_DIAGNOSTIC_REPORTS` deleted |
 | 2026-10-07 | gateway/tests/test_recommended_sections_794.py | NEW — 14 tests, 6 fail without the fix |
+
+## 2026-10-07 — euIPS #795 (the seven OPTIONAL sections) + a #791 fix it forced
+| 2026-10-07 | gateway/app/services/euips_optional.py | NEW — vital signs, past illnesses, pregnancy (sex/age-gated), social history, functional status, CarePlan, FHIR Consent |
+| 2026-10-07 | gateway/app/services/euips_sections.py | per-section `discriminator` + `section_matches` + `absent_section_key`; `status_for_resources` rewritten to discriminate shared resource types |
+| 2026-10-07 | gateway/app/admin.py | optional sections wired; `_mock_patient_resources` and `_OBSERVATIONS` deleted — every section now has a dedicated module |
+| 2026-10-07 | gateway/tests/test_required_sections_793.py | the problem-list test narrowed to the real invariant |
+| 2026-10-07 | gateway/tests/test_optional_sections_795.py | NEW — 18 tests, 9 fail without the fix |

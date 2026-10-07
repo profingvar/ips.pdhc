@@ -94,6 +94,10 @@ class Section:
     #: Resource types this section must NOT claim, where two sections share one
     #: type and are separated only by a field.
     excludes: tuple[str, ...] = field(default_factory=tuple)
+    #: How to tell this section's resources from another section's of the SAME
+    #: type. REQUIRED whenever `resource_types` overlaps another section --
+    #: asserted by a test. See `_DISCRIMINATORS` and why it matters.
+    discriminator: str | None = None
 
 
 SECTIONS: tuple[Section, ...] = (
@@ -103,6 +107,7 @@ SECTIONS: tuple[Section, ...] = (
             note="The guideline's own example of the absent-code rule."),
     Section("problems", "Problem list (active conditions)", REQUIRED,
             ("Condition",), "11450-4", "no-known-problems",
+            discriminator="condition_active",
             note="ACTIVE conditions only. Resolved ones belong to "
                  "`past_illnesses`, and the two are told apart ONLY by "
                  "clinicalStatus — so a generator or section-builder that "
@@ -127,27 +132,30 @@ SECTIONS: tuple[Section, ...] = (
                  "AllergyIntolerance, DiagnosticReport, Procedure)."),
     Section("diagnostic_results", "Diagnostic results (lab and imaging)",
             RECOMMENDED, ("DiagnosticReport", "Observation"), "30954-2",
+            discriminator="diagnostic",
             note="LOINC-coded with UCUM units per the guideline. Shares "
                  "Observation with vital signs and social history.",
             excludes=()),
 
     # ---- OPTIONAL
     Section("vital_signs", "Vital signs", OPTIONAL,
-            ("Observation",), "8716-3"),
+            ("Observation",), "8716-3", discriminator="obs_vital_signs"),
     Section("past_illnesses", "Past illnesses", OPTIONAL,
-            ("Condition",), "11348-0",
+            ("Condition",), "11348-0", discriminator="condition_resolved",
             note="Condition with a resolved/inactive clinicalStatus. Must not "
                  "appear in `problems`."),
     Section("pregnancy", "Pregnancy (current and history)", OPTIONAL,
             ("Observation", "Condition"), "10162-6",
+            discriminator="pregnancy_code",
             note="MUST be consistent with sex and age. A pregnancy on a male "
                  "or an 80-year-old is generated nonsense that the first "
                  "clinician to look will notice."),
     Section("social_history", "Social history", OPTIONAL,
-            ("Observation",), "29762-2",
+            ("Observation",), "29762-2", discriminator="obs_social_history",
             note="Smoking and alcohol status."),
     Section("functional_status", "Functional status", OPTIONAL,
-            ("Observation", "ClinicalImpression"), "47420-5"),
+            ("Observation", "ClinicalImpression"), "47420-5",
+            discriminator="obs_survey"),
     Section("plan_of_care", "Plan of care", OPTIONAL,
             ("CarePlan",), "18776-5"),
     Section("advance_directives", "Advance directives", OPTIONAL,
@@ -167,12 +175,13 @@ SECTIONS: tuple[Section, ...] = (
                  "distinguishable from a COMPUTED one from request.pdhc's "
                  "alerting path, which is the MDR-relevant surface."),
     Section("travel_history", "Travel history", EU_ADDITION,
-            ("Observation",), None,
+            ("Observation",), None, discriminator="travel_code",
             note="Dates should relate to any relevant condition rather than "
                  "float free, since travel history exists for "
                  "infectious-disease reasoning."),
     Section("patient_provided", "Patient-provided information", EU_ADDITION,
             ("Observation", "QuestionnaireResponse"), None,
+            discriminator="patient_asserted",
             note="Distinguished by the resource's source/performer, not by a "
                  "separate type. The distinction IS the section: information "
                  "the patient asserted carries different weight, and unmarked "
@@ -250,6 +259,138 @@ def is_absent_assertion(resource_json: dict | None) -> bool:
     return False
 
 
+#: Pregnancy codes. Small and explicit: pregnancy is the section where a wrong
+#: attribution is most visible, and the ticket's own warning is that a
+#: pregnancy on a male or an 80-year-old is generated nonsense a clinician
+#: notices immediately. UNVERIFIED like every code here (CODES_VERIFIED).
+PREGNANCY_CODES = frozenset({
+    "82810-3",      # LOINC Pregnancy status
+    "11636-8",      # LOINC Number of live births
+    "11640-0",      # LOINC Number of pregnancies
+    "77386006",     # SNOMED Pregnant
+    "102874004",    # SNOMED Possible pregnancy
+})
+
+#: Travel-history codes. EMPTY on purpose: no code has been established for
+#: this EU addition, so the section correctly reads MISSING until #796 defines
+#: one. An empty set is honest; a guessed code would make the section claim
+#: resources that are not travel history.
+TRAVEL_CODES: frozenset[str] = frozenset()
+
+#: HL7 observation-category codes, used to tell Observation sections apart.
+_VITAL_SIGNS_CATEGORIES = frozenset({"vital-signs"})
+_SOCIAL_HISTORY_CATEGORIES = frozenset({"social-history"})
+_DIAGNOSTIC_CATEGORIES = frozenset({"laboratory", "imaging"})
+#: `survey` is the closest standard observation-category for functional status;
+#: HL7 defines no `functional-status` code. Recorded rather than invented.
+_SURVEY_CATEGORIES = frozenset({"survey", "activity"})
+
+_ACTIVE_CONDITION_STATUSES = frozenset({"active", "recurrence", "relapse"})
+_RESOLVED_CONDITION_STATUSES = frozenset({"inactive", "resolved", "remission"})
+
+
+def _categories(resource_json: dict) -> set[str]:
+    out = set()
+    for cat in resource_json.get("category") or []:
+        if isinstance(cat, dict):
+            for c in cat.get("coding") or []:
+                if isinstance(c, dict) and c.get("code"):
+                    out.add(c["code"])
+        elif isinstance(cat, str):
+            out.add(cat)
+    return out
+
+
+def _own_codes(resource_json: dict) -> set[str]:
+    out = set()
+    for key in _CODE_BEARING_FIELDS:
+        for coding in _codings(resource_json.get(key)):
+            if coding.get("code"):
+                out.add(coding["code"])
+    return out
+
+
+def _clinical_status(resource_json: dict) -> set[str]:
+    return {c.get("code") for c in _codings(resource_json.get("clinicalStatus"))
+            if c.get("code")}
+
+
+def _is_patient_asserted(resource_json: dict) -> bool:
+    """True when the PATIENT, not a clinician, is the source.
+
+    That distinction IS the patient-provided section: information the patient
+    asserted carries different weight, and unmarked the section is decorative.
+    In FHIR it shows up as the performer (or informant) being the subject.
+    """
+    subject = ((resource_json.get("subject") or {}).get("reference")
+               or (resource_json.get("patient") or {}).get("reference"))
+    if not subject:
+        return False
+    for p in resource_json.get("performer") or []:
+        if isinstance(p, dict) and p.get("reference") == subject:
+            return True
+    src = resource_json.get("source")
+    if isinstance(src, dict) and src.get("reference") == subject:
+        return True
+    return False
+
+
+def section_matches(section: Section, resource_type: str,
+                    resource_json: dict) -> bool:
+    """Does this resource belong to this section?
+
+    Needed because **Condition is shared by 3 sections and Observation by 7**.
+    Without discrimination a single vital-sign Observation made all seven read
+    PRESENT, and -- conformance-affecting -- a patient with only a RESOLVED
+    condition made `problems` read PRESENT while the active problem list was
+    empty. That was the shipped behaviour of #791 until #795 exposed it.
+    """
+    if resource_type not in section.resource_types:
+        return False
+    d = section.discriminator
+    if d is None:
+        return True                       # the type is unique to this section
+    if d == "condition_active":
+        return bool(_clinical_status(resource_json) & _ACTIVE_CONDITION_STATUSES)
+    if d == "condition_resolved":
+        return bool(_clinical_status(resource_json) & _RESOLVED_CONDITION_STATUSES)
+    if d == "pregnancy_code":
+        return bool(_own_codes(resource_json) & PREGNANCY_CODES)
+    if d == "travel_code":
+        return bool(_own_codes(resource_json) & TRAVEL_CODES)
+    if d == "obs_vital_signs":
+        return bool(_categories(resource_json) & _VITAL_SIGNS_CATEGORIES)
+    if d == "obs_social_history":
+        return bool(_categories(resource_json) & _SOCIAL_HISTORY_CATEGORIES)
+    if d == "obs_survey":
+        if resource_type == "ClinicalImpression":
+            return True
+        return bool(_categories(resource_json) & _SURVEY_CATEGORIES)
+    if d == "diagnostic":
+        if resource_type == "DiagnosticReport":
+            return True
+        return bool(_categories(resource_json) & _DIAGNOSTIC_CATEGORIES)
+    if d == "patient_asserted":
+        return _is_patient_asserted(resource_json)
+    raise ValueError(f"unknown discriminator {d!r} on section {section.key!r}")
+
+
+def absent_section_key(resource_json: dict | None) -> str | None:
+    """Which section this absent assertion is about, by its own code.
+
+    Exact rather than inferred: the IPS absent codes are section-specific, so
+    an absent assertion is attributed to its own section and to no other. A
+    "no known problems" Condition must not also satisfy `past_illnesses`.
+    """
+    if not isinstance(resource_json, dict):
+        return None
+    codes = _own_codes(resource_json)
+    for sec in SECTIONS:
+        if sec.absent_code and sec.absent_code in codes:
+            return sec.key
+    return None
+
+
 def status_for_resources(rows) -> dict[str, str]:
     """Section -> PRESENT / EXPLICITLY_ABSENT / MISSING for one patient.
 
@@ -261,23 +402,26 @@ def status_for_resources(rows) -> dict[str, str]:
     Real content wins, because an absent assertion left behind after data
     arrived is stale bookkeeping and must not hide the data.
     """
-    by_type: dict[str, list] = {}
+    real: dict[str, int] = {s.key: 0 for s in SECTIONS}
+    absent: dict[str, int] = {s.key: 0 for s in SECTIONS}
+
     for r in rows:
-        by_type.setdefault(r.resource_type, []).append(r)
+        rj = r.resource_json if isinstance(r.resource_json, dict) else {}
+        if is_absent_assertion(rj):
+            # Attributed by its own absent code, to exactly one section.
+            key = absent_section_key(rj)
+            if key is not None:
+                absent[key] += 1
+            continue
+        for s in SECTIONS:
+            if section_matches(s, r.resource_type, rj):
+                real[s.key] += 1
 
     out: dict[str, str] = {}
     for s in SECTIONS:
-        real = 0
-        absent = 0
-        for rtype in s.resource_types:
-            for r in by_type.get(rtype, []):
-                if is_absent_assertion(r.resource_json):
-                    absent += 1
-                else:
-                    real += 1
-        if real:
+        if real[s.key]:
             out[s.key] = PRESENT
-        elif absent:
+        elif absent[s.key]:
             out[s.key] = EXPLICITLY_ABSENT
         else:
             out[s.key] = MISSING

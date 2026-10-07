@@ -842,3 +842,69 @@ every time.
 
 Consumers after the deploy: health 200, `/clinics` 401, `analysis-filter` 401
 on POST, zero error lines. `_OBSERVATIONS` confirmed still present for #795.
+
+## 2026-10-07 — #795: the seven OPTIONAL sections, and a conformance bug in #791
+
+508 tests pass (490 + 18), same single pre-existing unrelated failure. 9 of the
+18 new tests fail against the untouched tree.
+
+### Starting #795 exposed a CONFORMANCE-AFFECTING bug in what #791 shipped
+
+`Condition` is shared by 3 sections and `Observation` by **7**, and
+`status_for_resources` did not discriminate. Measured:
+
+* one vital-sign Observation made **seven** sections read PRESENT — including
+  pregnancy, travel history and patient-provided information;
+* one active Condition made `past_illnesses` and `pregnancy` read PRESENT;
+* and the serious one: a patient with only a **resolved** Condition made
+  `problems` read PRESENT, so an empty ACTIVE problem list was called
+  **conformant**. `problems` is one of the three required sections, so this
+  was not cosmetic.
+
+Fixed with an explicit per-section `discriminator` and `section_matches`:
+Condition by `clinicalStatus`, Observation by `category`, pregnancy by code
+set, patient-provided by whether the performer is the subject. Absent
+assertions are attributed by their own section-specific absent code, so a "no
+known problems" Condition cannot also satisfy `past_illnesses`.
+
+A structural test now asserts that **every section sharing a resource type has
+a discriminator**, so a future section cannot silently claim its neighbours'
+resources.
+
+### The pregnancy trap, and the trap inside the trap
+
+The ticket warned that a pregnancy on a male or an 80-year-old is nonsense.
+True for a CURRENT pregnancy — but pregnancy **history** is perfectly ordinary
+for an 80-year-old woman, and refusing it would be an error in the other
+direction: a summary that denies she ever had children. So the two are gated
+separately:
+
+* current pregnancy status — female, age 15–50
+* pregnancy history (gravida/para) — female, age 20+, no upper bound
+
+Never for a male or unknown-sex patient, in either form.
+
+### Advance directives verified isolated from care consent
+
+Before writing it: `consents_routes.py` never touches `fhir_resources`, so a
+FHIR `Consent` cannot reach `/consents/check` — which request.pdhc and
+contract.pdhc both call for the cohesive-care gate (Lag 2022:913 §5). The
+directive also carries the `adr` consent-scope code, and a test asserts
+`patient_consents` stays empty when directives are generated.
+
+### A #793 test that became wrong for a correct reason
+
+`test_the_problem_list_contains_only_active_conditions` asserted that EVERY
+Condition row was active. That was true while #793 was the only thing emitting
+them; #795 adds resolved ones, so the assertion broke. It was testing the
+absence of a feature rather than the separation. Narrowed to the real
+invariant: whatever `problems` matches is active, whatever `past_illnesses`
+matches is resolved, and no condition is in both.
+
+### `_mock_patient_resources` is gone
+
+Vital signs were the last thing in it. Every euIPS section now has a dedicated
+module in obligation order — `euips_required` (#793), `euips_recommended`
+(#794), `euips_optional` (#795). The old helper emitted Observations with **no
+`category` at all**, so under the new discrimination its observations would
+have been attributable to no section — another reason it could not stay.
