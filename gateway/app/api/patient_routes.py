@@ -225,7 +225,10 @@ def euips_section_status(guid):
     if not _is_uuid(guid):
         return jsonify({"error": "malformed patient guid"}), 400
 
-    patient = db.session.query(PatientIndex).filter_by(guid=guid).first()
+    # Accepts the platform guid OR the FHIR resource_id — see
+    # _patient_by_either_id. The 400 guard above still rejects a value that is
+    # not a UUID at all; every resource_id this service mints is a uuid4.
+    patient = _patient_by_either_id(guid)
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
 
@@ -304,7 +307,10 @@ def euips_header_status(guid):
     if not _is_uuid(guid):
         return jsonify({"error": "malformed patient guid"}), 400
 
-    patient = db.session.query(PatientIndex).filter_by(guid=guid).first()
+    # Accepts the platform guid OR the FHIR resource_id — see
+    # _patient_by_either_id. The 400 guard above still rejects a value that is
+    # not a UUID at all; every resource_id this service mints is a uuid4.
+    patient = _patient_by_either_id(guid)
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
 

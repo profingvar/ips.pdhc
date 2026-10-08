@@ -464,3 +464,42 @@ class TestClinicsLookupAcceptsEitherIdentifier:
         assert r.status_code == 404, (
             "expected a clean 404, got %s — the UUID column was probably "
             "queried with a non-UUID" % r.status_code)
+
+
+class TestEuipsEndpointsAcceptEitherIdentifier:
+    """The same dual-identifier fix as /clinics, for the two euIPS reads.
+
+    Both did `filter_by(guid=guid)`, so a caller holding the FHIR resource_id
+    got 404 for a patient that exists. request.pdhc's patient pages are built
+    on that id, so the euIPS section coverage and document header were
+    unreachable from the page that most wants to show them.
+    """
+
+    def test_sections_by_resource_id(self, client, db):
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+        r = client.get("/api/v1/patients/%s/euips-sections" % p.resource_id)
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["patient_guid"] == str(p.guid), (
+            "the response must identify the patient by the PLATFORM guid, "
+            "whichever key was used to find them")
+
+    def test_header_by_resource_id(self, client, db):
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+        r = client.get("/api/v1/patients/%s/euips-header" % p.resource_id)
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["patient_guid"] == str(p.guid)
+
+    def test_both_still_work_by_platform_guid(self, client, db):
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+        for path in ("euips-sections", "euips-header"):
+            assert client.get(
+                "/api/v1/patients/%s/%s" % (p.guid, path)).status_code == 200
+
+    def test_a_malformed_guid_is_still_400_on_both(self, client, db):
+        """The early guard stays: these two answer 400, not 404, for garbage."""
+        for path in ("euips-sections", "euips-header"):
+            assert client.get(
+                "/api/v1/patients/not-a-uuid/%s" % path).status_code == 400
