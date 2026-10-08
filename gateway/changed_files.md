@@ -6,3 +6,5 @@
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_euips_header_custodian.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/euips_header_backfill.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md
+/Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md
