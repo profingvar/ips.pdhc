@@ -40,6 +40,37 @@ def _is_uuid(value) -> bool:
         return False
 
 
+def _patient_by_either_id(value):
+    """Find a patient by `PatientIndex.guid` OR by `resource_id`.
+
+    ips keeps TWO identifiers for one patient — the platform `guid` that every
+    other service uses, and the FHIR `resource_id` that `/fhir/Patient/<id>`
+    is keyed by. They are different values for the same person, which is the
+    #771 shape.
+
+    Consumers hold whichever one they were handed, and the mismatch is not
+    theoretical: request.pdhc's patient pages are built on the FHIR id, so
+    `GET /api/v1/patients/<that id>/clinics` answered **404 "Patient not
+    found"** for a patient who plainly exists — the page could not reach the
+    very assignment it needed to display. Verified 2026-10-08 on
+    612a2995-… (resource_id) whose index guid is eaf95fd1-….
+
+    `PatientIndex.to_dict()` already returns both keys, so the mapping was
+    present in the data and simply not reachable by a lookup. Accepting either
+    is additive: no existing caller changes behaviour, because a value that
+    matched before still matches first.
+
+    `guid` is a UUID column, so a non-UUID value must not reach that filter —
+    it raises at the driver and becomes a 500 (see #805). `resource_id` is a
+    string column and takes anything.
+    """
+    if _is_uuid(value):
+        hit = db.session.query(PatientIndex).filter_by(guid=value).first()
+        if hit:
+            return hit
+    return db.session.query(PatientIndex).filter_by(resource_id=str(value)).first()
+
+
 @bp.route("/<guid>/clinics", methods=["GET"])
 @require_auth
 def list_patient_clinics(guid):
@@ -53,7 +84,7 @@ def list_patient_clinics(guid):
     when the patient exists but has no assignments. 404 when the
     patient does not exist.
     """
-    patient = db.session.query(PatientIndex).filter_by(guid=guid).first()
+    patient = _patient_by_either_id(guid)
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
 

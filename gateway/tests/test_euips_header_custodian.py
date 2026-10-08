@@ -409,3 +409,58 @@ class TestBackfill:
         first = _composition(generate_ips_bundle(p))["language"]
         second = _composition(generate_ips_bundle(p))["language"]
         assert first == second
+
+
+class TestClinicsLookupAcceptsEitherIdentifier:
+    """ips keeps TWO identifiers for one patient, and consumers hold either.
+
+    `PatientIndex.guid` is the platform identifier every other service uses;
+    `resource_id` is the FHIR id that `/fhir/Patient/<id>` is keyed by. They
+    are different values for the same person — the #771 shape.
+
+    This was not theoretical. request.pdhc's patient pages are built on the
+    FHIR id, so `GET /api/v1/patients/<that id>/clinics` returned
+    404 "Patient not found" for a patient who plainly exists, and the page
+    could not reach the assignment it needed to display. Confirmed on
+    production 2026-10-08: resource_id 612a2995-… , index guid eaf95fd1-… .
+    """
+
+    def test_the_two_identifiers_really_are_different(self, client, db):
+        """If they were ever the same value this whole fix would be pointless,
+        so assert the premise rather than assuming it."""
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+        assert str(p.guid) != str(p.resource_id)
+
+    def test_lookup_by_the_platform_guid_still_works(self, client, db):
+        """Additive: what matched before must still match, and first."""
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+        r = client.get("/api/v1/patients/%s/clinics" % p.guid)
+        assert r.status_code == 200
+        assert [x["name"] for x in r.get_json()] == [c.name]
+
+    def test_lookup_by_the_fhir_resource_id_now_works(self, client, db):
+        """The case that used to 404."""
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+        r = client.get("/api/v1/patients/%s/clinics" % p.resource_id)
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert [x["name"] for x in r.get_json()] == [c.name]
+
+    def test_an_unknown_value_is_still_404(self, client, db):
+        """Accepting a second key must not make the endpoint accept anything."""
+        assert client.get(
+            "/api/v1/patients/%s/clinics" % uuid.uuid4()).status_code == 404
+
+    def test_a_non_uuid_value_does_not_500(self, client, db):
+        """`guid` is a UUID column: a non-UUID must never reach that filter.
+
+        It would raise at the driver and surface as 500 — the #805 shape. A
+        non-UUID is a legitimate `resource_id` candidate, so it is looked up
+        there instead and simply does not match.
+        """
+        r = client.get("/api/v1/patients/not-a-uuid-at-all/clinics")
+        assert r.status_code == 404, (
+            "expected a clean 404, got %s — the UUID column was probably "
+            "queried with a non-UUID" % r.status_code)
