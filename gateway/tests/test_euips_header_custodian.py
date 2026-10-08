@@ -324,3 +324,88 @@ class TestHeaderEndpoint:
         assert client.get(
             "/api/v1/patients/%s/euips-header" % uuid.uuid4()
         ).status_code == 404
+
+
+class TestBackfill:
+    """#792 backfill — the header is half derived, half stored.
+
+    Deploying #792 gave every existing patient a custodian, author, attester
+    and language immediately, because those are computed on read. It gave none
+    of them a RelatedPerson or a Coverage, because those are stored. Verified
+    on production: a real patient reported
+    `missing: ['contact_person', 'health_insurance']`.
+    """
+
+    def test_dry_run_writes_nothing(self, client, db):
+        from app.services import euips_header_backfill as bf
+        c = _clinic(db)
+        _patient(db, c, managing_org=c.organisation_guid)
+        before = db.session.query(FhirResource).count()
+
+        out = bf.run(dry_run=True)
+        assert out["dry_run"] is True
+        assert out["need_related"] >= 1
+        assert out["need_coverage"] >= 1
+        assert db.session.query(FhirResource).count() == before, (
+            "a dry run wrote to the database")
+
+    def test_apply_creates_the_missing_header(self, client, db):
+        from app.services import euips_header_backfill as bf
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)
+
+        out = bf.run(dry_run=False, seed=7)
+        assert out["created"]["Coverage"] >= 1
+        assert out["created"]["RelatedPerson"] >= 1
+
+        types = {r.resource_type for r in db.session.query(FhirResource)
+                 .filter(FhirResource.patient_guid == p.guid).all()}
+        assert {"RelatedPerson", "Coverage"} <= types
+
+        r = client.get("/api/v1/patients/%s/euips-header" % p.guid)
+        assert r.get_json()["complete"], r.get_json()["missing"]
+
+    def test_running_twice_is_a_no_op(self, client, db):
+        """The first thing anyone does with a backfill is run it again."""
+        from app.services import euips_header_backfill as bf
+        c = _clinic(db)
+        _patient(db, c, managing_org=c.organisation_guid)
+
+        bf.run(dry_run=False, seed=7)
+        after_first = db.session.query(FhirResource).count()
+        second = bf.run(dry_run=False, seed=7)
+        assert second["created"] == {"RelatedPerson": 0, "Coverage": 0}
+        assert db.session.query(FhirResource).count() == after_first
+
+    def test_backfill_never_invents_an_adult_guardian(self, client, db):
+        from app.services import euips_header_backfill as bf
+        c = _clinic(db)
+        p = _patient(db, c, managing_org=c.organisation_guid)  # born 1980
+        bf.run(dry_run=False, seed=7)
+        guards = [
+            cod for r in db.session.query(FhirResource)
+            .filter(FhirResource.patient_guid == p.guid)
+            .filter(FhirResource.resource_type == "RelatedPerson").all()
+            for rel in r.resource_json.get("relationship", ())
+            for cod in rel.get("coding", ()) if cod.get("code") == "GUARD"]
+        assert not guards
+
+    def test_language_is_stored_so_it_does_not_change_on_reread(self, client,
+                                                                db):
+        from app.services import euips_header_backfill as bf
+        c = _clinic(db)
+        rid = str(uuid.uuid4())
+        create_resource("Patient", {
+            "resourceType": "Patient", "id": rid,
+            "name": [{"family": "Ek"}], "gender": "male",
+            "birthDate": "1970-01-01"})          # no communication
+        db.session.commit()
+        p = db.session.query(PatientIndex).filter_by(resource_id=rid).first()
+        db.session.add(PatientClinicAssignment(patient_guid=p.guid,
+                                               clinic_guid=c.guid))
+        db.session.commit()
+
+        bf.run(dry_run=False, seed=7)
+        first = _composition(generate_ips_bundle(p))["language"]
+        second = _composition(generate_ips_bundle(p))["language"]
+        assert first == second

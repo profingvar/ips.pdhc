@@ -203,6 +203,31 @@ def create_app(config_name: str | None = None) -> Flask:
             return
         _click.echo(euips_report.format_report(r))
 
+    @app.cli.command("euips-header-backfill")
+    @click.option("--limit", type=int, default=None,
+                  help="Only the oldest N patients.")
+    @click.option("--dry-run/--no-dry-run", default=True,
+                  help="Default DRY RUN. --no-dry-run WRITES patient data.")
+    @click.option("--seed", type=int, default=None,
+                  help="Reproducible names/numbers, so a dry run and the real "
+                       "run produce the same values.")
+    def _euips_header_backfill_cli(limit, dry_run, seed):  # noqa: D401
+        """Give patients that predate #792 a document header.
+
+        Dry run by DEFAULT. A contact person and an insurance policy are
+        statements about a real person, and these rows feed cdr_6, analyse and
+        every spärr decision downstream — manufactured ones would be
+        indistinguishable later from data a clinician entered. So the operator
+        chooses, and nothing runs on deploy.
+
+        Idempotent: a patient that already has a RelatedPerson or Coverage is
+        skipped for that resource rather than given a second one.
+        """
+        import click as _click
+        from app.services import euips_header_backfill as bf
+        _click.echo(bf.format_plan(
+            bf.run(limit=limit, dry_run=dry_run, seed=seed)))
+
     # Create tables and bootstrap — guarded for concurrent gunicorn workers
     with app.app_context():
         try:
