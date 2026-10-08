@@ -14,9 +14,13 @@ from app.models.base import db
 from app.models.clinic import Clinic
 from app.models.fhir_resource import FhirResource
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
+from app.services import euips_header as euips_hdr
 from app.services import euips_sections as euips
 from app.services.auth_service import require_auth
 from app.services.consent_policy import evaluate_patient
+from app.services.ips_generator import (
+    _custodian_clinic, custodian_disagreement, generate_ips_bundle,
+)
 
 bp = Blueprint("patient_api", __name__, url_prefix="/api/v1/patients")
 
@@ -239,3 +243,87 @@ def euips_section_status(guid):
             "against the published IPS implementation guide."
         ),
     })
+
+
+@bp.route("/<guid>/euips-header", methods=["GET"])
+@require_auth
+def euips_header_status(guid):
+    """euIPS document-header coverage for one patient — #792. COMPUTED.
+
+    The companion to `/euips-sections`. The sections are the summary's content;
+    the header is what makes it a document — who the patient is, who may be
+    contacted, who pays, who authored and attests to it, who keeps it, in what
+    language and country.
+
+    Derived on every call for the same reason the section status is: a stored
+    copy of a derivable fact is the shape that produced #779 (two identifier
+    spaces compared as one) and #771 (two GUIDs for one object).
+
+    `legal_guardian` reports `not_applicable` for an adult rather than
+    `missing`. That distinction is the point of #792's data-quality note: an
+    adult without a guardian is correct, and scoring it as a gap would push
+    the generator toward manufacturing one.
+
+    THE CUSTODIAN IS DERIVED FROM THE CLINIC ASSIGNMENT, never from the
+    Patient's `managingOrganization`. `custodian_mismatch` is non-null when
+    those two disagree — the #768 shape, where three organisation identifiers
+    on one datapoint failed to collapse. The assignment wins and the
+    disagreement is reported rather than silently resolved.
+    """
+    if not _is_uuid(guid):
+        return jsonify({"error": "malformed patient guid"}), 400
+
+    patient = db.session.query(PatientIndex).filter_by(guid=guid).first()
+    if not patient:
+        return jsonify({"error": "Patient not found"}), 404
+
+    rows = (db.session.query(FhirResource)
+            .filter(FhirResource.patient_guid == patient.guid)
+            .filter(FhirResource.status == "active")
+            .all())
+    patient_json = next(
+        (r.resource_json for r in rows if r.resource_type == "Patient"), None)
+    if patient_json is None:
+        # The index row exists but the Patient resource does not — report it
+        # rather than 500ing, which is what #730 taught about a gate that
+        # answers with an exception instead of a verdict.
+        return jsonify({"error": "patient index row has no active Patient "
+                                 "resource"}), 409
+
+    related = [r.resource_json for r in rows
+               if r.resource_type == "RelatedPerson"]
+    coverage = [r.resource_json for r in rows if r.resource_type == "Coverage"]
+
+    # Build the real document so the header reported is the header shipped,
+    # not a second opinion about it. Asking the generator is what keeps this
+    # endpoint from drifting away from the bundle.
+    bundle = generate_ips_bundle(patient)
+    composition = next(
+        (e["resource"] for e in bundle.get("entry", ())
+         if e.get("resource", {}).get("resourceType") == "Composition"), None)
+
+    status = euips_hdr.header_status(
+        patient_json=patient_json, related=related, coverage=coverage,
+        composition=composition)
+
+    clinic = _custodian_clinic(patient)
+    status.update({
+        "patient_guid": str(patient.guid),
+        "custodian": {
+            "organisation_guid": (str(clinic.organisation_guid)
+                                  if clinic else None),
+            "name": clinic.name if clinic else None,
+            "source": "PatientClinicAssignment (authoritative)",
+        },
+        "custodian_mismatch": custodian_disagreement(patient_json, clinic),
+        "language": composition.get("language") if composition else None,
+        "country_of_origin": euips_hdr.COUNTRY_OF_ORIGIN,
+        "disclaimer": (
+            "Reports the document-header elements described in "
+            "docs/EU_Patient_Summary_ICD11.docx. NOT a claim of EU/EHDS "
+            "conformance: the implementing acts were not confirmed adopted as "
+            "of October 2026, and neither the codes nor the R5 element shapes "
+            "here are verified against the published IPS implementation guide."
+        ),
+    })
+    return jsonify(status)

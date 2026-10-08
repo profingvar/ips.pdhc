@@ -4,8 +4,10 @@ import uuid
 from datetime import datetime, timezone
 
 from app.models.base import db
+from app.models.clinic import Clinic
 from app.models.fhir_resource import FhirResource
-from app.models.patient_index import PatientIndex
+from app.models.patient_index import PatientIndex, PatientClinicAssignment
+from app.services import euips_header
 
 
 # Resource types included in a full IPS
@@ -28,6 +30,67 @@ MINIMAL_IPS_TYPES = [
 ]
 
 IPS_PROFILE_URL = "http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips"
+
+# #792: document-HEADER resource types. They travel in the bundle as entries
+# that the Composition header references, and they must NOT be fed to
+# _build_sections -- they are not clinical sections, and a "Coverage section"
+# would be a section the guideline does not define. Kept separate from
+# FULL_IPS_TYPES for exactly that reason.
+HEADER_TYPES = [
+    "RelatedPerson",
+    "Coverage",
+]
+
+
+def _custodian_clinic(patient_index: PatientIndex):
+    """The clinic that is the document's custodian — #792.
+
+    THE ASSIGNMENT IS AUTHORITATIVE. `PatientClinicAssignment` is what
+    cross-service consumers query (`GET /api/v1/clinics/<guid>/patients` joins
+    on this table, not on `managingOrganization`), so it is the fact; the
+    Patient's `managingOrganization` and the Composition custodian are
+    projections of it.
+
+    This matters because #792's watch item is the #768 shape: three places
+    holding one organisation. #768 is open precisely because three organisation
+    identifiers on one datapoint did not collapse, and a Rule 24 gate ended up
+    scoping on the wrong one. So the custodian is READ from the assignment
+    rather than restated, and a disagreement is reported rather than resolved
+    by preference.
+
+    Returns the active assigned Clinic, or None. None is a correct answer: a
+    patient with no assignment has no custodian, and inventing one would make
+    the header contradict the assignment table.
+    """
+    return (db.session.query(Clinic)
+            .join(PatientClinicAssignment,
+                  PatientClinicAssignment.clinic_guid == Clinic.guid)
+            .filter(PatientClinicAssignment.patient_guid == patient_index.guid)
+            .filter(Clinic.is_active.is_(True))
+            .order_by(Clinic.name)
+            .first())
+
+
+def custodian_disagreement(patient_json: dict, clinic) -> str | None:
+    """Describe a custodian/managingOrganization mismatch, or None.
+
+    Exposed rather than inlined so a report and a test can ask the same
+    question the bundle builder asks. Returns a human sentence, because the
+    only useful form of this finding is one an operator can read.
+    """
+    mo = (patient_json or {}).get("managingOrganization") or {}
+    ref = (mo.get("reference") or "")
+    mo_guid = ref.split("/")[-1] if "/" in ref else ""
+    if clinic is None:
+        return ("Patient names managingOrganization %s but has no active "
+                "clinic assignment, so the summary has no custodian." % mo_guid
+                ) if mo_guid else None
+    assigned = str(clinic.organisation_guid or "")
+    if mo_guid and assigned and mo_guid != assigned:
+        return ("managingOrganization is %s but the authoritative assignment "
+                "is %s (%s). The assignment wins; the Patient resource is "
+                "stale." % (mo_guid, assigned, clinic.name))
+    return None
 
 
 def generate_ips_bundle(
@@ -67,6 +130,15 @@ def generate_ips_bundle(
         FhirResource.status == "active",
     ).all()
 
+    # #792: header resources, fetched SEPARATELY so they never reach
+    # _build_sections. They belong to the document header, not to a clinical
+    # section.
+    header_resources = db.session.query(FhirResource).filter(
+        FhirResource.patient_guid == patient_index.guid,
+        FhirResource.resource_type.in_(HEADER_TYPES),
+        FhirResource.status == "active",
+    ).all()
+
     # Build bundle entries
     entries = []
     section_entries_by_type: dict[str, list] = {}
@@ -89,11 +161,40 @@ def generate_ips_bundle(
             "reference": fullurl,
         })
 
+    # #792: header entries (RelatedPerson, Coverage). Added to the bundle but
+    # deliberately NOT to section_entries_by_type.
+    related_json = []
+    coverage_json = []
+    for res in header_resources:
+        entries.append({
+            "fullUrl": f"urn:uuid:{res.resource_id}",
+            "resource": res.resource_json,
+        })
+        if res.resource_type == "RelatedPerson":
+            related_json.append(res.resource_json)
+        else:
+            coverage_json.append(res.resource_json)
+
+    # #792: the custodian organisation, derived from the AUTHORITATIVE clinic
+    # assignment. See _custodian_clinic.
+    clinic = _custodian_clinic(patient_index)
+    org_json = euips_header.organization_resource(clinic)
+    custodian_fullurl = None
+    if org_json:
+        custodian_fullurl = f"urn:uuid:{org_json['id']}"
+        entries.append({"fullUrl": custodian_fullurl, "resource": org_json})
+
     # Build Composition
     composition_id = str(uuid.uuid4())
     composition_fullurl = f"urn:uuid:{composition_id}"
 
     sections = _build_sections(section_entries_by_type, resource_types)
+
+    # Language comes from the Patient resource when it carries one, so the
+    # document and the patient agree. A per-bundle random draw here would make
+    # the same patient's summary change language between regenerations.
+    patient_json = patient_resource.resource_json or {}
+    language = _language_of(patient_json)
 
     composition = {
         "resourceType": "Composition",
@@ -111,6 +212,18 @@ def generate_ips_bundle(
         "title": "International Patient Summary",
         "section": sections,
     }
+    composition.update(euips_header.composition_header(
+        custodian_full_url=custodian_fullurl,
+        custodian_display=clinic.name if clinic else None,
+        language=language,
+        attested_at=composition_date,
+    ))
+
+    # A stale managingOrganization is a real finding, not a thing to paper
+    # over: the assignment is used regardless, and the disagreement is
+    # recorded on the bundle so a reader can see the two did not match rather
+    # than discovering it later from a wrongly scoped query (#768).
+    disagreement = custodian_disagreement(patient_json, clinic)
 
     entries.insert(0, {
         "fullUrl": composition_fullurl,
@@ -128,8 +241,28 @@ def generate_ips_bundle(
         "timestamp": composition_date.isoformat(),
         "entry": entries,
     }
+    if disagreement:
+        bundle["meta"]["tag"] = [{
+            "system": "urn:pdhc:ips:warning",
+            "code": "custodian-mismatch",
+            "display": disagreement,
+        }]
 
     return bundle
+
+
+def _language_of(patient_json: dict) -> str:
+    """The document language, taken from Patient.communication.
+
+    Falls back to the Swedish default rather than drawing at random: a
+    regenerated summary for the same patient must not change language, and a
+    random draw here would do exactly that.
+    """
+    for c in (patient_json or {}).get("communication", ()):
+        code = ((c.get("language") or {}).get("coding") or [{}])[0].get("code")
+        if code:
+            return code
+    return "sv-SE"
 
 
 def _build_sections(

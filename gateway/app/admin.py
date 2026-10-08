@@ -17,7 +17,7 @@ from app.models.base import db
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services import personnummer as pnr
 from app.services import (euips_batch, euips_eu_additions,
-                          euips_optional, euips_recommended,
+                          euips_header, euips_optional, euips_recommended,
                           euips_required, euips_sections)
 from app.models.fhir_resource import FhirResource
 from app.models.ips_card import IpsCard
@@ -666,14 +666,26 @@ def generate_mock_data():
         # "19"+"20xx", an identifier contradicting its own birth_date.
         personnummer = pnr.build(mp["birth"])
 
+        # #792: city is now a variable because the Coverage insurer is the
+        # patient's REGION, derived from where they live. Drawn independently
+        # it would put a Stockholm resident on Region Skåne's books.
+        city = random.choice(["Stockholm", "Göteborg", "Malmö", "Uppsala",
+                              "Lund"])
+        # #792: mostly sv-SE with a realistic minority tail, so the
+        # non-Swedish paths are exercised rather than merely supported. Stored
+        # on the Patient so the Composition can read it back and a regenerated
+        # summary keeps the same language.
+        language = euips_header.pick_language(random)
+
         patient_fhir = {
             "resourceType": "Patient",
             "id": resource_id,
+            "language": language,
             "name": [{"family": mp["family"], "given": [mp["given"]], "use": "official"}],
             "gender": mp["gender"],
             "birthDate": mp["birth"],
             "identifier": [{
-                "system": "urn:oid:1.2.752.129.2.1.3.1",
+                "system": euips_header.PERSONNUMMER_SYSTEM,
                 "value": personnummer,
             }],
             "managingOrganization": {
@@ -682,15 +694,28 @@ def generate_mock_data():
             },
             "address": [{
                 "use": "home",
-                "city": random.choice(["Stockholm", "Göteborg", "Malmö", "Uppsala", "Lund"]),
-                "country": "SE",
+                "city": city,
+                "country": euips_header.COUNTRY_OF_ORIGIN,
             }],
             "telecom": [{
                 "system": "phone",
                 "value": f"+4670{random.randint(1000000, 9999999)}",
                 "use": "mobile",
             }],
+            "communication": euips_header.patient_communication(language),
         }
+
+        # #792: contact persons, and a legal guardian ONLY for a minor. The
+        # birth-year range is 1940-2010, so roughly 3% of a cohort are minors
+        # today and the guardian path actually fires -- it is not dead code,
+        # and it does not fabricate a guardian for a 60-year-old, which the
+        # ticket names as a data-quality bug a simulator must not manufacture.
+        related = euips_header.related_person_resources(
+            f"Patient/{resource_id}", family=mp["family"],
+            birth_date=mp["birth"], rnd=random)
+        # Inline copy on the Patient as well as the referencable resources,
+        # built from ONE list so the two cannot disagree.
+        patient_fhir["contact"] = euips_header.patient_contact(related)
         create_resource("Patient", patient_fhir)
         patient = db.session.query(PatientIndex).filter_by(resource_id=resource_id).first()
         if not patient:
@@ -706,6 +731,21 @@ def generate_mock_data():
                 patient_guid=patient.guid,
                 clinic_guid=clinic.guid,
             ))
+
+        # #792: document-header resources, in BOTH modes. The header is what
+        # makes the bundle a document; a patient handed to sim.pdhc for its
+        # clinical content still needs a custodian, a contact and insurance.
+        # They are header facts, not clinical ones, so skip_clinical does not
+        # apply -- the same reasoning as the required sections above.
+        for body in related:
+            create_resource("RelatedPerson", body,
+                            patient_guid=patient.guid)
+        create_resource(
+            "Coverage",
+            euips_header.coverage_resource(
+                f"Patient/{resource_id}",
+                personnummer=personnummer, city=city),
+            patient_guid=patient.guid)
 
         # #793: the three euIPS REQUIRED sections, ALWAYS, in BOTH modes.
         # The guideline forbids an empty required section -- "you must state
