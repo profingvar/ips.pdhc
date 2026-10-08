@@ -100,3 +100,53 @@ of which legal guardians: 5   (minors only)
 
 618 passed; `tests/test_patient_portal_html.py`'s draft-banner test fails
 identically with these changes stashed (pre-existing, unrelated).
+
+### #792 backfill APPLIED — 2026-10-08, operator-authorised
+
+Pre-write snapshot: `miserver:~/backups/predeploy/ips.pdhc/792/ips_20261008T091737Z.pgdump`
+(188K, `pg_dump -Fc` of `ips_db`). Taken because the backfill patches 150
+existing `Patient.resource_json` rows in place, not only inserts.
+
+Run with `--seed 20261008`, so the dry run and the applied run produced
+identical values and the operation is reproducible:
+
+```
+patients examined       : 150
+created RelatedPerson   : 155     (150 contacts + 5 guardians)
+created Coverage        : 150
+patched language        : 150
+patched Patient.contact : 150
+```
+
+Verified afterwards:
+
+| check | result |
+|---|---|
+| `fhir_resources` Coverage / RelatedPerson | 150 / 155 |
+| patients with no contact person | **0** |
+| patients with no insurance | **0** |
+| guardians created, and their ages | 5 — **[3, 3, 9, 16, 17]** |
+| any guardian on an adult or unknown age | **none** |
+| language spread | sv-SE 133, en-GB 8, so-SO 4, fi-FI 2, ar 2, fa 1 |
+| headers still incomplete | **0** |
+| second `--no-dry-run` run | created 0, patched 0 — idempotent |
+
+**The guardian ages are worth noting.** The mock generator only produces
+1940–2010 births, so its youngest patient is 16. Ages **3 and 9** are
+Synthea-imported patients — the guardian rule is therefore doing real work on
+imported data, not just on generated cohorts, and the age gate is what keeps it
+from attaching a guardian to the 145 adults.
+
+Endpoint re-check on the same real patient that reported
+`missing: ['contact_person','health_insurance']` before the backfill:
+
+```
+RelatedPerson    : 1   Coverage: 1
+header complete  : True   missing: []
+guardian         : not_applicable — "patient is an adult, so a guardian
+                   would be invented"   (age 68)
+custodian        : urn:uuid:7f003d04-…  'Test Clinic'     mismatch: None
+```
+
+So #792 is now complete for the existing population as well as for newly
+generated patients.
