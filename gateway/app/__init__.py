@@ -203,6 +203,33 @@ def create_app(config_name: str | None = None) -> Flask:
             return
         _click.echo(euips_report.format_report(r))
 
+    @app.cli.command("sync-care-hierarchy")
+    @click.option("--token", envvar="SSO_SYNC_TOKEN", default=None,
+                  help="An sso Bearer token. sso's require_auth accepts ONLY "
+                       "`Authorization: Bearer`.")
+    @click.option("--dry-run/--no-dry-run", default=True,
+                  help="Default DRY RUN.")
+    def _sync_care_hierarchy_cli(token, dry_run):  # noqa: D401
+        """Mirror sso's vårdgivare/vårdenhet hierarchy onto clinics.
+
+        Fills `clinics.care_organisation_guid` so ips can answer BOTH care
+        levels without every consumer calling sso. Where sso records no
+        parent, the caregiver is set EQUAL to the care unit — the operator's
+        "if careunit is not given, careunit := caregiver" — stored rather than
+        recomputed by each reader.
+
+        An organisation sso does not know is reported and left alone. Guessing
+        a parent would assert a legal relationship, and a vårdenhet is the
+        spärrgräns.
+        """
+        import click as _click
+        from app.services import care_hierarchy_sync as sync_mod
+        try:
+            _click.echo(sync_mod.format_report(
+                sync_mod.sync(token, dry_run=dry_run)))
+        except sync_mod.SsoHierarchyUnavailable as e:
+            raise SystemExit("sync aborted, nothing written: %s" % e)
+
     @app.cli.command("euips-header-backfill")
     @click.option("--limit", type=int, default=None,
                   help="Only the oldest N patients.")

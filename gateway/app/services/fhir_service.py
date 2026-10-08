@@ -1,6 +1,8 @@
 """FHIR resource storage service."""
 
 import uuid
+
+from flask import current_app
 from datetime import date
 
 from sqlalchemy import and_
@@ -21,6 +23,19 @@ SUPPORTED_RESOURCE_TYPES = [
     "DocumentReference",
     "DiagnosticReport",
 ]
+
+
+def _as_uuid_or_none(value):
+    """`value` as a UUID, or None when it is not one.
+
+    Exists so `PatientIndex.guid` (a UUID column) is never handed a non-UUID
+    string, which would raise at the driver and surface as a 500 — the #805
+    shape.
+    """
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 
 def create_resource(resource_type: str, resource_json: dict, patient_guid: uuid.UUID | None = None) -> FhirResource:
@@ -177,7 +192,39 @@ def _sync_patient_index(fhir_res: FhirResource) -> None:
         existing.gender = gender
         existing.updated_at = utcnow()
     else:
+        # ── ONE identifier per patient (operator principle, 2026-10-08) ──
+        #
+        # "Patient information must be reachable by THE guid wherever it is in
+        # the platform, and a guid must have a 1:1 relation to a personnummer,
+        # a caregiver and a careunit."
+        #
+        # This minted TWO independent uuid4s for one person: `guid` took the
+        # column default while `resource_id` came from the FHIR resource. They
+        # were never equal, so a patient was reachable by one value here and a
+        # different value there — `/fhir/Patient/<a>` vs
+        # `/api/v1/patients/<b>/clinics`. Measured 2026-10-08: 150 of 150
+        # patients carried two different ids, and request.pdhc's 27
+        # ServiceRequests all stored the FHIR one while cdr and #782 use the
+        # platform one.
+        #
+        # `PatientIndex.guid` is canonical — #782, the CDRs and ips's own
+        # technical manual all call it the platform identifier — so the FHIR
+        # resource id is made EQUAL to it rather than the other way round. A
+        # FHIR resource id is free-form by spec, so this is the side with room
+        # to give.
+        _pi_guid = _as_uuid_or_none(fhir_res.resource_id)
+        if _pi_guid is None:
+            # A caller supplied a resource id that is not a UUID. The columns
+            # cannot be unified, so this patient WILL carry two identifiers.
+            # Logged rather than silently tolerated: it is a conformance
+            # breach, and `tools/` can count it.
+            current_app.logger.warning(
+                "patient resource_id %r is not a UUID, so PatientIndex.guid "
+                "cannot equal it — this patient will carry TWO identifiers, "
+                "breaking the one-guid principle",
+                fhir_res.resource_id)
         pi = PatientIndex(
+            **({"guid": _pi_guid} if _pi_guid else {}),
             fhir_resource_guid=fhir_res.guid,
             resource_id=fhir_res.resource_id,
             identifier_system=identifier_system,

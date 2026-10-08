@@ -425,12 +425,24 @@ class TestClinicsLookupAcceptsEitherIdentifier:
     production 2026-10-08: resource_id 612a2995-… , index guid eaf95fd1-… .
     """
 
-    def test_the_two_identifiers_really_are_different(self, client, db):
-        """If they were ever the same value this whole fix would be pointless,
-        so assert the premise rather than assuming it."""
+    def test_new_patients_now_carry_ONE_identifier(self, client, db):
+        """This assertion was inverted on 2026-10-08, deliberately.
+
+        It used to read `assert p.guid != p.resource_id`, pinning the premise
+        of the dual lookup: two independent uuid4s per patient. The operator
+        principle then made one guid the rule — "patient information must be
+        reachable by THE guid wherever it is in the platform" — so
+        `fhir_service` now sets `PatientIndex.guid` equal to the FHIR resource
+        id, and the premise is gone on purpose.
+
+        The dual lookup STAYS, because the 150 patients already in production
+        each carry two different ids and will until they are regenerated. It
+        is a compatibility path for the legacy population, not the design.
+        """
         c = _clinic(db)
         p = _patient(db, c, managing_org=c.organisation_guid)
-        assert str(p.guid) != str(p.resource_id)
+        assert str(p.guid) == str(p.resource_id), (
+            "a newly created patient should carry ONE identifier")
 
     def test_lookup_by_the_platform_guid_still_works(self, client, db):
         """Additive: what matched before must still match, and first."""

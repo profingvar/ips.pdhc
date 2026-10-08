@@ -8,3 +8,9 @@
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md
 /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/fhir_service.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/clinic.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/care_hierarchy_sync.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_clinic_care_organisation.sql
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_one_guid_and_care_levels.py
