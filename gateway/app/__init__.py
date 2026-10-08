@@ -203,6 +203,57 @@ def create_app(config_name: str | None = None) -> Flask:
             return
         _click.echo(euips_report.format_report(r))
 
+    @app.cli.command("generate-patients")
+    @click.option("--clinic", "clinic_guid", required=True,
+                  help="ips clinic GUID to assign the patients to.")
+    @click.option("--count", default=4, show_default=True, type=int)
+    @click.option("--skip-clinical", is_flag=True, default=False,
+                  help="Patient + assignment + document header only; no "
+                       "clinical sections. For when sim.pdhc will own the "
+                       "observations.")
+    def _generate_patients_cli(clinic_guid, count, skip_clinical):  # noqa: D401
+        """Generate a synthetic patient cohort for one clinic.
+
+        The same code the admin button runs — it was extracted so a browser
+        session is no longer the only way in.
+
+        REFUSES a clinic it cannot resolve. Generating patients with no
+        assignment would create exactly the 28-patient problem this work
+        exists to end: a patient with no organisation is invisible to every
+        organisation-scoped reader, collected and then unreadable by whoever
+        collected them.
+        """
+        import click as _click
+        from app.models.clinic import Clinic
+        from app.models.base import db as _db
+        from app.services import mock_generator
+
+        clinic = _db.session.query(Clinic).filter_by(guid=clinic_guid).first()
+        if clinic is None:
+            raise SystemExit(
+                "no clinic %s — refusing to generate unassigned patients"
+                % clinic_guid)
+        if not clinic.organisation_guid:
+            raise SystemExit(
+                "clinic %r has no organisation_guid, so its patients could "
+                "not be org-scoped — refusing" % clinic.name)
+
+        r = mock_generator.generate(clinic_guid, count=count,
+                                    skip_clinical=skip_clinical)
+        _click.echo(
+            "generated %d patients for %s\n"
+            "  careunit   : %s\n"
+            "  caregiver  : %s%s\n"
+            "  batch      : %s   (purgeable as a unit)\n"
+            "  euIPS      : %d/%d carry all three required sections\n"
+            "  resources  : %d"
+            % (r["created"], r["clinic_name"], r["organisation_guid"],
+               r["care_organisation_guid"] or "(none recorded)",
+               "  <- same as careunit" if r["care_organisation_guid"] ==
+               r["organisation_guid"] else "",
+               r["batch_guid"], r["conformant"], r["created"],
+               r["resources"]))
+
     @app.cli.command("sync-care-hierarchy")
     @click.option("--token", envvar="SSO_SYNC_TOKEN", default=None,
                   help="An sso Bearer token. sso's require_auth accepts ONLY "

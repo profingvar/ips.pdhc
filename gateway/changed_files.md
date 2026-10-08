@@ -14,3 +14,6 @@
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_clinic_care_organisation.sql
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_one_guid_and_care_levels.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/mock_generator.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
