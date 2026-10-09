@@ -108,14 +108,43 @@ def test_blocks_list_renders_with_empty_state(client, seed):
     assert seed["clinic"].name in body
 
 
-def test_blocks_list_shows_legal_review_banner_when_draft(client, seed):
-    """Bundle ships as draft; banner must appear on every patient
-    portal page so production renders are visibly gated."""
+def test_no_legal_review_banner_now_the_copy_IS_approved(client, seed):
+    """Inverted 2026-10-09, because the premise changed by design.
+
+    This test asserted the banner was PRESENT: "bundle ships as draft; banner
+    must appear on every patient portal page so production renders are visibly
+    gated." Correct when written. Then #242 recorded the legal sign-off —
+    `app/copy/sparr_copy.json` has carried `legal_review_status: "approved"`
+    since 2026-08-20, with the operator's own notes in the bundle — so the
+    banner correctly stopped rendering and this test had been RED ever since.
+
+    A permanently-failing test is worse than a missing one: it teaches people
+    that red is normal. Inverted rather than deleted, because the valuable
+    half is the gate itself, which the next test still pins.
+    """
     _login_as(client, seed["a"].guid)
-    resp = client.get("/patient/blocks")
-    body = resp.get_data(as_text=True)
+    body = client.get("/patient/blocks").get_data(as_text=True)
+    assert "Förhandsversion" not in body, (
+        "the draft banner is showing even though the copy bundle is approved")
+
+
+def test_the_banner_DOES_appear_if_the_copy_is_not_approved(client, seed,
+                                                            monkeypatch):
+    """The half worth keeping: an unapproved bundle must still be gated.
+
+    Deleting the original test would have dropped this guarantee silently —
+    nothing would then notice if the banner stopped working and a
+    legally-uncleared copy bundle rendered to patients unmarked.
+    """
+    import app.patient_portal as pp
+    monkeypatch.setattr(pp, "_copy_approved", lambda: False)
+    monkeypatch.setattr(pp, "_copy_metadata",
+                        lambda: {"legal_review_status": "draft"})
+    _login_as(client, seed["a"].guid)
+    body = client.get("/patient/blocks").get_data(as_text=True)
     assert "Förhandsversion" in body
     assert "legal_review_status" in body
+    assert "draft" in body
 
 
 def test_blocks_list_shows_indispensable_banner_when_active(client, seed):
