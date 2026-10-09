@@ -268,3 +268,90 @@ mapping is the #779 boundary, and it is exercised here rather than asserted.
 - `test_optional_sections_795`'s advance-directive assertion is flaky:
   directives generate at 0.15 and are skipped for minors, so P(zero in 40) is
   about 0.2%. Observed once, then three clean full runs.
+
+---
+
+## 2026-10-09 — #810 admin patient list: sortable headers, archive, batch inspect
+
+Operator: "Sort it upon click on the header row, default creation date. Add an
+archive button beside the view button. Do not delete, retain searchability etc
+but do not list it."
+
+### Sorting is SERVER-SIDE, and that is not an implementation detail
+
+The list is capped at 100 rows (`LIST_LIMIT`, unchanged). A client-side sort
+would reorder the 100 rows that happened to be fetched and present the result
+as "the patients sorted by X" — wrong the moment a 101st patient exists, and
+there are 216 in production. So the sort is in the query, driven by header
+links, with `PATIENT_SORTS` as an **allowlist**: `getattr(PatientIndex, key)`
+on a query-string value would reach any attribute on the model.
+
+Default is now `created` descending, was `family_name`. A cohort that was just
+generated was previously buried mid-alphabet.
+
+`Organisation`, `Cards` and `Resources` deliberately get **no** sort header:
+all three are computed per row after the query, so there is nothing to ORDER
+BY, and a header that silently sorted one page would be worse than no header.
+
+### Archive is a NEW column, not the `is_active` that already exists
+
+`patient_index.is_active` looks made for this. It is not available: it is FHIR
+`Patient.active` and it is already filtered by `app/api/clinic_routes.py` on
+`GET /api/v1/clinics/<guid>/patients` — the roster **sim.pdhc builds cohorts
+from**. Reusing it would have made "archive" silently also mean "remove from
+every org-scoped roster and stop receiving generated data".
+
+So `archived_at TIMESTAMPTZ NULL` (migration `add_patient_archived_at.sql`,
+applied to prod, idempotent, partial index on the selective direction). A
+timestamp rather than a bool answers "archived?" and "when?" in one column.
+
+What archiving does **not** do: it does not delete, does not touch
+`is_active`, does not remove the clinic assignment, and does not change a
+single API response. An archived patient is still returned by
+`GET /api/v1/patients/<guid>` and still appears in its clinic's roster. The
+only thing that changes is the default admin list. Searching by name or
+identifier still finds them, marked `archived`; `?archived=1` shows them alone.
+Archive is a POST (a GET that writes gets followed by prefetch) and carries the
+current q/sort/dir/archived/batch so the operator lands back where they were.
+
+### Batch inspection
+
+"are those patients in the list or how can I inspect them?" — they are in the
+list, mixed in and indistinguishable. Each batch row now has **Inspect**,
+which filters the list by `generation_batch_guid`. A malformed guid returns
+nothing rather than falling through to the unfiltered list under a heading
+claiming to show one batch.
+
+The batches card now also spells out, in words, that **Purge is a permanent
+delete and is not Archive**, including that observations already pushed to
+cdr_6 are not removed and will point at patients that no longer exist.
+
+### A real defect this found, in my own first version
+
+`log_event` does `add` + `flush` and leaves the commit to the caller — as all
+32 call sites in this service do. I committed the patient change first and
+logged after, so the audit row was flushed into a transaction nobody committed
+and discarded when the request ended. **The archive landed in production and
+the audit entry did not**, while the SQLite suite stayed green: the fixture's
+session keeps a flushed row visible to the next query, so the assertion passed
+against a row that would never exist.
+
+Fixed to one commit covering both (which also makes the change and its audit
+record atomic). The test now calls `_db.session.rollback()` before counting, so
+only a genuinely committed row survives — verified by reintroducing the bug.
+
+### Verified
+
+- 678 tests pass (18 new). Each new test verified load-bearing: reverting the
+  default sort, the archive filter, the batch filter or the commit order turns
+  the relevant ones red.
+- Migration applied to prod: `archived_at timestamptz NULL` +
+  `ix_patient_index_archived`; re-run is a clean no-op. 216 patients, 0 archived.
+- Deployed (`docker-compose up -d --build`; host == in-image hash; no
+  dependency drift, 32 packages; `/api/v1/health` 200).
+- Live render against the real 216-row table: default 100 rows, 5 sort headers,
+  Archive on every row, 3 batch Inspect links, archived view empty, malformed
+  batch returns 0 rows, bogus sort key falls back to 200.
+- Live archive → unarchive round-trip on Postgres: `archived_at` set then
+  cleared, `is_active` untouched, hidden from default view, present in archived
+  view, still findable by search, both audit rows committed. State restored.

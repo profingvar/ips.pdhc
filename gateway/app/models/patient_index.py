@@ -66,6 +66,25 @@ class PatientIndex(db.Model):
     # assignment, so a second table would only duplicate derivable facts.
     generation_batch_guid: Mapped[uuid.UUID | None] = mapped_column(GUID())
 
+    # --- Admin-list archive (#810) -----------------------------------------
+    # "Do not delete, retain searchability etc but do not list it."
+    #
+    # A SEPARATE column, deliberately NOT a reuse of `is_active` above, even
+    # though that bool looks like it already means this. `is_active` is FHIR
+    # `Patient.active` and is already load-bearing on a CROSS-SERVICE endpoint:
+    # `clinic_routes.py` filters `PatientIndex.is_active.is_(True)` on
+    # GET /api/v1/clinics/<guid>/patients -- the roster sim.pdhc builds cohorts
+    # from. Overloading it would silently make "archive" also mean "drop from
+    # every org-scoped roster and stop receiving generated data", which is a
+    # much larger decision than hiding a row from one admin table.
+    #
+    # A timestamp rather than a bool: it answers "archived?" and "when?" for
+    # the same storage, and a NULL is unambiguously "not archived". Nullable,
+    # no default, additive -- the rule this table is held to, because nine
+    # sibling services read it.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -88,6 +107,11 @@ class PatientIndex(db.Model):
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
             "gender": self.gender,
             "is_active": self.is_active,
+            # #810: additive. Consumers that do not know about archiving
+            # behave exactly as before -- archiving does NOT remove a patient
+            # from any API response, only from the default admin list.
+            "archived_at": (self.archived_at.isoformat()
+                            if self.archived_at else None),
             "ehds_opt_out": self.ehds_opt_out,
             "quality_registry_opt_out": self.quality_registry_opt_out,
             "consented_research_projects": self.consented_research_projects or [],

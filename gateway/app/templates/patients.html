@@ -137,6 +137,16 @@
     <em>euIPS</em> counts how many carry all three required sections
     (allergies, problems, medications) as content or as an explicit
     &ldquo;none known&rdquo;.
+    <strong>Inspect</strong> filters the patient list below to that batch —
+    its patients are otherwise mixed into the list like any other.
+  </p>
+  <p class="text-muted" style="font-size:0.9em">
+    <strong>Purge is a permanent delete, and is not Archive.</strong> It
+    removes the patients, their clinical resources, their clinic assignments,
+    their IPS cards and their snapshots. There is no undo and no backup, and
+    anything already pushed downstream to cdr_6 stays there pointing at
+    patients that no longer exist. To tidy the list without losing data, use
+    <strong>Archive</strong> on the individual rows instead.
   </p>
   <div class="table-wrap">
     <table>
@@ -166,9 +176,19 @@
           </td>
           <td>{{ b.resources }}</td>
           <td>{{ (b.created_at or '')[:16] }}</td>
-          <td>
-            <form method="post" action="{{ url_for('admin.purge_mock_batch') }}"
-                  onsubmit="return confirm('Delete batch {{ b.batch_guid[:8] }}…?\n\n{{ b.patients }} patients and {{ b.resources }} clinical resources will be removed permanently.');">
+          <td style="white-space:nowrap">
+            {#
+              #810: "the generated batches — are those patients in the list or
+              how can I inspect them?" They ARE in the list, mixed in with
+              every other patient and indistinguishable from them. This link is
+              the answer to the second half: it filters the list to just this
+              batch.
+            #}
+            <a href="{{ url_for('admin.patients', batch=b.batch_guid) }}"
+               class="btn btn-sm btn-secondary">Inspect</a>
+            <form method="post" style="display:inline"
+                  action="{{ url_for('admin.purge_mock_batch') }}"
+                  onsubmit="return confirm('PERMANENTLY DELETE batch {{ b.batch_guid[:8] }}…?\n\nRemoved: {{ b.patients }} patients, {{ b.resources }} clinical resources, plus their clinic assignments, IPS cards and snapshots.\n\nThis is not Archive. There is no undo and no backup.\n\nObservations already pushed to cdr_6 are NOT removed and will point at patients that no longer exist.');">
               <input type="hidden" name="batch_guid" value="{{ b.batch_guid }}">
               <button type="submit" class="btn btn-sm btn-danger">Purge</button>
             </form>
@@ -181,27 +201,75 @@
 </div>
 {% endif %}
 
+{#
+  #810: sortable headers, server-side.
+
+  The sort happens in the query, not in the browser. A client-side sort would
+  reorder the {{ limit }} rows that happened to be fetched and label the result
+  "patients sorted by X", which is wrong the moment more than {{ limit }} exist
+  -- and this list is capped. Only columns the database can actually ORDER BY
+  get a header link; Organisation, Cards and Resources are computed per row
+  after the query, so they stay plain text rather than offering a sort that
+  would only apply to one page.
+#}
+{% macro sort_th(key, label) %}
+  {% set active = (sort == key) %}
+  {% set next_dir = 'asc' if (active and dir == 'desc') else 'desc' %}
+  <th>
+    <a href="{{ url_for('admin.patients', q=q or None, sort=key, dir=next_dir,
+                        archived='1' if show_archived else None,
+                        batch=batch or None) }}"
+       style="text-decoration:none; color:inherit; white-space:nowrap"
+       title="Sort by {{ label }}{{ ' (ascending)' if next_dir == 'asc' else ' (descending)' }}">
+      {{ label }}<span style="opacity:{{ '1' if active else '0.25' }}; margin-left:0.25rem">{% if active %}{{ '▲' if dir == 'asc' else '▼' }}{% else %}↕{% endif %}</span>
+    </a>
+  </th>
+{% endmacro %}
+
 {% if patients %}
 <div class="card">
+  <p class="text-muted" style="font-size:0.9em; margin:0 0 0.5rem">
+    {% if batch %}
+      Showing generation batch <code>{{ batch[:8] }}…</code> —
+    {% endif %}
+    {% if show_archived %}
+      <strong>Archived patients.</strong> These are hidden from the default
+      list. They are not deleted: the API still returns them and they still
+      appear in their clinic&rsquo;s roster.
+    {% else %}
+      {{ total }} patient{{ '' if total == 1 else 's' }} match{{ 'es' if total == 1 else '' }}{% if total > limit %}, showing the first {{ limit }} in this order{% endif %}.
+      {% if q %}Search includes archived patients, marked below.{% endif %}
+    {% endif %}
+    {% if archived_total and not show_archived %}
+      <a href="{{ url_for('admin.patients', archived='1', sort=sort, dir=dir) }}">{{ archived_total }} archived</a>.
+    {% elif show_archived %}
+      <a href="{{ url_for('admin.patients', sort=sort, dir=dir) }}">Back to the active list</a>.
+    {% endif %}
+  </p>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Name</th>
+          {{ sort_th('name', 'Name') }}
           <th>Organisation</th>
-          <th>Identifier</th>
-          <th>Birth Date</th>
-          <th>Gender</th>
+          {{ sort_th('identifier', 'Identifier') }}
+          {{ sort_th('birth_date', 'Birth Date') }}
+          {{ sort_th('gender', 'Gender') }}
           <th>Cards</th>
           <th>Resources</th>
-          <th>Created</th>
+          {{ sort_th('created', 'Created') }}
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for p in patients %}
-        <tr>
-          <td>{{ p.family_name or '—' }}, {{ p.given_name or '—' }}</td>
+        <tr{% if p.archived_at %} style="opacity:0.6"{% endif %}>
+          <td>
+            {{ p.family_name or '—' }}, {{ p.given_name or '—' }}
+            {% if p.archived_at %}
+              <span class="badge badge-pending" title="Archived {{ p.archived_at.strftime('%Y-%m-%d') }} — hidden from the default list, not deleted">archived</span>
+            {% endif %}
+          </td>
           <td>{{ p.organisation or '—' }}</td>
           <td><code>{{ p.identifier_value or '—' }}</code></td>
           <td>{{ p.birth_date.isoformat() if p.birth_date else '—' }}</td>
@@ -209,16 +277,55 @@
           <td>{{ p.card_count }}</td>
           <td>{{ p.resource_count }}</td>
           <td>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
-          <td><a href="{{ url_for('admin.patient_detail', guid=p.guid) }}" class="btn btn-sm btn-secondary">View</a></td>
+          <td style="white-space:nowrap">
+            <a href="{{ url_for('admin.patient_detail', guid=p.guid) }}" class="btn btn-sm btn-secondary">View</a>
+            {#
+              Archive is a POST, not a link: it changes state, and a GET that
+              writes is followed by every crawler and every browser prefetch.
+              The current view (q/sort/dir/archived/batch) rides along so the
+              operator lands back where they were rather than on page one of
+              the default order.
+            #}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('admin.unarchive_patient', guid=p.guid) if p.archived_at else url_for('admin.archive_patient', guid=p.guid) }}">
+              <input type="hidden" name="q" value="{{ q or '' }}">
+              <input type="hidden" name="sort" value="{{ sort }}">
+              <input type="hidden" name="dir" value="{{ dir }}">
+              <input type="hidden" name="archived" value="{{ '1' if show_archived else '' }}">
+              <input type="hidden" name="batch" value="{{ batch or '' }}">
+              {% if p.archived_at %}
+                <button type="submit" class="btn btn-sm btn-secondary">Restore</button>
+              {% else %}
+                <button type="submit" class="btn btn-sm btn-secondary"
+                        title="Hide from this list. Not a delete — the patient stays searchable and the API still returns it.">Archive</button>
+              {% endif %}
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% elif batch_invalid %}
+<div class="card empty-state">
+  <p><strong>{{ batch }}</strong> is not a valid batch GUID.</p>
+  <p><a href="{{ url_for('admin.patients') }}">Back to all patients</a></p>
+</div>
+{% elif batch %}
+<div class="card empty-state">
+  <p>No patients in batch <code>{{ batch[:8] }}…</code>. It may already have
+     been purged.</p>
+  <p><a href="{{ url_for('admin.patients') }}">Back to all patients</a></p>
+</div>
+{% elif show_archived %}
+<div class="card empty-state">
+  <p>No archived patients.</p>
+  <p><a href="{{ url_for('admin.patients') }}">Back to the active list</a></p>
+</div>
 {% elif q %}
 <div class="card empty-state">
-  <p>No patients match "{{ q }}".</p>
+  <p>No patients match "{{ q }}" — archived patients included.</p>
 </div>
 {% else %}
 <div class="card empty-state">

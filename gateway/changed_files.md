@@ -21,3 +21,10 @@
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/clinic_routes.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_clinic_guid_guard.py
+
+## 2026-10-09 — #810 admin patient list: sort, archive, batch inspect
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/patient_index.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patients.html
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_patient_archived_at.sql  (NEW, APPLIED to prod)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin_patient_archive_sort.py  (NEW)

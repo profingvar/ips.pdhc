@@ -28,6 +28,7 @@ from app.models.audit_log import AuditLog
 from app.models.clinic import Clinic
 from app.services.ips_generator import generate_ips_bundle
 from app.services.fhir_service import create_resource
+from app.services.audit_service import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -99,12 +100,72 @@ def dashboard():
 
 # ── Patient Browser ──────────────────────────────────────────
 
+#: #810: the columns the patient list can be ordered by, mapped to the model
+#: attribute that actually sorts them.
+#:
+#: An ALLOWLIST, not `getattr(PatientIndex, request.args["sort"])` -- that
+#: would let a query string reach any attribute on the model, and
+#: `order_by` on the wrong one is at best a 500.
+#:
+#: `organisation` and `cards`/`resources` are deliberately absent: those three
+#: columns are computed per row AFTER the query (a sub-count and a lookup into
+#: the FHIR Patient resource), so there is nothing to ORDER BY. Offering a
+#: header that sorted only the 100 fetched rows would be a worse answer than
+#: not offering it -- see the note on LIST_LIMIT below.
+PATIENT_SORTS = {
+    "name": (PatientIndex.family_name, PatientIndex.given_name),
+    "identifier": (PatientIndex.identifier_value,),
+    "birth_date": (PatientIndex.birth_date,),
+    "gender": (PatientIndex.gender,),
+    "created": (PatientIndex.created_at,),
+}
+
+#: Unchanged from before #810. Stated as a constant because the sort is now
+#: server-side BECAUSE of it: sorting in the browser would reorder the 100 rows
+#: that happened to be fetched and present them as "the patients sorted by X",
+#: which is wrong whenever more than 100 exist.
+LIST_LIMIT = 100
+
+
 @bp.route("/patients")
 def patients():
     """Patient browser — search and list patients."""
     q = request.args.get("q", "").strip()
 
-    query = db.session.query(PatientIndex).order_by(PatientIndex.family_name)
+    # #810: default to newest first. Was family_name, which buries a cohort
+    # that was just generated somewhere in the middle of the alphabet.
+    sort = request.args.get("sort", "created")
+    if sort not in PATIENT_SORTS:
+        sort = "created"
+    direction = "asc" if request.args.get("dir") == "asc" else "desc"
+
+    # #810: archived patients are hidden from the list but NOT from search.
+    # "Do not delete, retain searchability etc but do not list it" -- so a
+    # name or identifier search still finds them (the template marks them),
+    # and `?archived=1` shows the archived set on its own.
+    show_archived = request.args.get("archived") == "1"
+
+    query = db.session.query(PatientIndex)
+
+    if show_archived:
+        query = query.filter(PatientIndex.archived_at.isnot(None))
+    elif not q:
+        query = query.filter(PatientIndex.archived_at.is_(None))
+
+    # #810: inspect one generation batch. This is what makes a batch more than
+    # a row of counts -- before this there was no way to see WHICH patients a
+    # batch created without reading the database by hand.
+    batch = request.args.get("batch", "").strip()
+    batch_invalid = False
+    if batch:
+        try:
+            query = query.filter(
+                PatientIndex.generation_batch_guid == uuid.UUID(batch))
+        except (ValueError, TypeError):
+            # A malformed guid must not 500 and must not silently return the
+            # unfiltered list as though the filter had applied.
+            batch_invalid = True
+            query = query.filter(db.false())
 
     if q:
         like_q = f"%{q}%"
@@ -116,7 +177,14 @@ def patients():
             )
         )
 
-    patients_list = query.limit(100).all()
+    cols = PATIENT_SORTS[sort]
+    query = query.order_by(*[
+        c.desc().nullslast() if direction == "desc" else c.asc().nullslast()
+        for c in cols
+    ])
+
+    total = query.count()
+    patients_list = query.limit(LIST_LIMIT).all()
 
     for p in patients_list:
         p.card_count = db.session.query(IpsCard).filter_by(patient_guid=p.guid).count()
@@ -146,7 +214,16 @@ def patients():
     return render_template("patients.html", patients=patients_list, q=q,
                            clinics=clinics, orgs=orgs,
                            # #797: so a batch can be seen and undone.
-                           batches=euips_batch.list_batches())
+                           batches=euips_batch.list_batches(),
+                           # #810: sort state, archive view, batch filter.
+                           sort=sort, dir=direction,
+                           show_archived=show_archived,
+                           batch=batch, batch_invalid=batch_invalid,
+                           total=total, limit=LIST_LIMIT,
+                           archived_total=(
+                               db.session.query(PatientIndex)
+                               .filter(PatientIndex.archived_at.isnot(None))
+                               .count()))
 
 
 @bp.route("/patients/create", methods=["POST"])
@@ -252,6 +329,87 @@ def patient_detail(guid):
         snapshot_count=len(snapshots),
         destinations=destinations,
     )
+
+
+# ── Archive / unarchive (#810) ───────────────────────────────
+#
+# "Do not delete, retain searchability etc but do not list it."
+#
+# So this sets a timestamp and nothing else. It does NOT touch `is_active`
+# (FHIR Patient.active, and already filtered by the cross-service roster
+# endpoint sim.pdhc reads), does NOT delete anything, and does NOT change a
+# single API response. An archived patient is still returned by
+# GET /api/v1/patients/<guid>, still appears in its clinic's roster, still
+# carries its blocks and consents. The only thing that changes is whether the
+# default admin list shows the row.
+#
+# That restraint is the point: archiving is a VIEW decision taken by an
+# operator tidying a table, and a view decision must not quietly become a
+# clinical or an access-control one. Purge is the destructive action and is
+# separate, deliberate, and shows its counts first.
+
+
+def _set_patient_archived(guid, archived: bool):
+    """Shared body for archive and unarchive. Returns the patient or aborts."""
+    patient = db.session.get(PatientIndex, guid)
+    if not patient:
+        abort(404)
+    patient.archived_at = datetime.now(timezone.utc) if archived else None
+    # Rule 24: full operation log. Hiding a row from a list is still an
+    # operator action on a patient record, and "where did that patient go"
+    # has to be answerable from the audit log rather than from guesswork.
+    #
+    # log_event() BEFORE the commit, and ONE commit for both. `log_event` does
+    # `add` + `flush` and deliberately does not commit -- it leaves that to the
+    # caller, which is how all 32 call sites in this service work. Committing
+    # the patient change first and logging after looks equivalent and is not:
+    # the audit row is then flushed into a transaction nobody commits and is
+    # discarded when the request ends. Found in production, where the archive
+    # landed and the audit entry did not, after the SQLite test suite passed --
+    # the test fixture's session keeps a flushed-but-uncommitted row visible to
+    # the next query, so the assertion succeeded against a row that would never
+    # exist. One commit also makes the state change and its audit record
+    # atomic, which is the behaviour Rule 24 actually wants.
+    log_event(
+        "patient_archive" if archived else "patient_unarchive",
+        patient_guid=patient.guid,
+        resource_type="Patient",
+        resource_guid=patient.guid,
+        detail={"archived_at": (patient.archived_at.isoformat()
+                                if patient.archived_at else None)},
+    )
+    db.session.commit()
+    return patient
+
+
+def _back_to_patients():
+    """Return to the list the operator was looking at, not to its default.
+
+    Archiving from a filtered or sorted view and landing back on page one of
+    the default order loses the operator's place, which makes archiving a
+    handful of rows needlessly tedious.
+    """
+    args = {k: v for k, v in request.form.items()
+            if k in ("q", "sort", "dir", "archived", "batch") and v}
+    return redirect(url_for("admin.patients", **args))
+
+
+@bp.route("/patients/<uuid:guid>/archive", methods=["POST"])
+def archive_patient(guid):
+    """Hide a patient from the default admin list. Not a delete."""
+    patient = _set_patient_archived(guid, True)
+    flash(f"Archived {patient.family_name or ''}, {patient.given_name or ''} "
+          f"— still searchable and still returned by the API.", "success")
+    return _back_to_patients()
+
+
+@bp.route("/patients/<uuid:guid>/unarchive", methods=["POST"])
+def unarchive_patient(guid):
+    """Put a patient back in the default list."""
+    patient = _set_patient_archived(guid, False)
+    flash(f"Restored {patient.family_name or ''}, "
+          f"{patient.given_name or ''} to the list.", "success")
+    return _back_to_patients()
 
 
 @bp.route("/patients/<uuid:guid>/add-resource", methods=["POST"])
