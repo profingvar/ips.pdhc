@@ -131,6 +131,90 @@ def list_clinic_patients(guid):
     return jsonify([p.to_dict() for p in patients])
 
 
+@bp.route("/<guid>/generate-cohort", methods=["POST"])
+@require_auth
+def generate_cohort(guid):
+    """Generate a synthetic cohort for this clinic, over HTTP (#814).
+
+    The generator previously had two callers — the SU-SSO admin form and a
+    Flask CLI command — so a tool outside a browser could not create a cohort.
+    sim.pdhc's web Cohort Builder needs to, since "pick a clinic, make 10
+    patients aged 40-75, then generate their data" is one operator task and
+    splitting it across two UIs is how the batch GUID gets lost.
+
+    This opens no new capability: `POST /api/v1/clinics/<guid>/patients` above
+    already lets an API-key holder create patients one at a time, and sim's
+    Synthea importer does exactly that in bulk. This is the same power with
+    the names, dates and euIPS sections filled in.
+
+    Body (all optional except nothing)::
+
+        {"count": 10, "age_min": 40, "age_max": 75, "skip_clinical": true}
+
+    `age_min`/`age_max` are AGES, not birth years. A bad range is refused with
+    400 rather than clamped: a cohort generated for the wrong ages looks
+    exactly like one generated for the right ages, so there is no later
+    symptom to catch it.
+
+    `skip_clinical` defaults to **true** here, unlike the admin form. A caller
+    reaching this endpoint is a generator pipeline, and the usual next step is
+    sim.pdhc supplying the observations — two sources of clinical truth for one
+    patient is the thing the flag exists to prevent.
+
+    Returns the generator's report, including the **batch_guid**, which is what
+    makes the cohort selectable and purgeable as a unit.
+    """
+    from app.services import mock_generator
+
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed clinic guid"}), 400
+
+    clinic = db.session.query(Clinic).filter_by(guid=guid).first()
+    if not clinic:
+        return jsonify({"error": "Clinic not found"}), 404
+    if not clinic.organisation_guid:
+        # The same refusal the CLI makes. Patients with no resolvable
+        # organisation are invisible to every org-scoped reader, which means
+        # the data is collected and then cannot be read by whoever collected
+        # it.
+        return jsonify({
+            "error": f"clinic {clinic.name!r} has no organisation_guid, so "
+                     f"its patients could not be org-scoped"}), 409
+
+    body = request.get_json(silent=True) or {}
+    try:
+        count = int(body.get("count", 10))
+    except (TypeError, ValueError):
+        return jsonify({"error": "count must be an integer"}), 400
+    if count < 1:
+        return jsonify({"error": "count must be at least 1"}), 400
+
+    skip_clinical = body.get("skip_clinical")
+    skip_clinical = True if skip_clinical is None else bool(skip_clinical)
+
+    try:
+        report = mock_generator.generate(
+            guid, count=count, skip_clinical=skip_clinical,
+            age_min=body.get("age_min"), age_max=body.get("age_max"))
+    except mock_generator.AgeRangeError as exc:
+        return jsonify({"error": f"age range rejected: {exc}"}), 400
+
+    log_event("patient_cohort_generate", resource_type="Patient",
+              detail={"clinic_guid": str(guid),
+                      "batch_guid": report.get("batch_guid"),
+                      "created": report.get("created"),
+                      "age_min": report.get("age_min"),
+                      "age_max": report.get("age_max"),
+                      "skip_clinical": report.get("skip_clinical")})
+    # `log_event` does add + flush and leaves the commit to the caller — all
+    # 32 call sites in this service commit after it. Without this the audit
+    # row is flushed into a transaction nobody commits and discarded when the
+    # request ends, which is exactly how #811's archive landed in production
+    # with no audit entry while the test suite stayed green.
+    db.session.commit()
+    return jsonify(report), 201
+
+
 @bp.route("/<guid>/patients", methods=["POST"])
 @require_auth
 def create_clinic_patient(guid):

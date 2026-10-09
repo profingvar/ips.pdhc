@@ -34,3 +34,5 @@
 - 2026-10-09 gateway/tests/test_mock_generator_age_range.py (NEW)
 - 2026-10-09 gateway/app/api/patient_routes.py — POST /api/v1/patients/validate-identifier (#813)
 - 2026-10-09 gateway/tests/test_validate_identifier_endpoint.py (NEW)
+- 2026-10-09 gateway/app/api/clinic_routes.py — POST /api/v1/clinics/<guid>/generate-cohort (#814)
+- 2026-10-09 gateway/tests/test_generate_cohort_endpoint.py (NEW)

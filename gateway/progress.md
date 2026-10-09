@@ -456,3 +456,38 @@ against its own list.
 
 709 tests pass (13 new). Deployed; verified over the real wire from
 `request_pdhc_app`.
+
+---
+
+## 2026-10-09 — #814: generate a cohort over HTTP
+
+`POST /api/v1/clinics/<guid>/generate-cohort`, ApiKey-authed, returning the
+generator's report including the **batch_guid**.
+
+The generator had two callers — the SU-SSO admin form and a Flask CLI command —
+so no tool outside a browser could create a cohort. "Pick a clinic, make 10
+patients aged 40-75, then generate their data" is one operator task, and
+splitting it across two UIs is how the batch GUID gets lost between them.
+
+**This opens no new capability.** `POST /api/v1/clinics/<guid>/patients` already
+lets an API-key holder create patients, and sim's Synthea importer does exactly
+that in bulk. This is the same power with the names, personnummer and euIPS
+sections filled in.
+
+Refusals, all tested: a bad age range is **400 and creates nobody** (refused,
+not clamped — a cohort generated for the wrong ages looks exactly like one
+generated for the right ages); a clinic with no `organisation_guid` is **409**,
+because its patients could not be org-scoped and would be invisible to every
+reader; an unknown clinic 404, a malformed guid 400, a bad count 400.
+
+`skip_clinical` defaults to **true** here, unlike the admin form: a caller
+reaching this endpoint is a generator pipeline, and the next step is normally
+sim supplying the observations. Two sources of clinical truth for one patient is
+what the flag exists to prevent.
+
+Audited as `patient_cohort_generate`. The audit test rolls back before counting,
+so only a committed row passes — and it caught the missing `db.session.commit()`
+after `log_event` on the first run, which is the same trap recorded this morning
+for #811.
+
+721 tests pass (12 new). Deployed; in-image hash verified, /api/v1/health 200.
