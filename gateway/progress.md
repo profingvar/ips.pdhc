@@ -150,3 +150,121 @@ custodian        : urn:uuid:7f003d04-…  'Test Clinic'     mismatch: None
 
 So #792 is now complete for the existing population as well as for newly
 generated patients.
+
+## 2026-10-08/09 — the operator principle: one guid, personnummer, caregiver + careunit
+
+Operator, 2026-10-08:
+
+> Patient information must be reachable by THE guid wherever it is in the
+> platform, and a guid must have a 1:1 relation to a personnummer, a caregiver
+> and a careunit. If careunit is not given then the careunit should be set to
+> the caregiver.
+
+### Conformance before the work — every patient failed, twice
+
+| rule | before |
+|---|---|
+| one guid, reachable everywhere | **0 / 150** — every patient carried two |
+| 1:1 guid ↔ personnummer | **0 / 150 valid** — all doubled-century |
+| 1:1 guid ↔ caregiver + careunit | 122 had one org, **28 had none** |
+
+The personnummer finding is why a wipe became the only honest route: #789's fix
+applied to newly generated patients and **none had been generated since**, so
+the entire population carried a malformed identifier. A personnummer is an
+identity, not a field — recomputing one changes who the record is about.
+
+### What was changed
+
+**Rule 1.** `fhir_service` minted two independent uuid4s for one person:
+`PatientIndex.guid` took the column default while `resource_id` came from the
+FHIR resource. `PatientIndex.guid` is now set EQUAL to the resource id. The
+platform guid stays canonical (#782, the CDRs and §1 of the technical manual
+all call it that); a FHIR resource id is free-form by spec, so that is the side
+with room to give. A non-UUID resource id cannot be unified — that patient
+keeps two ids and the breach is logged, never silently tolerated.
+
+**Rules 2b/3.** `clinics.care_organisation_guid` added (migration
+`add_clinic_care_organisation.sql`). ips could not express the two levels at
+all before: an assignment recorded ONE unlabelled organisation and the
+hierarchy lived only in sso, so every consumer had to call sso to learn which
+level it was looking at — and a vårdenhet is the **spärrgräns**, so that is a
+legal distinction. `Clinic.to_dict()` now returns `care_unit_guid`,
+`care_organisation_guid` and `is_own_caregiver`.
+
+**The operator's fallback is STORED, not recomputed.** Where sso records no
+parent, `care_organisation_guid = organisation_guid`. A rule every consumer
+re-derives is a rule some consumer gets wrong. NULL is also safe:
+`is_own_caregiver()` treats an unsynced row as its own caregiver, the same
+fallback, so an unsynced clinic degrades to the correct answer.
+
+`flask sync-care-hierarchy` mirrors sso (dry-run default) and refuses to invent
+a caregiver for an organisation sso does not know — #767 and #780 were exactly
+that. Applied 2026-10-08 to **11 of 11 clinics, zero unresolved**; only UAS has
+a real parent (Region Uppsala), every other organisation is its own caregiver.
+
+**The generator is no longer browser-only.** `generate_mock_data` was ~200
+lines inside a route reading `request.form` and reporting via `flash()`, so an
+SSO browser session was the only way to run it. Extracted to
+`app/services/mock_generator.py`; the route still calls it, and
+`flask generate-patients` is the second caller. The CLI REFUSES a clinic it
+cannot resolve — unassigned patients are the 28-patient problem this work ends.
+
+### Conformance after — new cohort clean, legacy unchanged
+
+Same measurement script, run again:
+
+```
+NEW cohort — UAS, batch 1cea906c   (n=60)
+  one guid                 60/60
+  valid personnummer       60/60   (invalid 0, duplicated 0)
+  both care levels         60/60   (no organisation 0)
+  euIPS required sections  60/60
+
+LEGACY cohort                      (n=150)
+  one guid                  0/150
+  valid personnummer        0/150
+  both care levels        122/150   (28 have no organisation)
+  euIPS required sections  40/150
+```
+
+### Why UAS, and why the legacy 150 stayed
+
+Operator chose **option A**: regenerate alongside rather than wipe.
+
+UAS already existed, held zero patients, and is the platform's ONLY real
+vårdenhet with a caregiver above it — so it gives a second populated
+organisation *and* the only careunit ≠ caregiver case, making the two-level
+display verifiable instead of degenerate. No sso write was needed.
+
+The legacy 150 stayed because **22 of them are referenced by 27
+ServiceRequests anchoring all 690 data-exchange grants**, including
+CambioCaregiver's 680 and Medituner's 6. `data_exchange_grants
+.service_request_guid` is a FK with `NO ACTION`, so Postgres would have refused
+the delete. I had recommended deleting those SRs as "records that shouldn't
+exist"; that was wrong, and the recommendation was withdrawn before anything
+was deleted.
+
+### Org scoping is finally verifiable — and verified
+
+It could not be tested before: every patient sat in one organisation, so a
+correct filter and a broken one returned the same rows (the #779 failure mode).
+With two populated organisations, through the DEPLOYED request.pdhc code:
+
+```
+Test Clinic  org=7f003d04 -> clinic=2cc4e9e1 -> 122 patients
+UAS          org=7d55624c -> clinic=02b83b6b ->  60 patients
+overlap: 0
+UAS-only caller resolving Test Clinic's org: REFUSED
+```
+
+Note the org guid and the clinic guid are different values in both rows — that
+mapping is the #779 boundary, and it is exercised here rather than asserted.
+
+### Outstanding
+
+- The legacy 150 remain non-conformant by design. They are reachable, they
+  serve the two partner integrations, and their state is recorded above rather
+  than hidden.
+- `test_optional_sections_795`'s advance-directive assertion is flaky:
+  directives generate at 0.15 and are skipped for minors, so P(zero in 40) is
+  about 0.2%. Observed once, then three clean full runs.
