@@ -135,7 +135,7 @@ def _build_unique_patient_pool(count: int, *, age_min=None,
     The shape mirrors the original `_SWEDISH_NAMES` entries so the
     callsite stays unchanged.
 
-    ``age_min``/``age_max`` are AGES, not birth years (#811). An operator
+    ``age_min``/``age_max`` are AGES, not birth years (#812). An operator
     thinks "40 to 75", and converting in their head is both annoying and the
     kind of arithmetic that silently drifts a year every January.
     """
@@ -179,7 +179,7 @@ def generate(clinic_guid, count=4, skip_clinical=False,
     org_guid = clinic.organisation_guid if clinic else ""
     org_name = clinic.name if clinic else "Demo Clinic"
 
-    # #811: ages, not birth years. Raises AgeRangeError on a range that
+    # #812: ages, not birth years. Raises AgeRangeError on a range that
     # cannot produce patients; the caller surfaces it rather than generating
     # a cohort for ages nobody asked for.
     age_lo, age_hi = resolve_age_range(age_min, age_max)
@@ -393,7 +393,7 @@ def generate(clinic_guid, count=4, skip_clinical=False,
         "conformant": conformant,
         "resources": resources,
         "skip_clinical": bool(skip_clinical),
-        # #811: report the range actually used, so a batch's age span is
+        # #812: report the range actually used, so a batch's age span is
         # recorded in the flash message and in any script's output rather
         # than having to be inferred from the birth dates afterwards.
         "age_min": age_lo,

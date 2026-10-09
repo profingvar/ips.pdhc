@@ -22,15 +22,15 @@
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_clinic_guid_guard.py
 
-## 2026-10-09 — #810 admin patient list: sort, archive, batch inspect
+## 2026-10-09 — #811 admin patient list: sort, archive, batch inspect
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/patient_index.py
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patients.html
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_patient_archived_at.sql  (NEW, APPLIED to prod)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin_patient_archive_sort.py  (NEW)
-- 2026-10-09 gateway/app/services/mock_generator.py — age range (#811): resolve_age_range, AgeRangeError, _birth_date_for_age
+- 2026-10-09 gateway/app/services/mock_generator.py — age range (#812): resolve_age_range, AgeRangeError, _birth_date_for_age
 - 2026-10-09 gateway/app/admin.py — generate-mock takes age_min/age_max, refuses a bad range, redirects to the patient list
 - 2026-10-09 gateway/app/templates/patients.html — Age from / Age to fields
 - 2026-10-09 gateway/tests/test_mock_generator_age_range.py (NEW)
-- 2026-10-09 gateway/app/api/patient_routes.py — POST /api/v1/patients/validate-identifier (#812)
+- 2026-10-09 gateway/app/api/patient_routes.py — POST /api/v1/patients/validate-identifier (#813)
 - 2026-10-09 gateway/tests/test_validate_identifier_endpoint.py (NEW)

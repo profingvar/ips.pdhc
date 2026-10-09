@@ -1,4 +1,4 @@
-"""#810 — the admin patient list: sortable headers, archive, batch inspect.
+"""#811 — the admin patient list: sortable headers, archive, batch inspect.
 
 Three things the operator asked for, and one thing they did not ask for but
 which decides whether the first three are safe:

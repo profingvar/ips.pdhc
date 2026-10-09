@@ -109,7 +109,7 @@
                min="1" max="150" value="5" step="1">
       </div>
       {#
-        #811: an AGE range, not birth years — an operator thinks "40 to 75",
+        #812: an AGE range, not birth years — an operator thinks "40 to 75",
         and converting to birth years by hand is both annoying and the kind of
         arithmetic that drifts a year every January. Blank means the default
         span (16–86), which is what the old hardcoded 1940–2010 birth years
@@ -195,7 +195,7 @@
           <td>{{ (b.created_at or '')[:16] }}</td>
           <td style="white-space:nowrap">
             {#
-              #810: "the generated batches — are those patients in the list or
+              #811: "the generated batches — are those patients in the list or
               how can I inspect them?" They ARE in the list, mixed in with
               every other patient and indistinguishable from them. This link is
               the answer to the second half: it filters the list to just this
@@ -219,7 +219,7 @@
 {% endif %}
 
 {#
-  #810: sortable headers, server-side.
+  #811: sortable headers, server-side.
 
   The sort happens in the query, not in the browser. A client-side sort would
   reorder the {{ limit }} rows that happened to be fetched and label the result

@@ -107,7 +107,7 @@ MAX_IDENTIFIERS_PER_CALL = 100
 @bp.route("/validate-identifier", methods=["POST"])
 @require_auth
 def validate_identifier():
-    """Is this personnummer valid, and if not, why? (#812)
+    """Is this personnummer valid, and if not, why? (#813)
 
     ips owns the authoritative rule — `app/services/personnummer.py` (#789) —
     so ips answers the question. There was no endpoint for it, which is why

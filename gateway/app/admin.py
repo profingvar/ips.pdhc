@@ -100,7 +100,7 @@ def dashboard():
 
 # ── Patient Browser ──────────────────────────────────────────
 
-#: #810: the columns the patient list can be ordered by, mapped to the model
+#: #811: the columns the patient list can be ordered by, mapped to the model
 #: attribute that actually sorts them.
 #:
 #: An ALLOWLIST, not `getattr(PatientIndex, request.args["sort"])` -- that
@@ -120,7 +120,7 @@ PATIENT_SORTS = {
     "created": (PatientIndex.created_at,),
 }
 
-#: Unchanged from before #810. Stated as a constant because the sort is now
+#: Unchanged from before #811. Stated as a constant because the sort is now
 #: server-side BECAUSE of it: sorting in the browser would reorder the 100 rows
 #: that happened to be fetched and present them as "the patients sorted by X",
 #: which is wrong whenever more than 100 exist.
@@ -132,14 +132,14 @@ def patients():
     """Patient browser — search and list patients."""
     q = request.args.get("q", "").strip()
 
-    # #810: default to newest first. Was family_name, which buries a cohort
+    # #811: default to newest first. Was family_name, which buries a cohort
     # that was just generated somewhere in the middle of the alphabet.
     sort = request.args.get("sort", "created")
     if sort not in PATIENT_SORTS:
         sort = "created"
     direction = "asc" if request.args.get("dir") == "asc" else "desc"
 
-    # #810: archived patients are hidden from the list but NOT from search.
+    # #811: archived patients are hidden from the list but NOT from search.
     # "Do not delete, retain searchability etc but do not list it" -- so a
     # name or identifier search still finds them (the template marks them),
     # and `?archived=1` shows the archived set on its own.
@@ -152,7 +152,7 @@ def patients():
     elif not q:
         query = query.filter(PatientIndex.archived_at.is_(None))
 
-    # #810: inspect one generation batch. This is what makes a batch more than
+    # #811: inspect one generation batch. This is what makes a batch more than
     # a row of counts -- before this there was no way to see WHICH patients a
     # batch created without reading the database by hand.
     batch = request.args.get("batch", "").strip()
@@ -215,7 +215,7 @@ def patients():
                            clinics=clinics, orgs=orgs,
                            # #797: so a batch can be seen and undone.
                            batches=euips_batch.list_batches(),
-                           # #810: sort state, archive view, batch filter.
+                           # #811: sort state, archive view, batch filter.
                            sort=sort, dir=direction,
                            show_archived=show_archived,
                            batch=batch, batch_invalid=batch_invalid,
@@ -331,7 +331,7 @@ def patient_detail(guid):
     )
 
 
-# ── Archive / unarchive (#810) ───────────────────────────────
+# ── Archive / unarchive (#811) ───────────────────────────────
 #
 # "Do not delete, retain searchability etc but do not list it."
 #
@@ -750,7 +750,7 @@ def generate_mock_data():
     skip_clinical = request.form.get("skip_clinical", "").lower() in {
         "on", "1", "true"}
 
-    # #811: an AGE range, not birth years. Blank means the default span.
+    # #812: an AGE range, not birth years. Blank means the default span.
     try:
         r = mock_generator.generate(
             clinic_guid, count=count, skip_clinical=skip_clinical,
@@ -775,7 +775,7 @@ def generate_mock_data():
         f"Batch {r['batch_guid']} — inspectable and purgeable below.",
         "success" if r["conformant"] == r["created"] else "warning",
     )
-    # #811: back to the patient list, where the batch can be Inspected —
+    # #812: back to the patient list, where the batch can be Inspected —
     # the dashboard shows counts, not the cohort that was just created.
     return redirect(url_for("admin.patients"))
 

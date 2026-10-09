@@ -66,7 +66,7 @@ class PatientIndex(db.Model):
     # assignment, so a second table would only duplicate derivable facts.
     generation_batch_guid: Mapped[uuid.UUID | None] = mapped_column(GUID())
 
-    # --- Admin-list archive (#810) -----------------------------------------
+    # --- Admin-list archive (#811) -----------------------------------------
     # "Do not delete, retain searchability etc but do not list it."
     #
     # A SEPARATE column, deliberately NOT a reuse of `is_active` above, even
@@ -107,7 +107,7 @@ class PatientIndex(db.Model):
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
             "gender": self.gender,
             "is_active": self.is_active,
-            # #810: additive. Consumers that do not know about archiving
+            # #811: additive. Consumers that do not know about archiving
             # behave exactly as before -- archiving does NOT remove a patient
             # from any API response, only from the default admin list.
             "archived_at": (self.archived_at.isoformat()

@@ -1,4 +1,4 @@
--- #810: archive a patient out of the admin list without deleting it.
+-- #811: archive a patient out of the admin list without deleting it.
 --
 -- ips.pdhc creates schema via db.create_all(), which adds missing TABLES only
 -- and never alters an existing one, so a new column on patient_index needs an

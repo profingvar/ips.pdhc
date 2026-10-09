@@ -1,4 +1,4 @@
-"""#812 — ips answers "is this personnummer valid?", because ips owns the rule.
+"""#813 — ips answers "is this personnummer valid?", because ips owns the rule.
 
 There was no endpoint for it. request.pdhc therefore grew a SECOND Luhn
 implementation, that implementation was wrong, and the fix was to delete it

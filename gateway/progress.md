@@ -271,7 +271,7 @@ mapping is the #779 boundary, and it is exercised here rather than asserted.
 
 ---
 
-## 2026-10-09 — #810 admin patient list: sortable headers, archive, batch inspect
+## 2026-10-09 — #811 admin patient list: sortable headers, archive, batch inspect
 
 Operator: "Sort it upon click on the header row, default creation date. Add an
 archive button beside the view button. Do not delete, retain searchability etc
@@ -358,7 +358,7 @@ only a genuinely committed row survives — verified by reintroducing the bug.
 
 ---
 
-## 2026-10-09 — #811: the generator takes an AGE RANGE
+## 2026-10-09 — #812: the generator takes an AGE RANGE
 
 Operator: "Set the age range in the IPS generator." Previously hardcoded
 `random.randint(1940, 2010)` birth years, so every cohort spanned the same 70
@@ -408,7 +408,7 @@ confirmation states the age span used.
 
 ---
 
-## 2026-10-09 — #812: ips answers "is this personnummer valid?"
+## 2026-10-09 — #813: ips answers "is this personnummer valid?"
 
 `POST /api/v1/patients/validate-identifier`, under `require_auth`, batch, one
 result per input in order. Body `{"identifiers": [{"value", "birth_date"} | str]}`,
