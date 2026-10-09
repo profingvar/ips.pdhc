@@ -28,3 +28,7 @@
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patients.html
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_patient_archived_at.sql  (NEW, APPLIED to prod)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin_patient_archive_sort.py  (NEW)
+- 2026-10-09 gateway/app/services/mock_generator.py — age range (#811): resolve_age_range, AgeRangeError, _birth_date_for_age
+- 2026-10-09 gateway/app/admin.py — generate-mock takes age_min/age_max, refuses a bad range, redirects to the patient list
+- 2026-10-09 gateway/app/templates/patients.html — Age from / Age to fields
+- 2026-10-09 gateway/tests/test_mock_generator_age_range.py (NEW)

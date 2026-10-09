@@ -15,7 +15,7 @@ and the reason `_is_uuid` was hoisted in #791 rather than copied.
 """
 import random
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from app.models.base import db
 from app.models.clinic import Clinic
@@ -63,14 +63,84 @@ _SWEDISH_GIVEN_F = [
     "Sofia", "Julia", "Lina", "Klara", "Elin", "Alva",
 ]
 
-def _build_unique_patient_pool(count: int) -> list[dict]:
+#: Default age span, matching the old hardcoded 1940-2010 birth-year range as
+#: closely as a stable age range can: in 2026 that was ages 16-86. Kept as the
+#: default so a generate run with no age given behaves as it always did.
+DEFAULT_AGE_MIN = 16
+DEFAULT_AGE_MAX = 86
+
+#: A plain sanity bound. 0 is a newborn; 120 is past the record. Beyond this
+#: the personnummer builder and the minor/guardian logic are both being asked
+#: about people who do not exist.
+AGE_FLOOR = 0
+AGE_CEILING = 120
+
+
+class AgeRangeError(ValueError):
+    """The requested age range cannot produce patients."""
+
+
+def resolve_age_range(age_min=None, age_max=None) -> tuple[int, int]:
+    """Validate an operator-supplied age range, or fall back to the default.
+
+    Raises `AgeRangeError` rather than silently clamping. A cohort generated
+    for the wrong ages looks exactly like a cohort generated for the right
+    ones -- there is no later symptom -- so a bad range has to fail loudly at
+    the point of asking.
+    """
+    lo = DEFAULT_AGE_MIN if age_min in (None, "") else int(age_min)
+    hi = DEFAULT_AGE_MAX if age_max in (None, "") else int(age_max)
+    if lo > hi:
+        raise AgeRangeError(
+            f"minimum age {lo} is above maximum age {hi}")
+    if lo < AGE_FLOOR or hi > AGE_CEILING:
+        raise AgeRangeError(
+            f"age range {lo}-{hi} is outside {AGE_FLOOR}-{AGE_CEILING}")
+    return lo, hi
+
+
+def _birth_date_for_age(age: int, rnd, today=None) -> str:
+    """A birth date that yields exactly ``age`` years today.
+
+    Computed from an age rather than sampling a year, because a sampled year
+    gives an age that is off by one for everybody whose birthday has not
+    happened yet -- which is most of a cohort for most of the year. Asked for
+    40-75, the operator must not get 39-year-olds.
+
+    Day is capped at 28 so no month/day combination is ever invalid, and
+    29 February never has to be reasoned about.
+    """
+    today = today or date.today()
+    month = rnd.randint(1, 12)
+    day = rnd.randint(1, 28)
+    year = today.year - age
+    # Compare MONTH AND DAY ONLY. Comparing the full dates is the mistake
+    # here: `date(year, month, day) > today` is false for every plausible
+    # birth date, because the year component dominates — a 1976 date is never
+    # "after" 2026 — so the correction never fires and half the cohort comes
+    # out a year young. Caught by generating a single age and finding 49s
+    # among the 50s.
+    if (month, day) > (today.month, today.day):
+        # Birthday has not happened yet this year, so `today.year - age`
+        # would make them age-1. Shift one year earlier.
+        year -= 1
+    return date(year, month, day).isoformat()
+
+
+def _build_unique_patient_pool(count: int, *, age_min=None,
+                               age_max=None) -> list[dict]:
     """Sample up to ``count`` unique (family, given, gender, birth)
     dicts from the combinatorial Swedish-name pool.
 
     The shape mirrors the original `_SWEDISH_NAMES` entries so the
     callsite stays unchanged.
+
+    ``age_min``/``age_max`` are AGES, not birth years (#811). An operator
+    thinks "40 to 75", and converting in their head is both annoying and the
+    kind of arithmetic that silently drifts a year every January.
     """
     import random
+    lo, hi = resolve_age_range(age_min, age_max)
     male_pool = [(f, g, "male") for f in _SWEDISH_FAMILY for g in _SWEDISH_GIVEN_M]
     female_pool = [(f, g, "female") for f in _SWEDISH_FAMILY for g in _SWEDISH_GIVEN_F]
     pool = male_pool + female_pool
@@ -78,22 +148,20 @@ def _build_unique_patient_pool(count: int) -> list[dict]:
     n = min(count, len(pool))
     out: list[dict] = []
     for family, given, gender in pool[:n]:
-        # Birth years 1940–2010, random month/day. We don't try to be
+        # Uniform over the requested age span. We don't try to be
         # epidemiologically realistic — sim.pdhc owns the data semantics
         # and just needs a valid birthDate to attach observations to.
-        year = random.randint(1940, 2010)
-        month = random.randint(1, 12)
-        day = random.randint(1, 28)
         out.append({
             "family": family,
             "given": given,
             "gender": gender,
-            "birth": f"{year:04d}-{month:02d}-{day:02d}",
+            "birth": _birth_date_for_age(random.randint(lo, hi), random),
         })
     return out
 
 
-def generate(clinic_guid, count=4, skip_clinical=False):
+def generate(clinic_guid, count=4, skip_clinical=False,
+             age_min=None, age_max=None):
     """Create `count` synthetic patients assigned to `clinic_guid`.
 
     Returns a report dict. A caller that cannot resolve the clinic should
@@ -111,7 +179,12 @@ def generate(clinic_guid, count=4, skip_clinical=False):
     org_guid = clinic.organisation_guid if clinic else ""
     org_name = clinic.name if clinic else "Demo Clinic"
 
-    patients_pool = _build_unique_patient_pool(count)
+    # #811: ages, not birth years. Raises AgeRangeError on a range that
+    # cannot produce patients; the caller surfaces it rather than generating
+    # a cohort for ages nobody asked for.
+    age_lo, age_hi = resolve_age_range(age_min, age_max)
+    patients_pool = _build_unique_patient_pool(
+        count, age_min=age_lo, age_max=age_hi)
     created_count = 0
     created_guids: list = []        # #793: for the conformance count below
     # #797: ONE batch guid for this POST. Without it a batch cannot be undone
@@ -320,5 +393,10 @@ def generate(clinic_guid, count=4, skip_clinical=False):
         "conformant": conformant,
         "resources": resources,
         "skip_clinical": bool(skip_clinical),
+        # #811: report the range actually used, so a batch's age span is
+        # recorded in the flash message and in any script's output rather
+        # than having to be inferred from the birth dates afterwards.
+        "age_min": age_lo,
+        "age_max": age_hi,
         "patient_guids": [str(g) for g in created_guids],
     }

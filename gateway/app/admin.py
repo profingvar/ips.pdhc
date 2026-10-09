@@ -750,20 +750,34 @@ def generate_mock_data():
     skip_clinical = request.form.get("skip_clinical", "").lower() in {
         "on", "1", "true"}
 
-    r = mock_generator.generate(clinic_guid, count=count,
-                                skip_clinical=skip_clinical)
+    # #811: an AGE range, not birth years. Blank means the default span.
+    try:
+        r = mock_generator.generate(
+            clinic_guid, count=count, skip_clinical=skip_clinical,
+            age_min=request.form.get("age_min") or None,
+            age_max=request.form.get("age_max") or None)
+    except mock_generator.AgeRangeError as exc:
+        # Surfaced, not clamped. A cohort generated for the wrong ages looks
+        # exactly like one generated for the right ages, so there is no later
+        # symptom to catch it.
+        flash(f"Age range rejected: {exc}. No patients were created.", "error")
+        return redirect(url_for("admin.patients"))
+
     detail = ("required sections only (skip_clinical)" if r["skip_clinical"]
               else "full euIPS section set")
     flash(
-        f"Generated {r['created']} patients for {r['clinic_name']} — {detail}. "
+        f"Generated {r['created']} patients for {r['clinic_name']}, "
+        f"ages {r['age_min']}\u2013{r['age_max']} — {detail}. "
         f"{r['conformant']}/{r['created']} carry all three euIPS required "
         f"sections (allergies, problems, medications) either as content or as "
         f"an explicit 'none known' statement. "
         f"{r['resources']} clinical resources. "
-        f"Batch {r['batch_guid']} — purgeable below.",
+        f"Batch {r['batch_guid']} — inspectable and purgeable below.",
         "success" if r["conformant"] == r["created"] else "warning",
     )
-    return redirect(url_for("admin.dashboard"))
+    # #811: back to the patient list, where the batch can be Inspected —
+    # the dashboard shows counts, not the cohort that was just created.
+    return redirect(url_for("admin.patients"))
 
 
 # ── Documentation Routes ─────────────────────────────────────

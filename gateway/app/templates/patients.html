@@ -90,7 +90,7 @@
       just the Patient + clinic assignment — appropriate when sim.pdhc
       or another upstream generator will provide the clinical data.
     </p>
-    <div style="display:grid; grid-template-columns:2fr 1fr auto; gap:0.5rem; align-items:end;">
+    <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr auto; gap:0.5rem; align-items:end;">
       <div class="form-group" style="margin:0">
         <label for="clinic_select">Organisation (synced from SSO)</label>
         <select id="clinic_select" name="clinic_guid" class="form-control">
@@ -107,6 +107,23 @@
         <label for="count">Patients (1–150)</label>
         <input type="number" id="count" name="count" class="form-control"
                min="1" max="150" value="5" step="1">
+      </div>
+      {#
+        #811: an AGE range, not birth years — an operator thinks "40 to 75",
+        and converting to birth years by hand is both annoying and the kind of
+        arithmetic that drifts a year every January. Blank means the default
+        span (16–86), which is what the old hardcoded 1940–2010 birth years
+        amounted to, so leaving these empty behaves as before.
+      #}
+      <div class="form-group" style="margin:0">
+        <label for="age_min">Age from</label>
+        <input type="number" id="age_min" name="age_min" class="form-control"
+               min="0" max="120" step="1" placeholder="16">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="age_max">Age to</label>
+        <input type="number" id="age_max" name="age_max" class="form-control"
+               min="0" max="120" step="1" placeholder="86">
       </div>
       <button type="submit" class="btn btn-primary">
         <i data-lucide="database"></i> Generate

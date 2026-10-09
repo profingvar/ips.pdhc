@@ -355,3 +355,53 @@ only a genuinely committed row survives — verified by reintroducing the bug.
 - Live archive → unarchive round-trip on Postgres: `archived_at` set then
   cleared, `is_active` untouched, hidden from default view, present in archived
   view, still findable by search, both audit rows committed. State restored.
+
+---
+
+## 2026-10-09 — #811: the generator takes an AGE RANGE
+
+Operator: "Set the age range in the IPS generator." Previously hardcoded
+`random.randint(1940, 2010)` birth years, so every cohort spanned the same 70
+years and a plandef aimed at (say) a 40-75 population could not be given a
+matching patient set.
+
+**Ages, not birth years.** An operator thinks "40 to 75"; converting by hand is
+annoying and drifts a year every January. The form takes `age_min`/`age_max`,
+blank means the default span of 16-86 — which is what 1940-2010 amounted to in
+2026 — so an unchanged run behaves exactly as before.
+
+A bad range is **refused, not clamped**: `resolve_age_range` raises
+`AgeRangeError` on an inverted range or one outside 0-120, the route flashes it
+and creates nobody. A cohort generated for the wrong ages looks exactly like one
+generated for the right ages — there is no later symptom — so it has to fail at
+the point of asking.
+
+### The off-by-one, which I wrote and the test caught
+
+Sampling a birth *year* makes everyone whose birthday has not happened yet this
+year one year younger than asked for — most of a cohort, for most of the year.
+`_birth_date_for_age` computes from the age instead.
+
+My first version still had it: it compared the full candidate date against
+today, and `date(1976, 12, 1) > date(2026, 10, 9)` is false for every plausible
+birth date because the year dominates, so the correction never fired. Requesting
+a single age made it unmissable — `{49, 50}` where only `{50}` is correct. The
+fix compares `(month, day)` only, and `test_a_single_age_holds_for_EVERY_day_of_
+the_year` probes 1 January, 30 June and 31 December so a test run in October
+cannot hide a seasonal error.
+
+The generate route now also redirects to **the patient list** rather than the
+dashboard, so the batch just created can be Inspected immediately, and the
+confirmation states the age span used.
+
+### Verified live
+
+```
+  default span:      (16, 86)
+  ages 40-75    ->   min=40 max=75  (n=40)
+  single age 50 ->   distinct ages: [50]
+  inverted range:    refused — "minimum age 75 is above maximum age 40"
+  form fields:       Age from / Age to present
+```
+
+696 tests pass (18 new).
