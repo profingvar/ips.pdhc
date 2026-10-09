@@ -150,14 +150,27 @@ class TestPastIllnessesDoNotPolluteTheProblemList:
 
 
 class TestAdvanceDirectivesAreNotCareConsent:
-    def test_a_directive_is_a_fhir_resource_not_a_patient_consent_row(self, client, db):
+    def test_a_directive_is_a_fhir_resource_not_a_patient_consent_row(
+            self, client, db, monkeypatch):
         """patient_consents is cohesive-care consent (Lag 2022:913 §5), read by
         /consents/check which request.pdhc and contract.pdhc both call. An
         advance directive must not be mistakable for permission to share
         data."""
-        _generate(client, _clinic(db), 40)
+        # Advance directives generate at 0.15 and are skipped for minors, so
+        # "40 patients" left roughly a 0.2% chance of zero — this assertion
+        # failed once on 2026-10-08 and passed three full runs either side.
+        # A suite that fails 1 run in 500 for a legitimate reason teaches
+        # people to re-run instead of read.
+        #
+        # Forcing the rate to 1.0 keeps the test going through the REAL
+        # generator — which is the point, since what is under test is where
+        # the row LANDS — while making the draw deterministic. 6 patients is
+        # then plenty.
+        import app.services.euips_optional as opt
+        monkeypatch.setitem(opt.PRESENCE_RATE, "advance_directives", 1.0)
+        _generate(client, _clinic(db), 6)
         consents = _rows("Consent")
-        assert consents, "no advance directive generated in 40 patients"
+        assert consents, "the generator produced no advance directive at rate 1.0"
         assert _db.session.query(PatientConsent).count() == 0, \
             "an advance directive leaked into patient_consents"
 
