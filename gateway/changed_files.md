@@ -32,3 +32,5 @@
 - 2026-10-09 gateway/app/admin.py — generate-mock takes age_min/age_max, refuses a bad range, redirects to the patient list
 - 2026-10-09 gateway/app/templates/patients.html — Age from / Age to fields
 - 2026-10-09 gateway/tests/test_mock_generator_age_range.py (NEW)
+- 2026-10-09 gateway/app/api/patient_routes.py — POST /api/v1/patients/validate-identifier (#812)
+- 2026-10-09 gateway/tests/test_validate_identifier_endpoint.py (NEW)

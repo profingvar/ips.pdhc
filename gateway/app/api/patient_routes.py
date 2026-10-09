@@ -18,6 +18,7 @@ from app.services import euips_header as euips_hdr
 from app.services import euips_sections as euips
 from app.services.auth_service import require_auth
 from app.services.consent_policy import evaluate_patient
+from app.services import personnummer as pnr
 from app.services.guids import is_uuid
 from app.services.ips_generator import (
     _custodian_clinic, custodian_disagreement, generate_ips_bundle,
@@ -94,6 +95,96 @@ def list_patient_clinics(guid):
         .all()
     )
     return jsonify([c.to_dict() for c in clinics])
+
+
+#: Cap on one validate-identifier call. A patient record carries a handful of
+#: identifiers, and request.pdhc's patient view asks about one patient at a
+#: time, so this is generous. It exists so an unbounded list cannot turn a
+#: validation helper into a CPU sink.
+MAX_IDENTIFIERS_PER_CALL = 100
+
+
+@bp.route("/validate-identifier", methods=["POST"])
+@require_auth
+def validate_identifier():
+    """Is this personnummer valid, and if not, why? (#812)
+
+    ips owns the authoritative rule — `app/services/personnummer.py` (#789) —
+    so ips answers the question. There was no endpoint for it, which is why
+    request.pdhc grew a SECOND Luhn implementation, got it wrong, and then had
+    the check deleted outright. Two implementations of one rule is the shape
+    that cost #784 and #786 a day each; this is the first rule to stop being
+    duplicated rather than re-synchronised.
+
+    Takes no patient guid: it is a pure function over a value, and a caller
+    often has an identifier precisely because it does not yet have a patient.
+
+    **POST, with the value in the BODY, deliberately.** A personnummer is
+    personal data. In a URL path it would be written to the app's access log,
+    to nginx's, to any proxy in between and to a Referer header — all places it
+    is hard to find later and harder to erase. The value is also never logged
+    here.
+
+    Body::
+
+        {"identifiers": [
+            {"value": "19610115-1873", "birth_date": "1961-01-15"},
+            {"value": "19611015-9638"}
+        ]}
+
+    `birth_date` is optional and enables the check that matters most in this
+    data set: whether the identifier AGREES with the record. #789 produced
+    identifiers whose encoded birth date contradicted the patient's own
+    `birth_date`, and neither a length check nor a checksum alone catches that.
+
+    Returns one result per input, in the same order::
+
+        {"results": [
+            {"value": "...", "valid": true,  "problem": null,
+             "normalised": "19610115-1873"},
+            {"value": "...", "valid": false,
+             "problem": "19611015-9638 has check digit 8; the Luhn digit for
+                         6110159 63 is 1", "normalised": "19611015-9638"}
+        ]}
+
+    `problem` is `describe_invalid`'s message, which names the field and the
+    expected value — "invalid personnummer" alone sends an operator looking at
+    the wrong thing.
+    """
+    data = request.get_json(silent=True) or {}
+    items = data.get("identifiers")
+    if items is None:
+        return jsonify({"error": "identifiers is required"}), 400
+    if not isinstance(items, list):
+        return jsonify({"error": "identifiers must be a list"}), 400
+    if len(items) > MAX_IDENTIFIERS_PER_CALL:
+        return jsonify({
+            "error": f"at most {MAX_IDENTIFIERS_PER_CALL} identifiers per "
+                     f"call; got {len(items)}"}), 400
+
+    results = []
+    for item in items:
+        # Accept a bare string as well as an object. A caller with a list of
+        # identifiers and no birth dates should not have to wrap each one.
+        if isinstance(item, str):
+            value, birth = item, None
+        elif isinstance(item, dict):
+            value, birth = item.get("value"), item.get("birth_date")
+        else:
+            # A malformed ENTRY must not fail the whole batch, or one bad row
+            # hides the verdict on every good one.
+            results.append({"value": None, "valid": False,
+                            "problem": "entry must be a string or an object "
+                                       "with a `value`",
+                            "normalised": None})
+            continue
+        results.append({
+            "value": value,
+            "valid": pnr.is_valid(value, birth=birth) if value else False,
+            "problem": pnr.describe_invalid(value, birth=birth),
+            "normalised": pnr.normalise(value) if value else None,
+        })
+    return jsonify({"results": results})
 
 
 @bp.route("/analysis-filter", methods=["POST"])

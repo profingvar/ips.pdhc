@@ -405,3 +405,54 @@ confirmation states the age span used.
 ```
 
 696 tests pass (18 new).
+
+---
+
+## 2026-10-09 — #812: ips answers "is this personnummer valid?"
+
+`POST /api/v1/patients/validate-identifier`, under `require_auth`, batch, one
+result per input in order. Body `{"identifiers": [{"value", "birth_date"} | str]}`,
+returns `{"results": [{"value", "valid", "problem", "normalised"}]}`. `problem`
+is `describe_invalid`'s message, which names the expected digit — "invalid
+personnummer" alone sends an operator looking at the wrong thing.
+
+### Why it exists
+
+ips owns the rule (`app/services/personnummer.py`, #789) and had no endpoint
+for it. So request.pdhc grew a SECOND Luhn implementation. Two implementations
+of one rule is the shape that cost #784 and #786 a day each.
+
+### A correction worth recording, because the mistake is instructive
+
+That second implementation was deleted earlier today on a **false premise**. It
+was dropped because it flagged `19610115-9638`, which I stated ips's own
+generator had produced and considered valid. Both halves were wrong:
+
+* `19610115-9638` is a **hand-written fixture** in `tests/test_euips_header.py`.
+* ips's own validator **rejects** it — `build("1961-01-15")` yields
+  `19610115-1873`. The generator is clean: 30/30 valid in a fresh pool.
+
+So the local check had been **right**, and deleting it left request.pdhc silent
+about broken identifiers. `test_the_two_hand_written_fixtures_are_INVALID` pins
+those two values precisely so the belief cannot become plausible again.
+
+The lesson is not "trust the local check" — it is "ask the service that owns the
+rule", which is what this endpoint is for.
+
+### POST, with the value in the body, deliberately
+
+A personnummer is personal data. In a URL path it reaches this app's access log,
+nginx's, any proxy between, and a `Referer` header — all places it is hard to
+find and harder to erase. The value is never logged here either.
+`test_the_value_is_not_in_the_URL` asserts there is no GET form.
+
+### Also covered
+
+A **valid** number that contradicts the record's `birth_date` is invalid, with
+the reason naming both dates — the #789 self-contradiction, which neither a
+length check nor a checksum alone catches. A malformed entry does not fail the
+batch. Order and length of `results` are asserted, because the caller zips them
+against its own list.
+
+709 tests pass (13 new). Deployed; verified over the real wire from
+`request_pdhc_app`.
