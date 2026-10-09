@@ -17,3 +17,7 @@
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/mock_generator.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/guids.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/clinic_routes.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_clinic_guid_guard.py

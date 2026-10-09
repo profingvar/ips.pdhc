@@ -18,6 +18,7 @@ from app.services import euips_header as euips_hdr
 from app.services import euips_sections as euips
 from app.services.auth_service import require_auth
 from app.services.consent_policy import evaluate_patient
+from app.services.guids import is_uuid
 from app.services.ips_generator import (
     _custodian_clinic, custodian_disagreement, generate_ips_bundle,
 )
@@ -25,19 +26,12 @@ from app.services.ips_generator import (
 bp = Blueprint("patient_api", __name__, url_prefix="/api/v1/patients")
 
 
-def _is_uuid(value) -> bool:
-    """True when `value` parses as a UUID.
-
-    Hoisted out of `analysis_filter` by #791, which needed it too. It was
-    defined inside that function when #730 added it; a second copy in the new
-    route would be two definitions of one rule, and the shape that cost #784
-    and #786 a day each.
-    """
-    try:
-        uuid.UUID(str(value))
-        return True
-    except (ValueError, AttributeError, TypeError):
-        return False
+#: The UUID check now lives in `app/services/guids.py`, because #805 found the
+#: same need in `clinic_routes` and borrowing it from one API module into
+#: another would have been the second-definition problem one step removed.
+#: Hoisted out of `analysis_filter` by #791 (#730 added it inline); this alias
+#: keeps the existing call sites unchanged.
+_is_uuid = is_uuid
 
 
 def _patient_by_either_id(value):

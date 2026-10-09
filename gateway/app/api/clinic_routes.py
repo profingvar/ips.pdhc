@@ -11,6 +11,7 @@ from app.services.auth_service import require_auth
 from app.services.audit_service import log_event
 from app.services.fhir_service import create_resource
 from app.services import personnummer as pnr
+from app.services.guids import is_uuid
 
 bp = Blueprint("clinic_api", __name__, url_prefix="/api/v1/clinics")
 
@@ -43,6 +44,17 @@ def list_clinics():
 @bp.route("/<guid>", methods=["GET"])
 @require_auth
 def get_clinic(guid):
+    # #805: `Clinic.guid` is a real UUID column, so a non-UUID value RAISES
+    # at the driver and Flask returns 500 — before the 404 below can run. The
+    # 404 branch was unreachable for exactly the inputs it was written for.
+    #
+    # 400 rather than 404 on purpose: they are different answers. 404 says
+    # "no such clinic", 400 says "that is not an identifier". A consumer
+    # cannot tell a 500 from "the service is down" — which is how #730 became
+    # a reported sibling outage — nor a 404 from "my input was rubbish".
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed clinic guid"}), 400
+
     clinic = db.session.query(Clinic).filter_by(guid=guid).first()
     if not clinic:
         return jsonify({"error": "Clinic not found"}), 404
@@ -52,6 +64,17 @@ def get_clinic(guid):
 @bp.route("/<guid>", methods=["PATCH"])
 @require_auth
 def update_clinic(guid):
+    # #805: `Clinic.guid` is a real UUID column, so a non-UUID value RAISES
+    # at the driver and Flask returns 500 — before the 404 below can run. The
+    # 404 branch was unreachable for exactly the inputs it was written for.
+    #
+    # 400 rather than 404 on purpose: they are different answers. 404 says
+    # "no such clinic", 400 says "that is not an identifier". A consumer
+    # cannot tell a 500 from "the service is down" — which is how #730 became
+    # a reported sibling outage — nor a 404 from "my input was rubbish".
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed clinic guid"}), 400
+
     clinic = db.session.query(Clinic).filter_by(guid=guid).first()
     if not clinic:
         return jsonify({"error": "Clinic not found"}), 404
@@ -79,6 +102,17 @@ def list_clinic_patients(guid):
     goes through PatientClinicAssignment; duplicates are impossible
     thanks to the (patient_guid, clinic_guid) unique constraint.
     """
+    # #805: `Clinic.guid` is a real UUID column, so a non-UUID value RAISES
+    # at the driver and Flask returns 500 — before the 404 below can run. The
+    # 404 branch was unreachable for exactly the inputs it was written for.
+    #
+    # 400 rather than 404 on purpose: they are different answers. 404 says
+    # "no such clinic", 400 says "that is not an identifier". A consumer
+    # cannot tell a 500 from "the service is down" — which is how #730 became
+    # a reported sibling outage — nor a 404 from "my input was rubbish".
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed clinic guid"}), 400
+
     clinic = db.session.query(Clinic).filter_by(guid=guid).first()
     if not clinic:
         return jsonify({"error": "Clinic not found"}), 404
@@ -132,6 +166,17 @@ def create_clinic_patient(guid):
 
     Returns the created PatientIndex dict + 201.
     """
+    # #805: `Clinic.guid` is a real UUID column, so a non-UUID value RAISES
+    # at the driver and Flask returns 500 — before the 404 below can run. The
+    # 404 branch was unreachable for exactly the inputs it was written for.
+    #
+    # 400 rather than 404 on purpose: they are different answers. 404 says
+    # "no such clinic", 400 says "that is not an identifier". A consumer
+    # cannot tell a 500 from "the service is down" — which is how #730 became
+    # a reported sibling outage — nor a 404 from "my input was rubbish".
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed clinic guid"}), 400
+
     clinic = db.session.query(Clinic).filter_by(guid=guid).first()
     if not clinic:
         return jsonify({"error": "Clinic not found"}), 404
