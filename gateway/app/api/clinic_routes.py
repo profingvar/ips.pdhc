@@ -134,7 +134,7 @@ def list_clinic_patients(guid):
 @bp.route("/<guid>/generate-cohort", methods=["POST"])
 @require_auth
 def generate_cohort(guid):
-    """Generate a synthetic cohort for this clinic, over HTTP (#814).
+    """Generate a synthetic cohort for this clinic, over HTTP (#815).
 
     The generator previously had two callers — the SU-SSO admin form and a
     Flask CLI command — so a tool outside a browser could not create a cohort.

@@ -1,4 +1,4 @@
-"""#814 — generate a cohort over HTTP, so one operator task is one UI.
+"""#815 — generate a cohort over HTTP, so one operator task is one UI.
 
 The generator had two callers, the SU-SSO admin form and a Flask CLI command,
 so a tool outside a browser could not create a cohort. "Pick a clinic, make 10

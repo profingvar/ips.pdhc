@@ -459,7 +459,7 @@ against its own list.
 
 ---
 
-## 2026-10-09 — #814: generate a cohort over HTTP
+## 2026-10-09 — #815: generate a cohort over HTTP
 
 `POST /api/v1/clinics/<guid>/generate-cohort`, ApiKey-authed, returning the
 generator's report including the **batch_guid**.
