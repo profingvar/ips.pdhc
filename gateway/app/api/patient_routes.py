@@ -7,6 +7,7 @@ the clinics they are assigned to. Future patient-portal routes
 will mount here too.
 """
 import uuid
+from datetime import date
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -185,6 +186,124 @@ def validate_identifier():
             "normalised": pnr.normalise(value) if value else None,
         })
     return jsonify({"results": results})
+
+
+
+def _years_ago(today: date, years: int) -> date:
+    """`today` minus `years`, leap-safe.
+
+    29 February minus a non-leap number of years is not a date. Clamping to the
+    28th keeps the boundary monotonic, which is what an age filter needs; the
+    alternative (1 March) would place a 29-Feb birthday one day on the wrong
+    side of its own birthday.
+    """
+    try:
+        return today.replace(year=today.year - years)
+    except ValueError:
+        return today.replace(year=today.year - years, day=28)
+
+@bp.route("/search", methods=["POST"])
+@require_auth
+def search_patients():
+    """Which patients match a demographic predicate — GUIDs only (#825).
+
+    ips owns the patient registry, so it owns this question. Before this
+    endpoint, analyse.pdhc resolved a cohort by fanning out
+    `GET /api/v1/fhir/Patient` across the CDRs — and **no CDR has ever held a
+    Patient resource**. Nothing on the platform writes one: cdr's ingest
+    creates IngestRaw, FhirResource, ClinicalContext and an Observation row,
+    gateway forwards observations, sim pushes observations. So every cohort
+    resolved to the empty set, on every predicate, since the workspace was
+    built. Measured 2026-10-13: cdr1/cdr2/cdr3 each had 0 rows in `patient`
+    while cdr2/cdr3 held 30 patients' worth of observations apiece.
+
+    The alternative was to copy demographics into every CDR that holds a row
+    for the patient. That was rejected: it duplicates identifying data across
+    the estate, and ips keeps no assignment history, so the copies drift with
+    nothing to reconcile them against.
+
+    **Returns guids and a count, never demographics.** The caller is asking
+    "who matches", not "tell me about these people" — answering with
+    birth dates would hand back more than was asked for, to a service whose
+    whole design is to avoid holding them.
+
+    Body (every key optional; omitted means "no constraint"):
+
+        {
+          "age_min": 40, "age_max": 70,          # inclusive, in whole years
+          "sex": "female",                        # ips gender value
+          "organisation_guids": ["..."],          # Rule 24 scoping
+          "clinic_guids": ["..."],                # narrower than organisation
+          "include_archived": false
+        }
+
+    Returns:
+
+        {"patient_guids": [...], "count": n}
+    """
+    data = request.get_json(silent=True) or {}
+
+    def _as_list(key):
+        v = data.get(key)
+        if v is None:
+            return None
+        if not isinstance(v, list):
+            return []
+        return [str(x) for x in v if x]
+
+    age_min, age_max = data.get("age_min"), data.get("age_max")
+    for label, val in (("age_min", age_min), ("age_max", age_max)):
+        if val is not None and not isinstance(val, int):
+            return jsonify({"error": f"{label} must be a whole number of years"}), 400
+    if (age_min is not None and age_max is not None and age_min > age_max):
+        return jsonify({"error": "age_min is greater than age_max"}), 400
+
+    org_guids = _as_list("organisation_guids")
+    clinic_guids = _as_list("clinic_guids")
+    for label, vals in (("organisation_guids", org_guids),
+                        ("clinic_guids", clinic_guids)):
+        if vals is not None and any(not is_uuid(g) for g in vals):
+            # Same lesson as analysis-filter above: a non-UUID in an IN clause
+            # raises at the driver and answers 500, which a caller cannot
+            # distinguish from ips being down.
+            return jsonify({"error": f"{label} contains a malformed guid"}), 400
+
+    q = db.session.query(PatientIndex.guid).filter(
+        PatientIndex.is_active.is_(True))
+
+    if not data.get("include_archived"):
+        q = q.filter(PatientIndex.archived_at.is_(None))
+
+    sex = (data.get("sex") or "").strip().lower()
+    if sex:
+        q = q.filter(db.func.lower(PatientIndex.gender) == sex)
+
+    # Age is derived from birth_date at query time rather than stored, so a
+    # cohort does not silently age. The bounds convert to DATES and compare
+    # against birth_date: doing it the other way (computing each patient's age
+    # in SQL) cannot use the index and gets the birthday boundary wrong.
+    #
+    # age >= age_min  <=>  born on or before (today - age_min years)
+    # age <= age_max  <=>  born after        (today - (age_max+1) years)
+    today = date.today()
+    if age_min is not None:
+        q = q.filter(PatientIndex.birth_date.isnot(None),
+                     PatientIndex.birth_date <= _years_ago(today, age_min))
+    if age_max is not None:
+        q = q.filter(PatientIndex.birth_date.isnot(None),
+                     PatientIndex.birth_date > _years_ago(today, age_max + 1))
+
+    if org_guids is not None or clinic_guids is not None:
+        q = q.join(PatientClinicAssignment,
+                   PatientClinicAssignment.patient_guid == PatientIndex.guid)
+        if clinic_guids is not None:
+            q = q.filter(PatientClinicAssignment.clinic_guid.in_(clinic_guids or [None]))
+        if org_guids is not None:
+            q = q.join(Clinic, Clinic.guid == PatientClinicAssignment.clinic_guid)
+            q = q.filter(Clinic.organisation_guid.in_(org_guids or [None]))
+
+    guids = sorted({str(row[0]) for row in q.distinct().all()})
+    return jsonify({"patient_guids": guids, "count": len(guids)})
 
 
 @bp.route("/analysis-filter", methods=["POST"])

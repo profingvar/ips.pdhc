@@ -439,3 +439,5 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/app/__init__.py | `flask euips-report` and `euips-report-batch` |
 | 2026-10-07 | gateway/scripts/contract_check.py | MOVED here from the repo-root scripts/ so `COPY . .` ships it into the image |
 | 2026-10-07 | gateway/tests/test_euips_report_799.py | NEW — 15 tests |
+- 2026-10-14 gateway/app/api/patient_routes.py — #825: POST /api/v1/patients/search (demographic predicate -> patient guids, Rule 24 scoped)
+- 2026-10-14 gateway/tests/test_patient_search.py (NEW)
