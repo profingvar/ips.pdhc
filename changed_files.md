@@ -441,3 +441,8 @@ All edited files with full paths, updated after each change.
 | 2026-10-07 | gateway/tests/test_euips_report_799.py | NEW — 15 tests |
 - 2026-10-14 gateway/app/api/patient_routes.py — #825: POST /api/v1/patients/search (demographic predicate -> patient guids, Rule 24 scoped)
 - 2026-10-14 gateway/tests/test_patient_search.py (NEW)
+
+## 2026-10-15 — #708 sibling smoke, and the defect it found on its first run
+- gateway/deploy/smoke_siblings.py                 (NEW: the sibling smoke; 10 checks, read-only)
+- gateway/app/services/care_hierarchy_sync.py      (read the sso base url key ips actually SETS)
+- gateway/tests/test_care_hierarchy_sso_url.py     (NEW: pins the resolution order)

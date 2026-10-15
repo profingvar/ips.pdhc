@@ -38,11 +38,38 @@ class SsoHierarchyUnavailable(RuntimeError):
     """sso could not be asked. Raised so a sync never half-applies."""
 
 
+#: The config keys that can name sso, in preference order.
+#:
+#: `OAUTH_BASE_URL` is last and is the one that is actually SET — found by
+#: ips's sibling smoke on its first run (#708), which is the kind of thing a
+#: unit test cannot see. ips declares exactly one sso base URL,
+#: `OAUTH_BASE_URL` (config.py), and this module read only `SSO_BASE_URL` /
+#: `SSO_INTERNAL_URL`, neither of which is in production's env. So
+#: `flask sync-care-hierarchy` refused with "SSO_BASE_URL is not configured"
+#: before it ever reached the token — a feature that has never been able to
+#: run, reporting a configuration error for a variable nobody was asked to
+#: set.
+#:
+#: The fix is to read the key the service has rather than to add a second
+#: variable meaning the same thing, which is how this happened. The other two
+#: are kept first so an operator who HAS set one keeps their override.
+_SSO_URL_KEYS = ("SSO_BASE_URL", "SSO_INTERNAL_URL", "OAUTH_BASE_URL")
+
+
+def _sso_base():
+    for key in _SSO_URL_KEYS:
+        value = (current_app.config.get(key) or "").strip().rstrip("/")
+        if value:
+            return value
+    return ""
+
+
 def _sso_get(path, token):
-    base = (current_app.config.get("SSO_BASE_URL")
-            or current_app.config.get("SSO_INTERNAL_URL") or "").rstrip("/")
+    base = _sso_base()
     if not base:
-        raise SsoHierarchyUnavailable("SSO_BASE_URL is not configured")
+        raise SsoHierarchyUnavailable(
+            "no sso base url is configured — set one of "
+            + ", ".join(_SSO_URL_KEYS))
     if not token:
         raise SsoHierarchyUnavailable(
             "no sso token supplied — sso's require_auth accepts ONLY "
