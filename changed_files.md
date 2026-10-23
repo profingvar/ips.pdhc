@@ -446,3 +446,4 @@ All edited files with full paths, updated after each change.
 - gateway/deploy/smoke_siblings.py                 (NEW: the sibling smoke; 10 checks, read-only)
 - gateway/app/services/care_hierarchy_sync.py      (read the sso base url key ips actually SETS)
 - gateway/tests/test_care_hierarchy_sso_url.py     (NEW: pins the resolution order)
+- app/api/care_access_routes.py — POST /api/v1/patients/care-access-filter: the BULK care twin of analysis-filter

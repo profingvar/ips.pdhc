@@ -33,6 +33,7 @@ from app.models.emergency_access import (
 from app.services.audit_service import log_event
 from app.services.auth_service import require_auth
 from app.services.care_access_policy import evaluate_care_access
+from app.services.guids import is_uuid
 
 bp = Blueprint("care_access_api", __name__, url_prefix="/api/v1/patients")
 
@@ -149,6 +150,129 @@ def care_access_check(patient_guid):
         "reason": reason,
         "emergency_access_guid": str(emergency.guid) if emergency else None,
     }), 200
+
+
+#: One call must not become an unbounded scan. The analysis-side filter caps
+#: identifiers per call for the same reason (patient_routes).
+MAX_PATIENTS_PER_FILTER = 500
+
+
+@bp.route("/care-access-filter", methods=["POST"])
+@require_auth
+def care_access_filter():
+    """Apply the composed zone rule to a SET of patients, in one call.
+
+    The care-phase twin of `/patients/analysis-filter` (#422), and it exists
+    for the same reason: ips owns the composed rule
+    (`care_access_policy` — "no two consumers may enforce different zone
+    rules"), so a consumer building a patient LIST must be able to ask that
+    rule without reimplementing it.
+
+    Until now the care rule was exposed only one patient at a time
+    (`/care-access-check`), so a list of 300 meant 300 round trips — and the
+    predictable result was consumers scoping lists themselves. icd11.pdhc did
+    exactly that: it matched on care_unit alone, which is Zone 1 applied
+    unconditionally, so a patient in a sibling vårdenhet was invisible even
+    with no spärr at all. That is the whole reason this endpoint exists.
+
+    Body::
+
+        {"patient_guids": ["..."],
+         "reader_care_unit_guid": "...",          # required
+         "reader_care_organisation_guid": "...",  # optional, Zone 2/3 need it
+         "author_clinic_guid": "...",             # optional, see below
+         "author_caregiver_guid": "..."}
+
+    When the author pair is omitted, each patient is evaluated against the
+    clinic they are ASSIGNED to, which is what a patient list means: "may I
+    see this person at all, given where their care sits". A caller judging one
+    specific record should pass the author explicitly.
+
+    Returns `allowed` plus `excluded` with a reason per patient, mirroring
+    analysis-filter so the two read alike.
+
+    NOT audited per patient, deliberately. This answers "who may appear in a
+    list", and writing one audit row per candidate would bury the X1 rows that
+    record an actual read of a patient's data. `/care-access-check` and the
+    read endpoints remain the audited surface.
+    """
+    data = request.get_json(silent=True) or {}
+    guids = data.get("patient_guids")
+    if not isinstance(guids, list):
+        return _bad("patient_guids must be a list")
+    if len(guids) > MAX_PATIENTS_PER_FILTER:
+        return _bad(f"at most {MAX_PATIENTS_PER_FILTER} patients per call")
+
+    reader_unit = (data.get("reader_care_unit_guid") or "").strip()
+    if not reader_unit:
+        return _bad("reader_care_unit_guid is required")
+    reader_org = (data.get("reader_care_organisation_guid") or "").strip() or None
+    author_clinic_in = (data.get("author_clinic_guid") or "").strip() or None
+    author_caregiver_in = (data.get("author_caregiver_guid") or "").strip() or None
+
+    allowed, excluded = [], []
+    for raw in guids:
+        pg = str(raw or "").strip()
+        patient = _patient_or_404(pg) if is_uuid(pg) else None
+        if patient is None:
+            # Unknown reads as excluded, never as allowed. A typo must not
+            # widen a list.
+            excluded.append({"patient_guid": pg, "reason": "unknown_patient"})
+            continue
+
+        author_clinic, author_caregiver = author_clinic_in, author_caregiver_in
+        if author_clinic is None:
+            pair = _assigned_clinic(patient.guid)
+            if pair is None:
+                # No assignment means no care relationship to evaluate. Safe
+                # value, as the policy module requires of unknown inputs.
+                excluded.append({"patient_guid": str(patient.guid),
+                                 "reason": "no_clinic_assignment"})
+                continue
+            author_clinic, author_caregiver = pair
+
+        ok, zone, basis, reason = evaluate_care_access(
+            reader_care_unit_guid=reader_unit,
+            reader_care_organisation_guid=reader_org,
+            author_clinic_guid=author_clinic,
+            author_caregiver_guid=author_caregiver,
+            active_blocks=_active_blocks(patient.guid),
+            has_sharing_consent=_has_sharing_consent(patient.guid, reader_org),
+            emergency_active=_active_emergency(patient.guid, reader_unit) is not None,
+        )
+        if ok:
+            allowed.append({"patient_guid": str(patient.guid),
+                            "zone": zone, "access_basis": basis})
+        else:
+            excluded.append({"patient_guid": str(patient.guid),
+                             "zone": zone, "reason": reason})
+
+    return jsonify({"reader_care_unit_guid": reader_unit,
+                    "reader_care_organisation_guid": reader_org,
+                    "allowed": allowed, "excluded": excluded}), 200
+
+
+def _assigned_clinic(patient_guid):
+    """(clinic_guid, caregiver_guid) of the clinic this patient is assigned to.
+
+    Returns None when there is no assignment — which the caller treats as a
+    denial, not as a pass. A patient with no care relationship is exactly the
+    #807-shaped case: collected by someone, readable by nobody, and invisible
+    to every organisation-scoped reader.
+    """
+    from app.models.clinic import Clinic
+    from app.models.patient_index import PatientClinicAssignment
+
+    row = (db.session.query(Clinic)
+           .join(PatientClinicAssignment,
+                 PatientClinicAssignment.clinic_guid == Clinic.guid)
+           .filter(PatientClinicAssignment.patient_guid == patient_guid)
+           .filter(Clinic.is_active.is_(True))
+           .first())
+    if row is None:
+        return None
+    return str(row.organisation_guid or row.guid), (
+        str(row.care_organisation_guid) if row.care_organisation_guid else None)
 
 
 @bp.route("/<patient_guid>/emergency-access", methods=["POST"])
