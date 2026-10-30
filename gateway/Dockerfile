@@ -22,14 +22,28 @@ EXPOSE 9040
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
     CMD curl -fsS http://127.0.0.1:9040/api/v1/health || exit 1
 
-# Bind to 127.0.0.1 (not 0.0.0.0). The docker-compose.yml host-side port
-# mapping already restricts to 127.0.0.1, but binding on 0.0.0.0 inside
-# the container is a layering violation — anyone who runs the image with
-# `-p 9040:9040` (no 127.0.0.1 prefix) exposes it LAN-wide. Ticket #349
-# §1.1. --access-logfile - flows HTTP access lines to `docker logs`
-# per ticket #349 §1.2.
+# Bind to 0.0.0.0 — inside a container this is NOT the same decision as on
+# bare metal. The loopback interface here is the CONTAINER's own, so binding
+# it does not narrow exposure; it removes reachability altogether. Docker
+# forwards a published port over the bridge, never over the container's
+# loopback, so `--bind 127.0.0.1` leaves the host mapping dead while the
+# HEALTHCHECK above — which curls from INSIDE, where it works — keeps
+# reporting the container healthy. A `--build` redeploy from this file would
+# therefore take ips.pdhc.se down with `docker ps` green throughout.
+#
+# The control that confines ips is the host-side mapping prefix in
+# docker-compose.yml:29, `127.0.0.1:9040:9040`. That line, not this bind, is
+# what keeps the service off the LAN — keep it.
+#
+# The previous comment cited #349 §1.1 and worried about someone running the
+# image by hand with a bare `-p 9040:9040`. The concern was real but the
+# control sat in the wrong layer: such a person has already bypassed the
+# compose file, and the bind never mitigated it. Changed by #858. Production
+# has run `--bind 0.0.0.0:9040` all along, so this file was the divergence.
+#
+# --access-logfile - flows HTTP access lines to `docker logs`, #349 §1.2.
 CMD ["gunicorn", \
-     "--bind", "127.0.0.1:9040", \
+     "--bind", "0.0.0.0:9040", \
      "--workers", "2", \
      "--timeout", "120", \
      "--access-logfile", "-", \

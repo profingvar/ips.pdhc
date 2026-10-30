@@ -165,27 +165,28 @@
 <p>Poll <code>GET /api/v1/health</code> periodically. Status <code>"ok"</code> means all systems operational. Status <code>"degraded"</code> means the database is unreachable.</p>
 
 <h3>Database backup</h3>
-<p>Only the PostgreSQL database runs in Docker (container <code>ips-db-1</code> in the shared Colima VM). The app itself is bare-metal Python. Back up the DB via:</p>
+<p>Both the app and the database run as containers in the shared Colima VM (<code>ips-app-1</code> and <code>ips-db-1</code>, compose project <code>ips</code>). Back up the DB via:</p>
 <pre><code>docker exec ips-db-1 pg_dump -U ips_user ips_db --format=custom \
   &gt; ~/backups/ips_db_$(date +%Y%m%d).pgdump</code></pre>
 <p>Or use the platform-wide <code>~/server_backup_full_v2.sh</code> on miserver, which captures every PDHC service's DB into a single tarball.</p>
 
 <h3>Restarting the service</h3>
-<p>The DB container and the gunicorn app are independent — restart only what changed.</p>
-<p><strong>App-only restart</strong> (most common — code or .env changed):</p>
-<pre><code>cd /usr/local/www/pdhcips/pdhcips/gateway
-PID=$(cat ~/.gunicorn/ips.pid 2>/dev/null) || PID=$(lsof -ti tcp:9040)
-kill -TERM "$PID"
-# wait, then re-launch
-./start.sh    # or for production: gunicorn --bind 127.0.0.1:9040 --daemon ...</code></pre>
+<p>Both run as containers in the compose project <code>ips</code> — restart only what changed.</p>
+<p><strong>App-only restart</strong> (most common — code or <code>.env</code> changed):</p>
+<pre><code>cd /usr/local/www/pdhcips/gateway
+docker-compose up -d --no-deps app</code></pre>
+<p>Use the compose <em>service</em> name <code>app</code>, not the container name <code>ips-app-1</code>: <code>up -d --no-deps ips-app-1</code> fails with <code>no such service</code>. Confirm with <code>docker-compose config --services</code>.</p>
 <p><strong>DB-only restart</strong> (rare — db config/upgrade):</p>
-<pre><code>colima ssh -- docker restart ips-db-1</code></pre>
-<div class="warn"><strong>Note on environment variables:</strong> a plain <code>docker restart</code> on <code>ips-db-1</code> reuses the env captured at create time and will <em>not</em> pick up new <code>.env</code> values. To reload env, use <code>docker-compose -p pdhcips up -d db</code> from the gateway directory (recreates the container with the current env). The bare-metal app does re-read <code>.env</code> on every restart since it loads via <code>python-dotenv</code> at boot.</div>
+<pre><code>cd /usr/local/www/pdhcips/gateway
+docker-compose up -d --no-deps db</code></pre>
+<div class="warn"><strong>Two corrections made in #858.</strong> This section used to say <code>/usr/local/www/pdhcips/pdhcips/gateway</code> — a duplicated path that is not where the service runs; the deployed working directory is <code>/usr/local/www/pdhcips/gateway</code>. It also told you to read <code>~/.gunicorn/ips.pid</code>, which does not exist, because no gunicorn runs on the host any more.</div>
+<div class="warn"><strong>Note on environment variables:</strong> a plain <code>docker restart</code> reuses the env captured at container-create time and will <em>not</em> pick up new <code>.env</code> values. Now that the app is a container too, this applies to <strong>both</strong>. Always use <code>docker-compose up -d --no-deps &lt;service&gt;</code>, which recreates the container with the current env.</div>
 
 <h3>Viewing logs</h3>
-<pre><code># App logs (bare-metal gunicorn — error + access)
-tail -f ~/.gunicorn/ips.access.log ~/.gunicorn/ips.error.log
+<pre><code># App logs (gunicorn access + error, streamed from the container)
+docker logs -f ips-app-1
 
-# Database logs (Docker)
-colima ssh -- docker logs -f ips-db-1</code></pre>
+# Database logs
+docker logs -f ips-db-1</code></pre>
+<p>If the host cannot reach the Docker socket (Colima's forward occasionally wedges while the VM is healthy), the same commands work through <code>colima ssh -- docker logs -f &lt;container&gt;</code>.</p>
 {% endblock %}

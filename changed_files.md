@@ -447,3 +447,79 @@ All edited files with full paths, updated after each change.
 - gateway/app/services/care_hierarchy_sync.py      (read the sso base url key ips actually SETS)
 - gateway/tests/test_care_hierarchy_sso_url.py     (NEW: pins the resolution order)
 - app/api/care_access_routes.py — POST /api/v1/patients/care-access-filter: the BULK care twin of analysis-filter
+
+## EPS + patient state assessment (2026-10-30)
+
+New:
+
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/plans/eps_state_reform.md` —
+  assessment of (1) renaming IPS→EPS, (2) EPS conformance against
+  `plans/euips_reform.md`'s existing work, (3) a bitemporal patient-state store
+  with next-of-kin privileges. Read-only measurement; no code changed.
+
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/plans/eps_state_plan.md` — the
+  numbered build plan derived from that assessment: three decisions (E1–E3),
+  then phases 2, 3 and 1 with a measurable "done when" per step
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/plans/eps_state_plan.docx` —
+  the same plan typeset for paper
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/make_eps_plan_docx.py` — pandoc
+  + python-docx converter for the above, after alert.pdhc/make_plan_docx.py
+
+Also published, outside this repo:
+
+- Claude Docs artifact `https://claude.ai/artifact/T3x8WRyY5Gc6xywj1cSnjq` —
+  the plan as a shareable page, with a drawn dependency/gate diagram. Private
+  until shared from the page's Share menu.
+
+Edited:
+
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md` — this entry
+
+## 2026-10-30 — #858: the container bind, and the docs that still said bare-metal
+
+Edited:
+
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/Dockerfile` — CMD
+  `--bind 127.0.0.1:9040` → `--bind 0.0.0.0:9040`, and the #349 §1.1 comment
+  above it replaced with why, so it is not reinstated. The old comment's
+  concern was real but sat in the wrong layer: inside a container the loopback
+  interface is the container's own, so binding it removes reachability instead
+  of narrowing it. `docker-compose.yml:29` (`127.0.0.1:9040:9040`) is the
+  control and is deliberately untouched; so is the HEALTHCHECK, which is
+  correct to probe from inside.
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_technical.html`
+  — the runtime-topology table said the app was bare-metal Python started by
+  `start.sh`, "**not** in Docker". It runs as `ips-app-1` (compose project
+  `ips`, service `app`) and no gunicorn runs on the host for 9040. Row
+  rewritten; the "Why split" note replaced with the containerised reality plus
+  the bind explanation and its measurement.
+- `/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html`
+  — four fixes. Backup section no longer claims the app is bare-metal. Restart
+  section rewritten to `docker-compose up -d --no-deps app|db`, with the
+  service-vs-container-name trap named (`up -d --no-deps ips-app-1` fails with
+  `no such service`). **Two of its instructions were not merely stale but
+  broken**: it pointed at `/usr/local/www/pdhcips/pdhcips/gateway`, a
+  duplicated path that is not the deployed working directory, and told the
+  operator to read `~/.gunicorn/ips.pid`, which does not exist. Env-var warning
+  widened to both containers. Log commands moved off the deleted host log files.
+- `/Users/martiningvar/T7_sidewinder/CLAUDE.md` — §3's bind rule gained a
+  containerised clause (it previously made any containerised service
+  unreachable if followed literally) and §14's confirm-first entry now says
+  "on the host" and points at it.
+
+Verified, not asserted — the image was built both ways locally and run against
+a throwaway Postgres:
+
+```
+--bind 127.0.0.1   container Up (healthy)   host via mapping: 000
+--bind 0.0.0.0     container Up             host via mapping: 200
+```
+
+The control is what makes the second row evidence. Jinja parse check on all
+three templates passed (run inside `ips-app:latest`, since jinja2 is not in the
+host interpreter). Test containers, network and images removed; local container
+count unchanged at 19.
+
+NOT changed: production. `ips-app-1` has run `--bind 0.0.0.0:9040` all along —
+the repo was the divergence, and the repo is what a `--build` would have
+deployed. No redeploy was performed.

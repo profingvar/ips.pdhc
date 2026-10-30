@@ -211,10 +211,11 @@
   <thead><tr><th>Component</th><th>Runtime</th><th>Port</th></tr></thead>
   <tbody>
     <tr><td><code>db</code> (Postgres)</td><td>Docker — <code>postgres:16-alpine</code> in the shared Colima VM (container <code>ips-db-1</code>)</td><td>9041 (host) → 5432 (container)</td></tr>
-    <tr><td>App (Flask + gunicorn)</td><td>Bare-metal Python under the operator account — <strong>not</strong> in Docker. Started by <code>start.sh</code> via <code>python wsgi.py</code> (dev) or <code>gunicorn --bind 127.0.0.1:9040</code> (production).</td><td>9040 (loopback only; nginx terminates TLS)</td></tr>
+    <tr><td><code>app</code> (Flask + gunicorn)</td><td>Docker — container <code>ips-app-1</code> in the shared Colima VM; compose project <code>ips</code>, service <code>app</code>. Gunicorn binds <code>0.0.0.0:9040</code> <em>inside</em> the container.</td><td>9040 (host loopback) → 9040 (container); nginx terminates TLS</td></tr>
   </tbody>
 </table>
-<div class="note"><strong>Why split:</strong> the app's Python venv lives directly under the release directory and is rebuilt on each deploy (shebangs are absolute paths into the release dir, so a copied venv would silently glue a new release to the old one). Only the database needs the persistence + isolation Docker provides.</div>
+<div class="note"><strong>Both components are containerised.</strong> Until #858 this table said the app was bare-metal Python started by <code>start.sh</code>. That has not been true since the Option C containerisation (#157), and no gunicorn runs on the host for port 9040 — verified 2026-10-30.</div>
+<div class="note"><strong>On the bind, because it looks wrong and is not.</strong> Inside a container the loopback interface is the <em>container's own</em>, so binding <code>127.0.0.1</code> there does not narrow exposure — it makes the published port unreachable altogether, because Docker forwards a published port over the bridge and never over the container's loopback. The <code>HEALTHCHECK</code> probes from <em>inside</em>, where it still succeeds, so <code>docker ps</code> reports <code>(healthy)</code> throughout. Measured locally 2026-10-30: with <code>--bind 127.0.0.1</code> the container was <code>Up (healthy)</code> while the host got <code>000</code>; with <code>--bind 0.0.0.0</code> the host got <code>200</code>. What keeps ips off the LAN is the <code>127.0.0.1:</code> prefix on the compose port mapping — that line, not the bind.</div>
 
 <h3>Environment Variables</h3>
 <table>
