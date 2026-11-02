@@ -1,5 +1,13 @@
 # EPS migrations — production runbook
 
+> **ALL THREE APPLIED TO PRODUCTION 2026-11-02T16:57Z and verified.** The
+> account below is kept as the runbook it was; what actually happened is in
+> `progress.md`. Re-running any of them is safe — all three are idempotent.
+>
+> Dump taken first: `~/backups/predeploy/ips.pdhc/pre_eps_2026-11-02T16-56-56Z.sql`,
+> 7.9 MB, completion marker present, COPY blocks for
+> `patient_clinic_assignments`, `patient_index` and `fhir_resources`.
+
 Three migrations from the 2026-11-02 EPS work are applied to the LOCAL dev
 database only. This is what running them on production needs, in order, with
 the verification that makes each step checkable rather than hopeful.

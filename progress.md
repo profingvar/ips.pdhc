@@ -2020,3 +2020,75 @@ a no-op, and production was not probed. #908's own recommendation stands: leave
 the data alone while the Device rows are synthetic, and run this before real
 implant data arrives (#905). Take a predeploy dump first —
 `~/backups/predeploy/ips.pdhc/`.
+
+## The three EPS migrations are LIVE in production (2026-11-02T16:57Z)
+
+Applied with the operator guiding, each in a single transaction
+(`psql -1 -v ON_ERROR_STOP=1`) so a half-failure rolls back rather than leaving
+a table mid-change. Runbook: `plans/eps_migration_runbook.md`.
+
+Predeploy dump first: `~/backups/predeploy/ips.pdhc/pre_eps_2026-11-02T16-56-56Z.sql`
+— 7.9 MB, 6775 lines, completion marker present, COPY blocks for the three key
+tables. My first check called it incomplete because I read only the last two
+lines and this pg_dump appends a `\unrestrict` line after the marker; the dump
+was fine and the check was too narrow.
+
+### The measured starting state, which justified the design
+
+| | before |
+|---|---|
+| `patient_clinic_assignments` columns | 4 — `assigned_at`, `clinic_guid`, `guid`, `patient_guid`. **No `ended_at`** |
+| rows | **296** |
+| its unique constraint | **`uq_patient_clinic_assignments_patient_guid`** over (clinic_guid, patient_guid) |
+| `patient_state_facts` / `patient_proxy_grants` | neither existed |
+
+That constraint name is the point. It is **not** the Postgres default, so the
+hardcoded `DROP CONSTRAINT` this migration deliberately avoided would have
+silently done nothing and left "ended" terminal per pair. The `DO` block looks
+it up by COLUMNS and reported `NOTICE: dropped unique constraint
+uq_patient_clinic_assignments_patient_guid`.
+
+### What each one did, verified
+
+1. **`add_assignment_ended_at.sql`** — `ended_at` added (timestamptz,
+   nullable), `uq_patient_clinic_active` created WITH its
+   `WHERE (ended_at IS NULL)` predicate, old constraint dropped. 0 unique
+   constraints remain; **296 rows intact, 0 with an end date.**
+
+   **And uniqueness was PROVEN still enforced**, not assumed: a deliberate
+   duplicate insert inside `BEGIN … ROLLBACK` was refused by
+   `uq_patient_clinic_active`. That is the check that distinguishes "the
+   replacement exists" from "the replacement works".
+
+2. **`add_patient_state_facts.sql`** — 11 columns including all four
+   bitemporal timestamps (`valid_from`, `valid_to`, `recorded_at`,
+   `recorded_until`), 3 indexes, 0 rows.
+
+3. **`add_patient_proxy_grants.sql`** — both ends of the validity interval,
+   `revoked_at`/`revoked_by_role`, `scope`, 2 indexes, 1 FK to
+   `patient_index`, 0 rows. **And the NEGATIVE check: 0 unique constraints
+   over (patient_guid, proxy_user_guid)**, because one would make revocation
+   terminal for that pair for ever (#891).
+
+### THE SCHEMA IS LIVE; THE FEATURES ARE NOT
+
+The app container runs code from before today and knows none of this —
+measured, not assumed: `grep` inside `ips-app-1` finds 0 files mentioning
+`patient_state_facts`, `patient_proxy_grants` or `ended_at`.
+
+So this is forward-compatible groundwork. Until ips's code is deployed:
+
+- `flask rebuild-patient-state` does not exist in the container, so
+  `patient_state_facts` stays empty — the open half of #895.
+- the proxy surface (#889) and the #902 admin gate are not active.
+- `ended_at` is not written by anything, so #899b's narrowing to ACTIVE
+  assignments still changes no real answer.
+
+The one risk worth having measured: the deployed code does **not** reference
+the old constraint by name anywhere (`grep -rl` inside the container found
+nothing), so changing that name broke nothing. Health after: 200,
+`database: connected`, both containers up.
+
+What a green health check does NOT prove is whether the deployed code matches
+this checkout — it has been ahead of its release directory before. Diff before
+deploying code, separately from these migrations.
