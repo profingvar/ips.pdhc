@@ -798,3 +798,67 @@ asserting anything.
 
 **#900 carries part (a)**: the write path. Until it exists, all of this guards
 a state that never occurs.
+
+---
+
+## 2026-11-02 — #882 (EPS B2): two free-text sections EPS declares and we do not carry
+
+- `gateway/app/services/euips_sections.py` (`EPS_TEXT_SECTIONS`)
+- `gateway/app/api/patient_routes.py` (the euips-sections response)
+- `gateway/app/services/euips_report.py` (the dict and the rendered text)
+- `gateway/tests/test_eps_text_sections_882.py` (new)
+
+    81338-6   Patient Story / Patientens berättelse
+    11329-0   Patient History / Sjukdomshistoria   (EPS-unique)
+
+**They are deliberately NOT in `SECTIONS`, and that is the whole design.**
+That tuple drives the resource-derived report: `status_for_resources` answers
+PRESENT / EXPLICITLY_ABSENT / MISSING from the rows a patient has. Neither
+answer is true of a section no resource backs.
+
+  - MISSING reads as *"this patient lacks it"*, when the truth is *"this
+    service does not carry this section at all"*. Every patient would carry two
+    permanent MISSING rows — the coverage-report form of the always-partly-red
+    monitor.
+  - A fourth status would need four consumers updated and **one of them breaks
+    silently**: `euips_report` spots a patient with nothing at all via
+    `all(v == MISSING for v in st.values())`, and a status that is never MISSING
+    makes that test permanently false. The other three are a `KeyError` in the
+    matrix init, a dropped row in the endpoint's per-tier summary, and the
+    tier-title map.
+
+So they are declared separately and surfaced as **DECLARED and NOT CARRIED**,
+which is strictly more informative than a status, on both the
+`/euips-sections` response and the rendered report. The report wording says
+"not per-patient" so a reader cannot count it as a patient gap.
+
+**The ticket's estimate was "catalogue entries plus narrative generation". The
+second half has no home yet** — measured, not assumed: the euIPS path assembles
+no Composition. `euips_header.composition_header()` builds the header only
+(*"the guideline's header is not a section"*), and the `Composition` with
+`"section"` in `ips_generator.py` belongs to the older IPS-card path. Narrative
+has nowhere to live until #896 (EPS B7) builds the export document, and a
+half-generator before then would produce text no surface reads.
+
+Both notes carry the #880 decision they depend on, because that is what stops a
+later reader folding these into an existing section:
+
+  - Patient Story is NOT `patient_provided`. The latter is information the
+    patient ASSERTED, distinguished by source/performer, and #880 keeps it
+    domestic.
+  - Patient History is the only international home for resolved conditions
+    once 11348-0 is unprofiled, and #880 decided AGAINST moving them —
+    mapping coded resolved conditions into a free-text section destroys the
+    coding, and `problems` / `past_illnesses` are told apart ONLY by
+    `clinicalStatus`, so a merge would also put resolved illnesses in the
+    ACTIVE problem list.
+
+**813 passed** (802 before). Controls:
+
+| breakage | red |
+|---|---|
+| drop the declaration | 6 |
+| put them in `SECTIONS` — the design this rejects | 2, exactly the two guards |
+| endpoint stops reporting them | 1 |
+
+`CODES_VERIFIED` untouched; same provenance caveat as #881.

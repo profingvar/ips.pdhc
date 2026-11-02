@@ -469,6 +469,16 @@ def euips_section_status(guid):
             for lvl in euips.OBLIGATION_ORDER
         },
         "required_sections_missing": missing_required,
+        # #882 — EPS declares two FREE-TEXT sections this service does not
+        # carry. Reported separately rather than as two permanently MISSING
+        # rows above: MISSING would say "this patient lacks it", when the truth
+        # is "we do not carry this section at all". A caller building an EPS
+        # document needs to know the difference.
+        "eps_sections_declared_not_carried": [
+            {"loinc": s["loinc"], "title": s["title"],
+             "eps_unique": s["eps_unique"]}
+            for s in euips.EPS_TEXT_SECTIONS
+        ],
         "conformant": euips.is_conformant(status),
         # Stated in the response, not buried in a docstring: a caller must not
         # read `conformant` as an EU conformance claim.

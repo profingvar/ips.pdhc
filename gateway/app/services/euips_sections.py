@@ -239,6 +239,68 @@ def canonical_resource_type(resource_type: str) -> str:
     return LEGACY_RESOURCE_TYPES.get(resource_type, resource_type)
 
 
+#: Sections the EPS specification defines that this service does NOT carry,
+#: because they are FREE TEXT and nothing here produces or stores narrative.
+#:
+#: **Deliberately NOT in `SECTIONS`** (#882). That tuple drives the
+#: resource-derived report: `status_for_resources` answers PRESENT /
+#: EXPLICITLY_ABSENT / MISSING from the rows a patient has. These two are not
+#: resource-backed, so either answer would be wrong —
+#:
+#:   - MISSING would read as "this patient lacks it", when the truth is "we do
+#:     not carry this section at all". Every patient would show two permanent
+#:     MISSING rows, which is how a coverage report trains its reader to skim.
+#:   - a fourth status would have to be handled by four consumers, and one of
+#:     them breaks SILENTLY: `euips_report` uses
+#:     `all(v == MISSING for v in st.values())` to spot a patient with nothing
+#:     at all, and a status that is never MISSING makes that test permanently
+#:     false.
+#:
+#: Declaring them here instead keeps `SECTIONS` meaning "resource-derived",
+#: which is what every consumer already assumes, and says something more
+#: useful than a status: the section is DECLARED and not CARRIED.
+#:
+#: Content generation waits on a document builder. The euIPS path assembles no
+#: Composition today — `euips_header.composition_header()` builds the header
+#: only, and the `Composition` with `"section"` in `ips_generator.py` belongs to
+#: the older IPS-card path. Narrative has nowhere to live until #896 (EPS B7)
+#: builds the export document, and inventing a half-generator before then would
+#: produce text no surface reads.
+#:
+#: LOINC codes from the EPS specification of 2026-10-30, same provenance and
+#: same caveat as the two filled by #881: the source is a CI-build of a STU 1
+#: Ballot, so CODES_VERIFIED stays False and #885 governs it.
+EPS_TEXT_SECTIONS: tuple[dict, ...] = (
+    {
+        "loinc": "81338-6",
+        "title": "Patient Story",
+        "title_sv": "Patientens berättelse",
+        "eps_unique": False,
+        "note": "Free text. NOT the same as `patient_provided`, which is "
+                "information the patient ASSERTED, distinguished by the "
+                "resource's source/performer. #880 decided patient_provided "
+                "stays DOMESTIC and is not exported, so these two do not "
+                "merge and neither substitutes for the other.",
+    },
+    {
+        "loinc": "11329-0",
+        "title": "Patient History",
+        "title_sv": "Sjukdomshistoria",
+        "eps_unique": True,
+        "note": "Free text, and EPS-unique — IPS has no counterpart. It is "
+                "the only plausible international home for resolved "
+                "conditions once 11348-0 is unprofiled, and #880 decided "
+                "AGAINST moving them: `past_illnesses` stays domestic with "
+                "its coded content, because mapping coded resolved "
+                "conditions into a free-text section destroys the coding. "
+                "`euips_sections` already warns that `problems` and "
+                "`past_illnesses` are told apart ONLY by clinicalStatus, so a "
+                "merge here would also put resolved illnesses in the ACTIVE "
+                "problem list.",
+    },
+)
+
+
 BY_KEY: dict[str, Section] = {s.key: s for s in SECTIONS}
 REQUIRED_KEYS: tuple[str, ...] = tuple(
     s.key for s in SECTIONS if s.obligation == REQUIRED)

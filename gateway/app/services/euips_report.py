@@ -113,6 +113,17 @@ def report(batch_guid=None, *, failure_limit: int = 10) -> dict:
         },
         "failures": failures,
         "failures_truncated": max(0, (total - conformant) - len(failures)),
+        # #882 — EPS declares these two free-text sections and this service
+        # carries neither. Reported here rather than as two permanent MISSING
+        # rows in `by_obligation`, because they are not resource-derived: the
+        # per-patient matrix cannot answer a question about a section no
+        # resource backs, and a row that is MISSING for everyone forever is how
+        # a coverage report teaches its reader to skim.
+        "eps_sections_declared_not_carried": [
+            {"loinc": s["loinc"], "title": s["title"],
+             "eps_unique": s["eps_unique"]}
+            for s in euips.EPS_TEXT_SECTIONS
+        ],
         "codes_verified": euips.CODES_VERIFIED,
         "disclaimer": DISCLAIMER,
     }
@@ -147,6 +158,15 @@ def format_report(r: dict) -> str:
             out.append(f"    {key:<22} {counts[euips.PRESENT]:>8} "
                        f"{counts[euips.EXPLICITLY_ABSENT]:>8} "
                        f"{counts[euips.MISSING]:>8}")
+        out.append("")
+
+    if r.get("eps_sections_declared_not_carried"):
+        out.append("  EPS FREE-TEXT SECTIONS — declared by EPS, NOT carried here")
+        out.append("    (not per-patient: no resource backs these, so they are")
+        out.append("     absent for everyone until a document builder exists)")
+        for s in r["eps_sections_declared_not_carried"]:
+            uniq = "  EPS-unique" if s["eps_unique"] else ""
+            out.append(f"    {s['loinc']:<12} {s['title']}{uniq}")
         out.append("")
 
     if r["failures"]:

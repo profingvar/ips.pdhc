@@ -1362,3 +1362,17 @@ to be redone by hand after a regex revert broke the module — 8 ERRORs, not a
 FAILURE, and a control that dies on an ImportError never ran.
 
 Part (a), the write path that can actually end an assignment, is **#900**.
+
+### #882 (EPS B2) — Patient Story and Patient History, 2026-11-02
+
+Declared in `EPS_TEXT_SECTIONS`, deliberately NOT in `SECTIONS`: those two are
+free text and no resource backs them, so PRESENT/ABSENT/MISSING cannot answer
+for them, and a fourth status would break `euips_report`'s
+"patient has nothing at all" check SILENTLY. Surfaced as DECLARED / NOT CARRIED
+on `/euips-sections` and in the rendered report instead.
+
+Narrative generation has no home yet: the euIPS path assembles no Composition.
+It waits on #896 (EPS B7).
+
+**813 passed** (802 before). Controls: 6 / 2 / 1 red — the middle one being the
+guard against adding them to `SECTIONS`.
