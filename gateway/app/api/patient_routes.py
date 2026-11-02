@@ -679,11 +679,17 @@ def euips_section_status(guid):
             "key": s.key,
             "title": s.title,
             "obligation": s.obligation,
+            # #906: present only where EPS differs, so a reader sees the two
+            # divergences rather than comparing seventeen identical pairs.
+            "obligation_eps": s.obligation_eps,
             "status": status[s.key],
             "resource_types": list(s.resource_types),
         })
 
-    missing_required = [k for k in euips.REQUIRED_KEYS
+    # IPS, explicitly (#906). Kept under this name and this meaning so the
+    # callers already reading it are not silently re-answered; the EPS answer
+    # is alongside it in `conformance` below, not in place of it.
+    missing_required = [k for k in euips.required_keys(euips.PROFILE_IPS)
                         if status[k] == euips.MISSING]
 
     return jsonify({
@@ -711,7 +717,16 @@ def euips_section_status(guid):
              "eps_unique": s["eps_unique"]}
             for s in euips.EPS_TEXT_SECTIONS
         ],
-        "conformant": euips.is_conformant(status),
+        # Unqualified, and therefore IPS — unchanged in value and now
+        # explicit in the response via `conformant_profile`, because #906
+        # found that an unqualified "conformant" is a question with two
+        # answers. The EPS answer is in `conformance`.
+        "conformant": euips.is_conformant(status, profile=euips.PROFILE_IPS),
+        "conformant_profile": euips.PROFILE_IPS,
+        # Both answers, named. A diagnostic surface should report rather than
+        # choose on its caller's behalf — choosing is what made the single
+        # field ambiguous.
+        "conformance": euips.conformance(status),
         # Stated in the response, not buried in a docstring: a caller must not
         # read `conformant` as an EU conformance claim.
         "codes_verified": euips.CODES_VERIFIED,

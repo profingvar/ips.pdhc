@@ -97,7 +97,10 @@ def conformant_count(patient_guids) -> int:
     for guid in patient_guids:
         rows = (db.session.query(FhirResource)
                 .filter(FhirResource.patient_guid == guid).all())
-        if euips.is_conformant(euips.status_for_resources(rows)):
+        # IPS, explicitly (#906): this counts the batch against the
+        # domestic surface the generator writes for.
+        if euips.is_conformant(euips.status_for_resources(rows),
+                               profile=euips.PROFILE_IPS):
             n += 1
     return n
 

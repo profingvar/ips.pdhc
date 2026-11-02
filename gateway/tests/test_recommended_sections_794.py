@@ -187,14 +187,54 @@ class TestRecommendedMayBeAbsent:
         assert seen["diagnostic_results"] == {euips.PRESENT, euips.MISSING}, \
             seen["diagnostic_results"]
 
-    def test_a_missing_recommended_section_does_not_break_conformance(self, client, db):
-        """Only the three REQUIRED sections decide conformance."""
+    def test_a_missing_recommended_section_does_not_break_IPS_conformance(
+            self, client, db):
+        """Only the three IPS REQUIRED sections decide IPS conformance.
+
+        This used to read "does not break conformance", full stop. #906
+        measured that the claim is PROFILE-SPECIFIC: EPS makes procedures and
+        devices 1..1, so under EPS a missing recommended section is exactly
+        what breaks conformance. The unqualified version of this sentence was
+        true of one profile and false of the other.
+        """
         _generate(client, _clinic(db), 25)
         for p in _db.session.query(PatientIndex).all():
             rows = (_db.session.query(FhirResource)
                     .filter(FhirResource.patient_guid == p.guid).all())
             st = euips.status_for_resources(rows)
-            assert euips.is_conformant(st), {k: st[k] for k in euips.REQUIRED_KEYS}
+            assert euips.is_conformant(st, profile=euips.PROFILE_IPS), \
+                {k: st[k] for k in euips.required_keys(euips.PROFILE_IPS)}
+
+    def test_and_a_missing_one_CAN_break_EPS_conformance(self, client, db):
+        """The other half, which is the whole point of #906.
+
+        Not asserted as "every patient fails EPS" — the generator gives
+        procedures and devices to some patients by age, so some will pass.
+        Asserted as the IMPLICATION: a patient missing either of the two
+        EPS-required sections is EPS-non-conformant while remaining
+        IPS-conformant. If no generated patient exercises that, the test says
+        so rather than passing vacuously.
+        """
+        _generate(client, _clinic(db), 25)
+        seen_divergence = False
+        for p in _db.session.query(PatientIndex).all():
+            rows = (_db.session.query(FhirResource)
+                    .filter(FhirResource.patient_guid == p.guid).all())
+            st = euips.status_for_resources(rows)
+            ips_ok = euips.is_conformant(st, profile=euips.PROFILE_IPS)
+            eps_ok = euips.is_conformant(st, profile=euips.PROFILE_EPS)
+            lacks = any(st[k] == euips.MISSING
+                        for k in ("procedures", "devices"))
+            assert ips_ok, "the IPS half must be unaffected"
+            # The implication, in both directions.
+            assert eps_ok is not lacks
+            if lacks:
+                seen_divergence = True
+        assert seen_divergence, (
+            "no generated patient was missing procedures or devices, so this "
+            "test proved nothing about the divergence — raise the cohort or "
+            "check the generator's age gates"
+        )
 
     def test_the_presence_rates_leave_every_branch_reachable(self):
         for key, rate in rec.PRESENCE_RATE.items():

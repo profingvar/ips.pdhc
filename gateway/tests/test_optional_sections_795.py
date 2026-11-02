@@ -146,7 +146,7 @@ class TestPastIllnessesDoNotPolluteTheProblemList:
         st = euips.status_for_resources([resolved])
         assert st["past_illnesses"] == euips.PRESENT
         assert st["problems"] == euips.MISSING
-        assert euips.is_conformant(st) is False
+        assert euips.is_conformant(st, profile=euips.PROFILE_IPS) is False
 
 
 class TestAdvanceDirectivesAreNotCareConsent:
@@ -290,4 +290,4 @@ class TestOptionalMeansOptional:
             rows = (_db.session.query(FhirResource)
                     .filter(FhirResource.patient_guid == p.guid).all())
             st = euips.status_for_resources(rows)
-            assert euips.is_conformant(st), {k: st[k] for k in euips.REQUIRED_KEYS}
+            assert euips.is_conformant(st, profile=euips.PROFILE_IPS), {k: st[k] for k in euips.REQUIRED_KEYS}

@@ -81,6 +81,11 @@ def report(batch_guid=None, *, failure_limit: int = 10) -> dict:
         for s in euips.SECTIONS
     }
     conformant = 0
+    # #906: the platform report answers BOTH, because "how far are we from
+    # EPS?" is the question a report like this exists to answer, and it is
+    # not derivable from the IPS figure.
+    conformant_eps = 0
+    required_ips = euips.required_keys(euips.PROFILE_IPS)
     failures: list[dict] = []
     empty = 0
 
@@ -88,10 +93,12 @@ def report(batch_guid=None, *, failure_limit: int = 10) -> dict:
         st = status_for_patient(p)
         for key, state in st.items():
             matrix[key][state] += 1
-        if euips.is_conformant(st):
+        if euips.is_conformant(st, profile=euips.PROFILE_EPS):
+            conformant_eps += 1
+        if euips.is_conformant(st, profile=euips.PROFILE_IPS):
             conformant += 1
         else:
-            missing = [k for k in euips.REQUIRED_KEYS
+            missing = [k for k in required_ips
                        if st[k] == euips.MISSING]
             if len(failures) < failure_limit:
                 failures.append({
@@ -129,6 +136,16 @@ def report(batch_guid=None, *, failure_limit: int = 10) -> dict:
              "eps_unique": s["eps_unique"]}
             for s in euips.EPS_TEXT_SECTIONS
         ],
+        # #906: named by PROFILE, because an unqualified "conformant" is the
+        # ambiguity this ticket exists to remove. `conformant` keeps its
+        # original IPS meaning for the callers already reading it.
+        "conformant_by_profile": {
+            euips.PROFILE_IPS: conformant,
+            euips.PROFILE_EPS: conformant_eps,
+        },
+        "required_by_profile": {
+            prof: list(euips.required_keys(prof)) for prof in euips.PROFILES
+        },
         "codes_verified": euips.CODES_VERIFIED,
         "codes_verified_against": euips.CODES_VERIFIED_AGAINST,
         "disclaimer": DISCLAIMER,
@@ -185,6 +202,15 @@ def format_report(r: dict) -> str:
         out.append("")
 
     out.append(f"  codes verified against the published IG: {r['codes_verified']}")
+    _by = r.get("conformant_by_profile") or {}
+    if _by:
+        out.append("  conformant by profile       : "
+                   + ", ".join(f"{k}={v}" for k, v in _by.items()))
+        _req = r.get("required_by_profile") or {}
+        if _req:
+            out.append("    required sections         : "
+                       + "; ".join(f"{k}={len(v)}"
+                                   for k, v in _req.items()))
     _rec = r.get("codes_verified_against") or {}
     if _rec.get("verified_on"):
         out.append(f"    on {_rec['verified_on']}, against: "

@@ -1861,3 +1861,56 @@ a status line nobody updated, which sent a session to redo finished work.
   The first replacement also failed, because this module mentions
   `euips_sections` in a comment — a substring test was the wrong instrument
   twice before the right one.
+
+## #906 — two profiles, one catalogue (2026-11-02)
+
+**1164 passing**, from 1136. Four controls, each failing on its own assertion.
+
+### The design decision, and why the disruptive option was right
+
+`is_conformant(status, *, profile)` has **no default**. A default would have
+been less disruptive and much worse: the failure mode worth preventing is not
+a wrong answer, it is a caller who never noticed there were two questions and
+silently received the other one's answer — and a default protects precisely the
+callers written before the second profile existed, which are the ones nobody
+has reviewed for it.
+
+Making it mandatory broke **ten** call sites. Three were making a claim that was
+true of one profile and false of the other, and one test had to be split:
+`test_a_missing_recommended_section_does_not_break_conformance` is an IPS
+statement, and under EPS a missing recommended section is exactly what breaks
+conformance. The unqualified sentence was half wrong.
+
+### `obligation_eps` is set only where it differs
+
+None means "the same", so a reader finds the two divergences instead of
+comparing seventeen identical pairs. A test asserts every other section leaves
+it None, so the convention cannot erode.
+
+### The cross-check the ticket asked for, and it works
+
+`Composition.section` is **5..\*** in the published profile, and
+`required_keys(PROFILE_EPS)` returns exactly 5. That single number is what
+catches a future ballot adding a sixth required section — a change every
+code-by-code comparison would pass, because every code it checked would still
+be right. Verified by control: marking a third section EPS-required fails
+`test_THE_CROSS_CHECK_eps_required_count_matches_the_published_5` by name.
+
+### What each surface now answers
+
+| surface | profile | why |
+|---|---|---|
+| `/euips-sections` | **both** | a diagnostic surface should report, not choose on its caller's behalf. `conformant` keeps its IPS value and gains `conformant_profile`; `conformance` carries both. |
+| `euips_report` | **both** | "how far are we from EPS?" is the question a platform report exists to answer, and it is not derivable from the IPS figure. |
+| `mock_generator` | IPS | it writes the three IPS required sections; procedures and devices have age gates, so generating them for everyone would make implausible patients. An EPS-complete cohort is a separate decision, not a default. |
+| `euips_batch` | IPS | counts a batch against the surface the generator writes for. |
+
+### Two small things worth keeping
+
+- `required_keys` RAISES on an unknown profile rather than returning `()`. An
+  empty required set makes every patient conformant, which is the one wrong
+  answer that looks like good news.
+- EPS makes the sections 1..1; it does not make them non-empty. An explicit
+  "no known devices" satisfies EPS, which is the whole reason the absent codes
+  exist — asserted, because reading 1..1 as "must have content" is the obvious
+  mistake.

@@ -1532,3 +1532,21 @@ address. The same judgement #792 applied to a contact's surname.
 - 7 existing tests updated: they pinned the flag as False, which is what a
   guard against an unjustified flip should do.
 - Filed: #906 (obligation divergence), #907 (the three R5 element names).
+
+## 2026-11-02 — #906: EPS and IPS require different section sets
+- gateway/app/services/euips_sections.py — PROFILE_IPS/PROFILE_EPS,
+  Section.obligation_eps (set only where it DIFFERS), Section.obligation_for,
+  required_keys(profile) which RAISES on an unknown profile, conformance()
+  returning both, and is_conformant(status, *, profile) with NO default.
+- gateway/app/api/patient_routes.py — `conformant` keeps its IPS value and now
+  names its profile; `conformance` carries both; each section reports
+  obligation_eps where it differs.
+- gateway/app/services/euips_report.py — counts BOTH profiles
+  (conformant_by_profile, required_by_profile) in the dict and the text.
+- gateway/app/services/mock_generator.py, euips_batch.py — IPS declared
+  explicitly, with the reason.
+- gateway/tests/test_profile_obligations_906.py (new) — 27 checks including
+  the 5..* cross-check the ticket asked for.
+- 10 existing test call sites now declare IPS; one test was SPLIT, because
+  "a missing recommended section does not break conformance" was true of one
+  profile and false of the other.

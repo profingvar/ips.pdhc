@@ -150,6 +150,25 @@ EU_ADDITION = "eu_addition"
 
 OBLIGATION_ORDER = (REQUIRED, RECOMMENDED, OPTIONAL, EU_ADDITION)
 
+# ---------------------------------------------------------------------------
+# Profiles — #906.
+#
+# EPS and IPS agree on every section CODE and disagree on two obligations:
+# `sectionProceduresHx` (47519-4) and `sectionMedicalDevices` (46264-8) are
+# 1..1 in EPS and RECOMMENDED here, measured by #885 against
+# `composition-eu-eps`. `Composition.section` is 5..* in EPS, and those two
+# are the fourth and fifth.
+#
+# One catalogue cannot hold two obligation sets by overwriting one, so it
+# holds both — and `is_conformant` takes the profile as a MANDATORY
+# keyword-only argument. That is the whole design decision: the failure mode
+# to protect against is not a wrong answer, it is a caller who never noticed
+# there were two questions and got the other one's answer silently. A default
+# would reintroduce exactly that.
+PROFILE_IPS = "ips"
+PROFILE_EPS = "eps"
+PROFILES = (PROFILE_IPS, PROFILE_EPS)
+
 PRESENT = "PRESENT"
 EXPLICITLY_ABSENT = "EXPLICITLY_ABSENT"
 MISSING = "MISSING"
@@ -176,6 +195,22 @@ class Section:
     #: type. REQUIRED whenever `resource_types` overlaps another section --
     #: asserted by a test. See `_DISCRIMINATORS` and why it matters.
     discriminator: str | None = None
+    #: The obligation under the EPS profile, where it DIFFERS from `obligation`
+    #: above (#906). None means "the same", so only a divergence is written
+    #: down and a reader does not have to compare two columns to find one.
+    #:
+    #: Measured by #885 against `composition-eu-eps`: EPS makes
+    #: `sectionProceduresHx` and `sectionMedicalDevices` 1..1, where this
+    #: catalogue has them RECOMMENDED for the domestic IPS surface. The codes
+    #: agree; only the obligation differs.
+    obligation_eps: str | None = None
+
+    @property
+    def obligation_for(self) -> dict:
+        """Obligation per profile, so a caller cannot read the wrong one by
+        forgetting that a second exists."""
+        return {PROFILE_IPS: self.obligation,
+                PROFILE_EPS: self.obligation_eps or self.obligation}
 
 
 SECTIONS: tuple[Section, ...] = (
@@ -201,9 +236,15 @@ SECTIONS: tuple[Section, ...] = (
             note="Dates should follow from the patient's age rather than be "
                  "uniform random, or the schedule is implausible."),
     Section("procedures", "History of procedures", RECOMMENDED,
-            ("Procedure",), "47519-4", "no-known-procedures"),
+            ("Procedure",), "47519-4", "no-known-procedures",
+            obligation_eps=REQUIRED,
+            note="EPS makes this 1..1 (#885 measured it on "
+                 "`sectionProceduresHx`); it is RECOMMENDED on the domestic "
+                 "IPS surface. See `obligation_eps` and #906 — the codes "
+                 "agree, only the obligation differs."),
     Section("devices", "Medical devices and implants", RECOMMENDED,
             ("Device", "DeviceUsage"), "46264-8", "no-known-devices",
+            obligation_eps=REQUIRED,
             note="R5 names this resource DeviceUsage; R4 called it "
                  "DeviceUseStatement, and this catalogue said the R4 name while "
                  "the service declares fhirVersion 5.0.0 — corrected by #898. "
@@ -383,8 +424,25 @@ EPS_TEXT_SECTIONS: tuple[dict, ...] = (
 
 
 BY_KEY: dict[str, Section] = {s.key: s for s in SECTIONS}
+#: The IPS required set — the DOMESTIC surface, which is what this service
+#: serves day to day. Kept under its original name because it is read in four
+#: places and over the API; `required_keys(PROFILE_EPS)` is the other answer.
 REQUIRED_KEYS: tuple[str, ...] = tuple(
     s.key for s in SECTIONS if s.obligation == REQUIRED)
+
+
+def required_keys(profile: str) -> tuple[str, ...]:
+    """The sections that may not be MISSING under `profile` (#906).
+
+    Raises on an unknown profile rather than returning an empty tuple: an
+    empty required set makes EVERY patient conformant, which is the one
+    wrong answer that looks like good news.
+    """
+    if profile not in PROFILES:
+        raise ValueError(
+            f"unknown profile {profile!r}; expected one of {PROFILES}")
+    return tuple(s.key for s in SECTIONS
+                 if s.obligation_for[profile] == REQUIRED)
 
 
 def absent_coding(section_key: str) -> dict | None:
@@ -666,12 +724,43 @@ def status_for_resources(rows) -> dict[str, str]:
     return out
 
 
-def is_conformant(status: dict[str, str]) -> bool:
-    """True when every REQUIRED section is PRESENT or EXPLICITLY_ABSENT.
+def is_conformant(status: dict[str, str], *, profile: str) -> bool:
+    """True when every section REQUIRED BY `profile` is PRESENT or
+    EXPLICITLY_ABSENT.
 
     Deliberately narrow, and deliberately not called `is_eu_conformant`: this
-    checks the obligation levels in the source document, which itself says the
-    EHDS technical specifications were not confirmed adopted. See #799.
+    checks obligation levels, and #885 measured that the EPS guide is a ballot
+    which its own pages call unauthorised. See #799.
+
+    `profile` is keyword-only and has NO DEFAULT, on purpose (#906). EPS and
+    IPS require different section sets, and the failure mode worth preventing
+    is not a wrong answer — it is a caller who never noticed there were two
+    questions and silently received the other one's answer. A default would
+    reintroduce precisely that, and it would do so most quietly for the
+    callers written before the second profile existed.
+
+    This is the same lesson as #779 (two identifier spaces compared as if they
+    were one) and #760 (a read allowlist that also granted writes): where two
+    things can be confused, make the code say which one it means.
     """
     return all(status.get(k) in (PRESENT, EXPLICITLY_ABSENT)
-               for k in REQUIRED_KEYS)
+               for k in required_keys(profile))
+
+
+def conformance(status: dict[str, str]) -> dict:
+    """Both answers at once, for a surface that should report rather than
+    choose — `{profile: {"conformant": bool, "required_missing": [...]}}`.
+
+    Offered so a diagnostic endpoint does not have to pick a profile on its
+    caller's behalf, which is the choice that makes `conformant` ambiguous in
+    the first place.
+    """
+    out = {}
+    for prof in PROFILES:
+        missing = [k for k in required_keys(prof)
+                   if status.get(k) == MISSING]
+        out[prof] = {
+            "conformant": is_conformant(status, profile=prof),
+            "required_missing": missing,
+        }
+    return out

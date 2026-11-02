@@ -53,7 +53,7 @@ class TestTheGuaranteeIsAlways:
         bad = []
         for p in patients:
             st = _status(p)
-            if not euips.is_conformant(st):
+            if not euips.is_conformant(st, profile=euips.PROFILE_IPS):
                 bad.append((str(p.guid), {k: st[k] for k in euips.REQUIRED_KEYS}))
         assert bad == [], f"{len(bad)} non-conformant, e.g. {bad[:3]}"
 
@@ -74,7 +74,7 @@ class TestTheGuaranteeIsAlways:
         _generate(client, c, 15, skip=True)
         for p in _db.session.query(PatientIndex).all():
             st = _status(p)
-            assert euips.is_conformant(st), {k: st[k] for k in euips.REQUIRED_KEYS}
+            assert euips.is_conformant(st, profile=euips.PROFILE_IPS), {k: st[k] for k in euips.REQUIRED_KEYS}
             for key in euips.REQUIRED_KEYS:
                 assert st[key] == euips.EXPLICITLY_ABSENT
 

@@ -125,7 +125,7 @@ class TestConformance:
         _add(db, p, "MedicationStatement", euips.absent_coding("medications"))
         st = euips.status_for_resources(
             _db.session.query(FhirResource).filter_by(patient_guid=p.guid).all())
-        assert euips.is_conformant(st) is True
+        assert euips.is_conformant(st, profile=euips.PROFILE_IPS) is True
 
     def test_two_of_three_is_not_conformant(self, client, db):
         p = _patient(db)
@@ -133,13 +133,13 @@ class TestConformance:
         _add(db, p, "Condition", euips.absent_coding("problems"))
         st = euips.status_for_resources(
             _db.session.query(FhirResource).filter_by(patient_guid=p.guid).all())
-        assert euips.is_conformant(st) is False
+        assert euips.is_conformant(st, profile=euips.PROFILE_IPS) is False
 
     def test_an_empty_patient_is_not_conformant(self, client, db):
         """The live state of 110 of 150 patients."""
         p = _patient(db)
         st = euips.status_for_resources([])
-        assert euips.is_conformant(st) is False
+        assert euips.is_conformant(st, profile=euips.PROFILE_IPS) is False
 
     def test_recommended_sections_do_not_affect_conformance(self, client, db):
         """Only the three required ones do -- that is what 'required' means."""
@@ -151,7 +151,7 @@ class TestConformance:
         st = euips.status_for_resources(
             _db.session.query(FhirResource).filter_by(patient_guid=p.guid).all())
         assert st["devices"] == euips.MISSING
-        assert euips.is_conformant(st) is True
+        assert euips.is_conformant(st, profile=euips.PROFILE_IPS) is True
 
 
 class TestTheEndpoint:

@@ -185,4 +185,4 @@ class TestNoSectionSwallowsAnother:
             rows = (_db.session.query(FhirResource)
                     .filter(FhirResource.patient_guid == p.guid).all())
             st = euips.status_for_resources(rows)
-            assert euips.is_conformant(st), {k: st[k] for k in euips.REQUIRED_KEYS}
+            assert euips.is_conformant(st, profile=euips.PROFILE_IPS), {k: st[k] for k in euips.REQUIRED_KEYS}

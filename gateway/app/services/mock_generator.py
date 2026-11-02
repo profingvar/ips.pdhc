@@ -390,8 +390,14 @@ def generate(clinic_guid, count=4, skip_clinical=False,
     for guid in created_guids:
         rows = (db.session.query(FhirResource)
                 .filter(FhirResource.patient_guid == guid).all())
+        # IPS, explicitly (#906). This generator writes the three IPS
+        # REQUIRED sections always; EPS additionally requires procedures and
+        # devices, which both have age gates here, so generating them for
+        # everyone would make implausible patients. Whether to generate an
+        # EPS-complete cohort is a separate decision, not a default.
         if euips_sections.is_conformant(
-                euips_sections.status_for_resources(rows)):
+                euips_sections.status_for_resources(rows),
+                profile=euips_sections.PROFILE_IPS):
             conformant += 1
     detail = ("required sections only (skip_clinical)" if skip_clinical
               else "full euIPS section set")
