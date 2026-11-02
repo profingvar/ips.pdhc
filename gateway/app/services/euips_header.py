@@ -51,6 +51,14 @@ from datetime import date, datetime, timezone
 #: False until the codes and the R5 element shapes here are checked against a
 #: published IG. Mirrors euips_sections.CODES_VERIFIED deliberately — one flag
 #: per module, so a verified module is not vouched for by an unverified one.
+#:
+#: **#885 flipped euips_sections' flag and deliberately left this one False.**
+#: Two reasons, and the first is structural: this module's flag covers R5
+#: ELEMENT SHAPES (see the attester.mode note above), and the EPS guide is an
+#: R4 guide — an R4 document cannot verify an R5 shape, so no amount of
+#: fetching it would lift this. Second, none of the codes in this module were
+#: among those checked. `euips_sections.CODES_VERIFIED_AGAINST["not_covered"]`
+#: records this, so the two flags cannot be mistaken for one.
 CODES_VERIFIED = False
 
 #: Swedish personal identity number. Same OID the generator already uses.

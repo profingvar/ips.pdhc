@@ -1785,3 +1785,79 @@ rest is this repo's own growth through the EPS work.
 The direction matters more than the figure: a cost estimate that drifts upward
 while the work is deferred is an estimate that will keep justifying the
 deferral. Worth knowing that is what is happening.
+
+## #885 — EPS B5: the codes verified (2026-11-02)
+
+**1136 passing** (+1 deliberate skip), from 1096. Five controls, each failing
+on its own assertion.
+
+### What was fetched
+
+| guide | version | what was checked |
+|---|---|---|
+| HL7 Europe EPS `composition-eu-eps` | 1.0.0-ballot (ci-build 150), 2026-06-06, **R4** | all 17 section slices, codes + cardinalities, `Composition.type` |
+| HL7 IPS `absent-unknown-uv-ips` | 1.1.0 (STU 1 Update 1) | the CodeSystem URL and all six absent codes |
+| HL7 FHIR **R5** `device` / `deviceusage` | R5 | the three element names `euips_recommended` nominated |
+| HL7 Europe `observation-travel-eu-eps` | same ballot | the travel-history Observation code |
+
+### Result: every section code is correct
+
+All 16 LOINC section codes, `Composition.type` 60591-5, the absent/unknown
+CodeSystem URL and all six absent codes match the published guides.
+
+### Four disagreements, none of them a wrong section code
+
+1. **EPS makes 47519-4 and 46264-8 `1..1`**; both are RECOMMENDED here.
+   `Composition.section` is 5..* and those two are the fourth and fifth. NOT
+   changed — `obligation` drives `conformant` and the mock generator, and this
+   catalogue also serves domestic IPS where both are recommended. **#906.**
+2. **EPS has no 11348-0 section at all.** `EPS_TEXT_SECTIONS`'s note on 11329-0
+   had already anticipated it ("once 11348-0 is unprofiled") and #880 decided
+   resolved conditions stay domestic. The fetch turned an expectation into a
+   measurement.
+3. **The three device element names are all three wrong against R5** — exactly
+   as the module suspected. R5 Device has no `patient`; `DeviceUsage.patient`
+   is 1..1 while R4's `subject` is *Deleted*; Device has `type` and no `code`.
+   **#907**, not fixed here, because removing `Device.patient` removes the only
+   patient linkage in the JSON and that needs a decision.
+4. **The travel code was wrong and is FIXED.** #796 chose SNOMED `420008001`
+   provisionally and said so; the EPS profile FIXES `Observation.code` to LOINC
+   **94651-7**. The old code stays in the MATCH set, so rows stored before
+   today do not silently turn the section from PRESENT back to MISSING. The
+   profile's `value[x]` binding is also REQUIRED (ISO 3166-1-2), so the
+   destination is now a coded country rather than `valueString: "Thailand"`,
+   which satisfied nothing.
+
+Marking that code provisional is what made it findable. **A guess marked
+provisional invites checking; a guess the flag now calls "verified" does not.**
+
+### What deliberately stays unverified
+
+`euips_header.CODES_VERIFIED` is **still False**, and not from neglect: its
+scope includes R5 element shapes, and an R4 guide cannot verify an R5 shape.
+A test asserts, by parsing the module, that it defines its own literal flag and
+does not import the sections module's.
+
+### Verified codes are not conformance
+
+The EPS guide is a ballot whose own pages say it is not an authorized
+publication; it is R4 while this platform is R5; cardinality was not checked.
+#799's rule is unchanged. The DISCLAIMER was rewritten rather than trimmed —
+one of its two reasons changed (ballot status replaces "codes unverified"),
+because dropping to a single reason would make the refusal look like it rested
+on the EHDS timetable alone.
+
+Leaving "not yet verified" in that string would have been the #848 failure:
+a status line nobody updated, which sent a session to redo finished work.
+
+### Two of my own weaknesses
+
+- I cited **#906** in a docstring *before filing it*. It happened to land on
+  906. That is luck, and it is the third lesson in CLAUDE.md §2 — file the
+  ticket before citing it.
+- A test asserted `header.CODES_VERIFIED is not sections.CODES_VERIFIED` to
+  guard against aliasing. It cannot: Python interns booleans, so it only ever
+  restated "their values differ". Replaced with an `ast` parse of the module.
+  The first replacement also failed, because this module mentions
+  `euips_sections` in a comment — a substring test was the wrong instrument
+  twice before the right one.

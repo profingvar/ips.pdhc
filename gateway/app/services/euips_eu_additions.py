@@ -22,16 +22,27 @@ So every Flag here carries `meta.tag` with
 simulator as author. A computed alert must never be mistakable for a generated
 one, and establishing that now costs nothing.
 
-## Travel history: the code is provisional and labelled
+## Travel history: the provisional code was WRONG, and is now verified
 
-#795 deliberately left `euips_sections.TRAVEL_CODES` empty, because no code is
-established for this EU addition and a guessed one would make the section claim
-observations that are not travel history. This ticket has to settle something,
-so it uses SNOMED `420008001` ("Travel") — **provisional**, consistent with
-`CODES_VERIFIED = False`, and recorded here as the single place to change when
-the terminology is verified. The section reads MISSING until then only because
-nothing generated it; now it reads PRESENT off a code that is explicitly marked
-unverified rather than quietly asserted.
+#795 deliberately left `euips_sections.TRAVEL_CODES` empty, because no code was
+established for this EU addition. This module then chose SNOMED `420008001`
+("Travel") provisionally and marked it as the single place to change when the
+terminology was verified.
+
+**#885 verified it, and the guess was wrong.** The EPS profile
+`observation-travel-eu-eps` FIXES `Observation.code` to LOINC **94651-7**. That
+is now what is written, via `euips_sections.TRAVEL_CODE`. The SNOMED code stays
+in `TRAVEL_CODES` for MATCHING only, so Observations stored before today keep
+reading as travel history instead of silently reverting the section to MISSING.
+
+The same profile binds `value[x]` to ISO 3166-1-2 (required), so the destination
+is emitted as a coded country rather than the free `valueString` this module
+used — a place name is not a country code, and a required binding is the one
+kind of binding a validator refuses rather than warns about.
+
+Leaving the provisional code in place would have been worse than the original
+guess: a guess marked provisional invites checking, while a guess the flag now
+calls "verified" does not.
 
 Dates relate to a plausible recent window rather than floating free, because
 travel history exists for infectious-disease reasoning and a date that
@@ -80,13 +91,19 @@ _ALERTS = [
 ]
 
 #: Travel destinations with a reason the history matters.
+#: (country name, ISO 3166-1 alpha-2, why it matters). The alpha-2 code is
+#: required by the EPS travel profile's binding on `value[x]`; the name stays
+#: for the narrative, which a human reads.
 _TRAVEL = [
-    ("Thailand", "Dengue and malaria risk area."),
-    ("Kenya", "Malaria and yellow-fever risk area."),
-    ("Brazil", "Dengue, Zika and yellow-fever risk area."),
-    ("India", "Typhoid and hepatitis A risk area."),
-    ("Spain", "No specific infectious risk recorded."),
+    ("Thailand", "TH", "Dengue and malaria risk area."),
+    ("Kenya", "KE", "Malaria and yellow-fever risk area."),
+    ("Brazil", "BR", "Dengue, Zika and yellow-fever risk area."),
+    ("India", "IN", "Typhoid and hepatitis A risk area."),
+    ("Spain", "ES", "No specific infectious risk recorded."),
 ]
+
+#: ISO 3166-1 alpha-2, the system the EPS profile's required binding names.
+ISO_3166_SYSTEM = "urn:iso:std:iso:3166"
 
 #: What a patient reports themselves, as opposed to a clinician's record.
 _PATIENT_REPORTED = [
@@ -161,11 +178,10 @@ def _alerts(ref: str, rng: random.Random) -> list[dict]:
 
 
 def _travel_history(ref: str, rng: random.Random) -> list[dict]:
-    place, why = rng.choice(_TRAVEL)
+    place, iso2, why = rng.choice(_TRAVEL)
     when = _recent(rng, 900)
     returned = (date.fromisoformat(when[:10])
                 + timedelta(days=rng.randint(7, 28)))
-    code = next(iter(euips.TRAVEL_CODES))
     return [{
         "resourceType": "Observation",
         "id": str(uuid.uuid4()),
@@ -177,8 +193,13 @@ def _travel_history(ref: str, rng: random.Random) -> list[dict]:
         "category": [_cc(
             "http://terminology.hl7.org/CodeSystem/observation-category",
             "social-history", "Social History")],
-        "code": _cc("http://snomed.info/sct", code, "Travel"),
-        "valueString": place,
+        # LOINC 94651-7, FIXED by the EPS profile — not the SNOMED code #795
+        # guessed. Written from the constant so there is one place to change.
+        "code": _cc(euips.TRAVEL_CODE_SYSTEM, euips.TRAVEL_CODE,
+                    "History of Travel"),
+        # A coded country, because the profile's binding on value[x] is
+        # REQUIRED. `valueString: "Thailand"` satisfied nothing.
+        "valueCodeableConcept": _cc(ISO_3166_SYSTEM, iso2, place),
         # A period, not an instant: "when did you travel" is a window, and the
         # window is what relates it to an illness.
         "effectivePeriod": {"start": when,

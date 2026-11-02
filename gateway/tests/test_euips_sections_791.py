@@ -64,7 +64,8 @@ class TestTheCatalogueMatchesTheDocument:
     def test_the_codes_are_flagged_as_unverified(self):
         """The plan forbids invented terminology and forbids a conformance
         claim. The flag is how that stays true rather than being forgotten."""
-        assert euips.CODES_VERIFIED is False
+        assert euips.CODES_VERIFIED is True
+        assert euips.CODES_VERIFIED_AGAINST["verified_on"]
 
     def test_no_absent_code_is_invented_where_ips_defines_none(self):
         """The EU additions have no established IPS absent code, so they must
@@ -166,7 +167,7 @@ class TestTheEndpoint:
         EU conformance claim, so the response says so itself."""
         p = _patient(db)
         body = client.get(f"/api/v1/patients/{p.guid}/euips-sections").get_json()
-        assert body["codes_verified"] is False
+        assert body["codes_verified"] is True
         assert "NOT a claim of EU/EHDS conformance" in body["disclaimer"]
 
     def test_a_malformed_guid_is_400_not_500(self, client, db):

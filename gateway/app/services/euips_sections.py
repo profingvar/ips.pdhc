@@ -39,21 +39,47 @@ second copy of a derivable fact is the shape that produced #779 (two identifier
 spaces compared) and #771 (two GUIDs for one object). `status_for_patient()`
 below derives it.
 
-## Codes: NOT verified against the published IG
+## Codes: VERIFIED against the published IG, 2026-11-02 (#885)
 
-`CODES_VERIFIED = False`, and that is deliberate rather than lazy. The LOINC
-section codes and the IPS absent/unknown codes below are written from knowledge
-of the IPS implementation guide, not from a fetch of the published CodeSystem
-and ValueSet. The plan's rule is that terminology is owned by plan.pdhc and
-termbank.pdhc and that nothing here invents codes — so these carry a flag
-rather than an implied warranty.
+`CODES_VERIFIED = True`. Every LOINC section code and every absent/unknown
+code below was fetched from the published guides and compared, rather than
+written from knowledge of them. The record is `CODES_VERIFIED_AGAINST`, so a
+reader can tell WHICH document was checked and when — a bare True would be a
+weaker claim than the False it replaced.
 
-The source document also states the EHDS implementing acts with the technical
-specifications were not confirmed adopted as of October 2026. So nothing built
-on this catalogue may claim conformance; #799 says "all required sections
-present", never "EU-conformant".
+**All 16 LOINC section codes are correct**, as is `Composition.type` 60591-5
+(used by `ips_generator`), the absent/unknown CodeSystem URL, and all six
+absent codes.
 
-Verify before any such claim, and flip the flag in one place when done.
+Three things the fetch established that the codes themselves do not say:
+
+1. **EPS is an R4 guide.** `composition-eu-eps` is built on FHIR R4 and targets
+   IPS 2.0.1, which is R4; this platform is R5 by the EPS A1 ruling. So the
+   profile named `deviceUseStatement-eu-eps` is the R4 spelling of what R5
+   calls `DeviceUsage` — #898's correction was right FOR THIS PLATFORM, and the
+   difference is a version gap, not an error on either side.
+
+2. **EPS makes two sections 1..1 that are RECOMMENDED here** —
+   `sectionProceduresHx` (47519-4) and `sectionMedicalDevices` (46264-8). The
+   codes agree; the obligations do not. `Composition.section` is 5..* in EPS,
+   and those two are the fourth and fifth. NOT changed here: the obligation
+   tier drives `conformant` and the mock generator, and this catalogue serves
+   IPS domestically where both are recommended. One catalogue cannot hold two
+   obligation sets by overwriting one of them — see #906.
+
+3. **EPS has no past-illnesses section.** 11348-0 is absent from the EPS
+   Composition entirely; it is an IPS section. `EPS_TEXT_SECTIONS`'s note on
+   11329-0 already anticipated this ("once 11348-0 is unprofiled") and #880
+   decided against moving resolved conditions into a free-text section, because
+   that destroys their coding. The fetch turns that anticipation into a
+   measurement.
+
+**This does NOT make anything EU-conformant, and the rule is unchanged.** The
+EPS document is version 1.0.0-ballot (ci-build 150), "STU 1 Ballot 1",
+generated 2026-06-06, and its own pages say it is not an authorized
+publication. Verified codes mean the codes are right; they say nothing about
+cardinality, profile conformance, or the EHDS implementing acts. #799's rule
+stands: say "all required sections present", never "EU-conformant".
 """
 from __future__ import annotations
 
@@ -63,7 +89,59 @@ from dataclasses import dataclass, field
 ABSENT_UNKNOWN_SYSTEM = "http://hl7.org/fhir/uv/ips/CodeSystem/absent-unknown-uv-ips"
 
 # See the module docstring. One flag, one place to flip.
-CODES_VERIFIED = False
+CODES_VERIFIED = True
+
+#: WHAT was checked, WHEN, and from WHERE — #885 asked for this record and not
+#: merely the flag, because "verified" against an unnamed document is not a
+#: verifiable claim. A future reader comparing against a newer ballot needs to
+#: know which one this was.
+CODES_VERIFIED_AGAINST = {
+    "verified_on": "2026-11-02",
+    "guides": (
+        {
+            "name": "HL7 Europe Patient Summary (EPS)",
+            "url": "https://hl7.eu/fhir/eps/"
+                   "StructureDefinition-composition-eu-eps.html",
+            "version": "1.0.0-ballot (ci-build 150), STU 1 Ballot 1",
+            "generated": "2026-06-06",
+            "fhir_version": "R4",
+            "authorized_publication": False,
+            "checked": "all 17 Composition.section slices, their LOINC codes "
+                       "and cardinalities; Composition.type 60591-5",
+        },
+        {
+            "name": "HL7 International Patient Summary (IPS)",
+            "url": "https://hl7.org/fhir/uv/ips/"
+                   "CodeSystem-absent-unknown-uv-ips.html",
+            "version": "1.1.0 (STU 1 Update 1)",
+            "fhir_version": "R4",
+            "authorized_publication": True,
+            "checked": "the absent/unknown CodeSystem URL and all six absent "
+                       "codes used here",
+        },
+    ),
+    # Recorded because #885 asked for disagreements to be recorded, and these
+    # are the only ones found. Neither is a wrong code.
+    "divergences": (
+        "EPS makes sectionProceduresHx (47519-4) and sectionMedicalDevices "
+        "(46264-8) 1..1; both are RECOMMENDED in this catalogue, which also "
+        "serves IPS domestically. Codes agree, obligations differ. See #906.",
+        "EPS defines no section for 11348-0 (past illnesses); it is an IPS "
+        "section. #880 already decided resolved conditions stay domestic "
+        "rather than move into EPS's free-text 11329-0.",
+        "EPS is an R4 guide and this platform is R5 (EPS A1), so EPS's "
+        "deviceUseStatement profile is the R4 spelling of R5's DeviceUsage. "
+        "A version gap, not an error — #898.",
+    ),
+    # What this flag does NOT cover.
+    "not_covered": (
+        "euips_header.CODES_VERIFIED stays False: its scope includes R5 "
+        "element shapes, and an R4 guide cannot verify those. One flag per "
+        "module, so a verified module is not vouched for by an unverified one.",
+        "Cardinality and profile conformance. Verified codes are not "
+        "conformance; #799's rule is unchanged.",
+    ),
+}
 
 REQUIRED = "required"
 RECOMMENDED = "recommended"
@@ -193,7 +271,10 @@ SECTIONS: tuple[Section, ...] = (
                  "#881; was None. UNVERIFIED against the published IG — "
                  "CODES_VERIFIED stays False, see #885. Not to be confused with "
                  "TRAVEL_CODES: this is the COMPOSITION SECTION code, while "
-                 "TRAVEL_CODES holds the SNOMED code on the Observation itself. "
+                 "TRAVEL_CODE holds the code on the Observation itself — LOINC "
+                 "94651-7 since #885 verified it against the EPS profile, which "
+                 "FIXES it; the SNOMED 420008001 that #795 chose provisionally "
+                 "survives in TRAVEL_CODES for matching stored rows only. "
                  "Dates should relate to any relevant condition rather than "
                  "float free, since travel history exists for "
                  "infectious-disease reasoning."),
@@ -392,7 +473,20 @@ PREGNANCY_CODES = frozenset({
 #: choice, not a verified binding: it is covered by CODES_VERIFIED = False, and
 #: this is the single place to change when the terminology is checked against
 #: the published IG. Recorded rather than asserted.
-TRAVEL_CODES: frozenset[str] = frozenset({"420008001"})
+#: The code to WRITE on a travel-history Observation, verified by #885 against
+#: the EPS profile `observation-travel-eu-eps`, which FIXES `Observation.code`
+#: to LOINC 94651-7. It was previously SNOMED `420008001`, chosen provisionally
+#: by #795 because no code was established — a reasonable guess, and wrong.
+TRAVEL_CODE_SYSTEM = "http://loinc.org"
+TRAVEL_CODE = "94651-7"
+
+#: Codes that MATCH a travel-history Observation. Wider than what we write, on
+#: purpose: `420008001` is in rows already stored, and dropping it from the
+#: matcher would make those rows stop being travel history — the section would
+#: silently go from PRESENT to MISSING for every patient generated before
+#: #885. Same courtesy `LEGACY_RESOURCE_TYPES` pays the R4 resource name.
+TRAVEL_CODE_LEGACY = "420008001"
+TRAVEL_CODES: frozenset[str] = frozenset({TRAVEL_CODE, TRAVEL_CODE_LEGACY})
 
 #: HL7 observation-category codes, used to tell Observation sections apart.
 _VITAL_SIGNS_CATEGORIES = frozenset({"vital-signs"})

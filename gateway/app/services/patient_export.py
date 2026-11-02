@@ -54,9 +54,12 @@ re-introduce exactly the conflation #895 exists to remove.
 ## The FHIR half is R5 and is NOT a conformance claim
 
 #877 chose to export R5 rather than render R4, so this is *EPS-shaped content,
-R5 serialisation*. `CODES_VERIFIED` is still False and #885 governs when that
-may change, so the Bundle carries a `meta.tag` saying so rather than leaving a
-reader to assume. See #897 for why the version is a parameter even though only
+R5 serialisation*. #885 has since verified the CODES (`CODES_VERIFIED` is now
+True, with `CODES_VERIFIED_AGAINST` recording which guides and when) — and that
+changes nothing here, because verified codes are not conformance: the EPS guide
+is a ballot, it is an R4 guide while this exports R5, and cardinality is
+unchecked. The Bundle still carries a `meta.tag` saying so rather than leaving
+a reader to assume. See #897 for why the version is a parameter even though only
 R5 is implemented.
 """
 from __future__ import annotations
@@ -235,8 +238,9 @@ def to_fhir_bundle(patient_guids: list[str], *, version: str = "R5") -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "total": len(entries),
         # Said IN the document, not in a docstring: a recipient must not read
-        # this as an EPS conformance claim. CODES_VERIFIED is False and #885
-        # governs when that may change.
+        # this as an EPS conformance claim. #885 verified the codes; it did
+        # not and could not verify conformance — the EPS guide is a ballot and
+        # is R4, while this is R5.
         "meta": {"tag": [{
             "system": "https://ips.pdhc.se/export",
             "code": "not-eps-conformant",

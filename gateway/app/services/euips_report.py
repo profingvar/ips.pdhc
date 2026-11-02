@@ -11,9 +11,11 @@ EHDS implementing acts carrying the technical specifications for the exchange
 format were **not confirmed adopted** as of October 2026, with the
 patient-summary format act expected around September 2026 and a member-state
 vote on classifications in June 2026. On top of that,
-`euips_sections.CODES_VERIFIED` is False: the LOINC section codes and the IPS
-absent/unknown codes are written from knowledge of the IG, not from a fetch of
-the published CodeSystem.
+`euips_sections.CODES_VERIFIED` is True since #885: the LOINC section codes and
+the IPS absent/unknown codes were fetched from the published guides and
+compared, and `CODES_VERIFIED_AGAINST` records which ones and when. That still
+does not make a document conformant -- the EPS guide is a ballot, the EHDS acts
+are not adopted, and verified codes say nothing about cardinality.
 
 So the verdict is phrased as **"all required sections present"**, never
 "EU-conformant". A tool that prints the second against a specification that is
@@ -47,8 +49,11 @@ DISCLAIMER = (
     "Checks the section obligations described in "
     "docs/EU_Patient_Summary_ICD11.docx. NOT a claim of EU or EHDS "
     "conformance: the implementing acts were not confirmed adopted as of "
-    "October 2026, and the section codes are not yet verified against the "
-    "published IPS implementation guide."
+    "October 2026, and the HL7 Europe EPS guide is a ballot "
+    "(v1.0.0-ballot, not an authorized publication). The section codes ARE "
+    "verified against the published guides as of 2026-11-02 (#885) -- which "
+    "says the codes are right, not that a document conforms: cardinality and "
+    "profile conformance are not checked here."
 )
 
 
@@ -125,6 +130,7 @@ def report(batch_guid=None, *, failure_limit: int = 10) -> dict:
             for s in euips.EPS_TEXT_SECTIONS
         ],
         "codes_verified": euips.CODES_VERIFIED,
+        "codes_verified_against": euips.CODES_VERIFIED_AGAINST,
         "disclaimer": DISCLAIMER,
     }
 
@@ -179,6 +185,10 @@ def format_report(r: dict) -> str:
         out.append("")
 
     out.append(f"  codes verified against the published IG: {r['codes_verified']}")
+    _rec = r.get("codes_verified_against") or {}
+    if _rec.get("verified_on"):
+        out.append(f"    on {_rec['verified_on']}, against: "
+                   + "; ".join(g["version"] for g in _rec.get("guides", ())))
     out.append("")
     # Wrapped by hand so the caveat reads as prose rather than one long line.
     out.append("  " + DISCLAIMER.replace(". ", ".\n  "))

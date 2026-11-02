@@ -77,16 +77,34 @@ class TestWhatItRefusesToClaim:
     def test_it_reports_that_the_codes_are_unverified(self, client, db):
         _bare_patient(db)
         r = euips_report.report()
-        assert r["codes_verified"] is False
-        assert "codes verified against the published IG: False" in \
+        assert r["codes_verified"] is True
+        assert "codes verified against the published IG: True" in \
             euips_report.format_report(r)
+        # And the DISCLAIMER had to change with the flag. Leaving it saying
+        # "not yet verified" would have been a stale claim in the one string
+        # a human reads -- the #848 failure mode, where a status line nobody
+        # updated sent a session to redo finished work.
+        d = euips_report.DISCLAIMER
+        assert "not yet verified" not in d
+        assert "ballot" in d
+        # It must STILL refuse the conformance claim. Verified codes are not
+        # conformance, and #799's rule is what this class exists to pin.
+        assert "NOT a claim of EU or EHDS" in d
 
     def test_the_disclaimer_names_both_reasons(self, client, db):
-        """Two independent reasons, and conflating them would understate it:
-        the acts are not adopted AND the codes are unverified."""
+        """Two independent reasons, and conflating them would understate it.
+
+        One of the two CHANGED rather than went away. It used to be "the acts
+        are not adopted AND the codes are unverified"; #885 verified the codes,
+        so the second reason is now the guide's own status: it is a ballot, and
+        its pages say it is not an authorized publication. Dropping to a single
+        reason would have made the refusal look like it rested on the EHDS
+        timetable alone, which a reader could discount.
+        """
         d = euips_report.DISCLAIMER
         assert "not confirmed adopted" in d
-        assert "not yet verified" in d
+        assert "ballot" in d
+        assert "not yet verified" not in d
 
 
 class TestOnlyRequiredSectionsFail:

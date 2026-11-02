@@ -59,14 +59,40 @@ class TestWhatWasDeliberatelyNotFilled:
 
 
 class TestFillingACodeIsNotVerifyingIt:
-    def test_CODES_VERIFIED_is_still_False(self):
+    def test_CODES_VERIFIED_is_now_TRUE_AND_BACKED_BY_A_RECORD(self):
         """The source is a CI-build of a STU 1 Ballot — a draft of a draft.
         Only #885, after a fetch of the published IG, may flip this."""
-        assert euips.CODES_VERIFIED is False
+        # #885 did the fetch, so the guard this test was written to be —
+        # "do not flip the flag without doing the work" — now asserts the
+        # OTHER half: that the flip is backed by a record naming what was
+        # checked and when. A bare `is True` would be a weaker claim than
+        # the `is False` it replaced.
+        assert euips.CODES_VERIFIED is True
+        rec = euips.CODES_VERIFIED_AGAINST
+        assert rec["verified_on"] == "2026-11-02"
+        assert len(rec["guides"]) == 2
+        for g in rec["guides"]:
+            assert g["url"].startswith("https://")
+            assert g["version"]
+            assert g["checked"]
+        # The EPS guide is a BALLOT and must be recorded as unauthorised, or
+        # "verified" overstates what was checked.
+        eps = [g for g in rec["guides"] if "EPS" in g["name"]][0]
+        assert eps["authorized_publication"] is False
+        assert "ballot" in eps["version"].lower()
+        # And what the flag does NOT cover must be stated, not implied.
+        assert rec["not_covered"]
+        assert any("euips_header" in n for n in rec["not_covered"])
 
     def test_the_section_code_is_not_the_RESOURCE_code(self):
         """`10182-4` is the Composition SECTION code; `TRAVEL_CODES` holds the
         SNOMED code on the Observation itself. They are different layers and a
         future reader conflating them would break the discriminator."""
         assert TRAVEL_LOINC not in euips.TRAVEL_CODES
-        assert euips.TRAVEL_CODES == frozenset({"420008001"})
+        # #885 verified this against the EPS profile, which FIXES
+        # Observation.code to LOINC 94651-7; #795's provisional SNOMED code
+        # was a reasonable guess and wrong. It stays in the MATCH set so
+        # rows stored before today keep reading as travel history.
+        assert euips.TRAVEL_CODE == "94651-7"
+        assert euips.TRAVEL_CODE_SYSTEM == "http://loinc.org"
+        assert euips.TRAVEL_CODES == frozenset({"94651-7", "420008001"})

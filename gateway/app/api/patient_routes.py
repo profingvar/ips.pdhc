@@ -715,6 +715,10 @@ def euips_section_status(guid):
         # Stated in the response, not buried in a docstring: a caller must not
         # read `conformant` as an EU conformance claim.
         "codes_verified": euips.CODES_VERIFIED,
+        # #885: the flag alone is not a verifiable claim — a caller needs to
+        # know WHICH guide was checked and when, not least because the EPS
+        # one is a ballot that changes.
+        "codes_verified_against": euips.CODES_VERIFIED_AGAINST,
         "disclaimer": (
             "Checks the obligation levels described in "
             "docs/EU_Patient_Summary_ICD11.docx. NOT a claim of EU/EHDS "

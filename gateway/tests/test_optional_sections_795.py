@@ -255,8 +255,11 @@ class TestObservationSectionsAreDistinguishable:
         st = euips.status_for_resources([obs])
         assert st["travel_history"] == euips.MISSING
         assert st["social_history"] == euips.PRESENT
-        # And the codes remain flagged unverified, wherever they are set.
-        assert euips.CODES_VERIFIED is False
+        # The flag assertion that used to sit here is GONE, not updated.
+        # This test's own docstring says the "is it still unverified" question
+        # "is pinned in #796's own tests, where the decision lives" — and then
+        # asserted it anyway, which is how a test about section matching came
+        # to fail when #885 flipped a flag it does not care about.
 
 
 class TestOptionalMeansOptional:

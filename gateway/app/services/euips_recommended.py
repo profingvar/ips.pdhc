@@ -219,10 +219,11 @@ def _no_known(section: str, resource_type: str, ref: str,
     (1..1), so omitting it produces a structurally invalid resource. IPS may
     instead express this with a `data-absent-reason` extension on
     `_occurrenceDateTime`; that is not used here because the exact profile
-    representation has not been verified against the published IG
-    (euips_sections.CODES_VERIFIED is False), and satisfying the cardinality
-    with a real date is the choice that cannot be wrong in a way a validator
-    will not tell us about. Revisit when the IG is checked.
+    representation has not been verified against the published IG — #885
+    verified the section CODES, not every element representation, and
+    `CODES_VERIFIED_AGAINST["not_covered"]` says so — and satisfying the
+    cardinality with a real date is the choice that cannot be wrong in a way a
+    validator will not tell us about.
     """
     body = {
         "resourceType": resource_type,
@@ -270,25 +271,31 @@ def _devices(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
     emitted here until #898, while the service declared fhirVersion 5.0.0.
     Old rows are still read, via `euips_sections.LEGACY_RESOURCE_TYPES`.
 
-    THREE ELEMENT NAMES HERE ARE UNVERIFIED AGAINST THE PUBLISHED IG, found
-    while doing #883 and deliberately NOT changed, because deciding them from
-    memory is the guessing this module refuses to do (CODES_VERIFIED is False).
-    Checked and settled by #885:
+    THREE ELEMENT NAMES HERE ARE WRONG AGAINST R5. #885 checked all three
+    against the published FHIR R5 specification and **every one of the three
+    guesses below was correct** — which is what marking them unverified was
+    for. Tracked for repair as **#907**; not repaired here, because removing
+    `Device.patient` removes the only patient linkage inside the Device JSON
+    and that needs a decision rather than an edit.
 
-      1. `Device.patient` — R4 had it. R5 appears to have moved the patient
-         association off Device (DeviceUsage / DeviceAssociation), in which
-         case this element is an R4-ism like the resource name was.
-      2. `DeviceUsage.subject` — R4's DeviceUseStatement used `subject`; R5's
-         DeviceUsage appears to require `patient` (1..1) instead. If so these
-         two are swapped relative to the standard.
+      1. `Device.patient` — CONFIRMED an R4-ism. R5's Device element list has
+         no `patient` at all; the association lives on `DeviceUsage.patient`
+         or on `DeviceAssociation`.
+      2. `DeviceUsage.subject` — CONFIRMED wrong. R5 lists
+         `DeviceUseStatement.subject` as *Deleted* and `DeviceUsage.patient`
+         as *Added Mandatory Element*, 1..1. So the right name is also the
+         mandatory one.
       3. `_no_known("devices", "Device", ...)` writes the absent coding into
-         `code`; R5 Device appears to use `type`. Pre-existing from #794, not
-         introduced by #883.
+         `code`; CONFIRMED wrong — R5 Device has `type` (0..*) and no `code`
+         element. Pre-existing from #794, not introduced by #883.
 
-    All three are inert today: the HTTP create route reads BOTH `subject` and
-    `patient` for patient linkage, so the rows link either way, and the section
-    matcher keys on resource type rather than on these fields. They become real
-    the moment an external validator sees the export.
+    They were called inert because the HTTP create route reads BOTH `subject`
+    and `patient` for patient linkage, so rows link either way, and the section
+    matcher keys on resource type. That is no longer the whole story: #896
+    built the export, so "the moment an external validator sees the export"
+    has arrived. #907 carries the three options for the linkage and names the
+    negated-Device case (#886 emits a Device with no DeviceUsage by design)
+    as the part that must not be decided by accident.
     """
     age = _age(birth)
     eligible = [d for d in _DEVICES if age >= d[2]]

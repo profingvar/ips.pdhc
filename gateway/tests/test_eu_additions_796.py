@@ -95,12 +95,19 @@ class TestTravelHistory:
                    if v == euips.PRESENT]
         assert present == ["travel_history"], present
 
-    def test_the_code_is_the_provisional_one_and_is_flagged(self):
+    def test_the_provisional_code_was_WRONG_and_is_now_verified(self):
         """#795 left TRAVEL_CODES empty rather than guess. #796 settles it
         provisionally, and CODES_VERIFIED must still be False -- the choice is
         recorded, not asserted as verified."""
-        assert euips.TRAVEL_CODES == frozenset({"420008001"})
-        assert euips.CODES_VERIFIED is False
+        # #796 chose SNOMED 420008001 provisionally and said so. #885 checked
+        # it against `observation-travel-eu-eps`, which FIXES Observation.code
+        # to LOINC 94651-7 — so the guess was wrong, which is exactly what
+        # marking it provisional was for.
+        assert euips.TRAVEL_CODE == "94651-7"
+        assert euips.CODES_VERIFIED is True
+        # The old code is still MATCHED, so rows generated before #885 do not
+        # silently turn the section from PRESENT back to MISSING.
+        assert "420008001" in euips.TRAVEL_CODES
 
     def test_travel_is_a_period_not_an_instant(self):
         """"When did you travel" is a window, and the window is what relates

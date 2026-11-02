@@ -1506,3 +1506,29 @@ address. The same judgement #792 applied to a contact's surname.
 - NOT changed: no rename, and `eps` deliberately NOT added to the
   CapabilityStatement — there is no EPS operation to declare, so declaring it
   would be #804 in the one document whose job is to say what the server does.
+
+## 2026-11-02 — #885 (EPS B5): the codes verified against the published guides
+- gateway/app/services/euips_sections.py — CODES_VERIFIED = True, plus
+  CODES_VERIFIED_AGAINST (which guides, which versions, when, the divergences
+  found, and what the flag does NOT cover). TRAVEL_CODE/TRAVEL_CODE_SYSTEM are
+  the verified LOINC 94651-7; TRAVEL_CODES keeps the old SNOMED code for
+  MATCHING stored rows.
+- gateway/app/services/euips_eu_additions.py — writes the verified code and a
+  CODED country (ISO 3166-1-2, the profile's required binding) instead of a
+  free valueString.
+- gateway/app/services/euips_header.py — flag deliberately STILL False, with
+  the structural reason: its scope is R5 element shapes and the EPS guide is R4.
+- gateway/app/services/euips_report.py — DISCLAIMER rewritten: the "codes not
+  yet verified" reason is replaced by the guide's ballot status, and the
+  conformance refusal is unchanged. The record is exposed in the response and
+  the text report.
+- gateway/app/services/euips_recommended.py — the three device element names
+  are SETTLED (all three wrong against R5) and tracked as #907.
+- gateway/app/services/patient_export.py — stale "CODES_VERIFIED is still
+  False" corrected in two places.
+- gateway/app/api/patient_routes.py — codes_verified_against in the response.
+- gateway/tests/test_codes_verified_885.py (new) — 40 checks + 1 deliberate
+  skip covered by its own test.
+- 7 existing tests updated: they pinned the flag as False, which is what a
+  guard against an unjustified flip should do.
+- Filed: #906 (obligation divergence), #907 (the three R5 element names).
