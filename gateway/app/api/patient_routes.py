@@ -7,9 +7,11 @@ the clinics they are assigned to. Future patient-portal routes
 will mount here too.
 """
 import uuid
-from datetime import date
+import json
+from datetime import date, datetime, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import (Blueprint, current_app, jsonify, make_response,
+                   request)
 
 from app.models.base import db
 from app.models.clinic import Clinic
@@ -304,6 +306,66 @@ def search_patients():
 
     guids = sorted({str(row[0]) for row in q.distinct().all()})
     return jsonify({"patient_guids": guids, "count": len(guids)})
+
+
+@bp.route("/export", methods=["POST"])
+@require_auth
+def export_patients():
+    """Export the selected patients as CSV or as a FHIR Bundle (#896).
+
+    **On the API blueprint, not the admin HTML one, and that was a measured
+    decision.** `admin.py`'s `before_request` checks only for an SSO SESSION
+    and loads no user — so on that surface there is no identity to scope an
+    export by, and `patient_export`'s gate would refuse every request. Here
+    `@require_auth` populates `g.current_user`, which is what the scope rule
+    reads. The multi-select on the patient list (#811) posts here.
+
+    Scope, audit, the cap and the personnummer decision all live in
+    `services/patient_export.py`, so a second caller cannot get a different
+    answer.
+    """
+    from app.services import patient_export as px
+
+    data = request.get_json(silent=True) or {}
+    guids = data.get("patient_guids") or []
+    fmt = (data.get("format") or "csv").strip().lower()
+    mode = (data.get("mode") or "as_at").strip().lower()
+    as_at_raw = (data.get("as_at") or "").strip()
+    as_at = None
+    if as_at_raw:
+        try:
+            as_at = datetime.fromisoformat(as_at_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"error": f"as_at is not a date: {as_at_raw!r}"}), 400
+
+    try:
+        out = px.export(list(guids), fmt=fmt, mode=mode, as_at=as_at)
+    except px.ExportTooLarge as e:
+        # 413, not a 500 and not a timeout: a terminal condition reported as
+        # one, so the caller splits the selection instead of retrying (#833).
+        return jsonify({"error": str(e), "code": "export_too_large"}), 413
+    except px.ExportNotPermitted as e:
+        return jsonify({"error": str(e), "code": "export_not_permitted"}), 403
+    except px.UnsupportedFhirVersion as e:
+        return jsonify({"error": str(e),
+                        "code": "unsupported_fhir_version"}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    db.session.commit()                       # the audit rows
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ext = "csv" if fmt == "csv" else "json"
+    body = out["body"] if fmt == "csv" else json.dumps(out["body"], indent=2)
+    resp = make_response(body)
+    resp.headers["Content-Type"] = out["content_type"]
+    resp.headers["Content-Disposition"] = (
+        f'attachment; filename="patients_{stamp}.{ext}"')
+    # In the response, so a script reading only the body still learns the
+    # selection was narrowed. The COUNT, never the list -- a list would
+    # confirm which guids exist.
+    resp.headers["X-Export-Exported"] = str(out["exported"])
+    resp.headers["X-Export-Withheld"] = str(out["withheld"])
+    return resp
 
 
 @bp.route("/analysis-filter", methods=["POST"])

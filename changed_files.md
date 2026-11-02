@@ -994,3 +994,77 @@ operator's correction to the original 1:1 framing.
 automatically, four of the five existing state bearers are not projected, and
 no route exposes the read. Until (a) lands, `patient_state_facts` is empty
 unless `flask rebuild-patient-state` is run by hand.
+
+---
+
+## 2026-11-02 — #896 (EPS B7): export selected patients as CSV and as a FHIR Bundle
+
+- `gateway/app/services/patient_export.py` (new)
+- `gateway/app/api/patient_routes.py` (`POST /api/v1/patients/export`)
+- `gateway/tests/test_eps_patient_export_896.py` (new, 22 tests)
+
+**Nothing like this existed** — measured across ips, cdr and cdr_6: no
+`/export` route, no CSV writer, no xlsx writer. So the access and audit
+properties were built rather than inherited.
+
+**It is on the API blueprint, not the admin one, and that was measured.**
+`admin.py`'s `before_request` checks only for an SSO SESSION and loads **no
+user object at all** — not `g.current_user`, not a resolved blob. So on that
+surface there is no identity to scope an export by, and the gate would refuse
+every request. `@require_auth` on the API blueprint populates
+`g.current_user`, which is what the scope rule reads. Filed as **#902**,
+with its uncertainty stated, because whether it is exposure depends on what
+sso.pdhc will issue a token for — unmeasured.
+
+**Scope is the SAME relationship spärr and consent already use:** admin sees
+every requested patient, anyone else sees patients with an ACTIVE
+`PatientClinicAssignment` to a clinic they are assigned to. "Active" since
+#899(b). A withheld patient is **absent** from the output rather than refused,
+so the export leaks no existence either.
+
+And because an export is a SECOND consumer of "may this reader see this
+patient", a test compares the set filter against
+`blocks_routes._can_act_on_patient` on every candidate and asserts they agree.
+Two consumers with different answers is what `care_access_policy`'s "no two
+consumers may enforce different zone rules" exists to prevent.
+
+**Personnummer is excluded from the CSV** and carried in the FHIR Bundle. A CSV
+leaves the system, `personnummer` is under a hard confinement rule (#405), and
+no masking helper exists in this repo — verified. `Patient.identifier` is part
+of a FHIR document by design, so that is the deliberate exception.
+
+**Audit is one row per patient, never one per batch.** Fifty patients means
+fifty rows; a single "exported a batch" row makes the log useless for the only
+question anyone asks of it. And a WITHHELD patient is not audited — an audit
+row saying a patient was exported when they were not is worse than none.
+
+**The CSV shape is a decision.** `as_at` (default) gives one row per
+`(patient, fact_type)` valid at that date; `history` gives one row per period
+with BOTH time axes as columns. No column is called `date`, and a test pins
+that: a single `date` column would re-introduce exactly the conflation #895
+exists to remove.
+
+The Bundle is R5 (#877) and says so **in the document** — a `meta.tag` of
+`not-eps-conformant` with the reason — rather than leaving a recipient to read
+a docstring. `version="R4"` raises `UnsupportedFhirVersion` by name, which is
+#897's point: the parameter exists so adding R4 later is additive.
+
+Past the cap of 100 (#797's bound) raises `ExportTooLarge`, surfaced as **413
+with a code**, not a 500 and not a timeout — the #833 lesson that a permanent
+condition reported as transient tells the caller to retry forever.
+
+**851 passed** (829 before). Controls, each with an import check first:
+
+| breakage | red |
+|---|---|
+| `exportable()` ignores the reader's scope | **4** — incl. the drift guard and the withheld-audit test |
+| audit one row per batch | 1 |
+| personnummer into the CSV | 1 |
+| drop the cap | 2 |
+
+Two of my own assertions were wrong and were corrected rather than the code:
+the service must be called inside a request context (the gate reads
+`g.current_user`, and calling it with no identity is what the gate is FOR), and
+names ARE in the CSV because `name.family` is a state fact — so the scope test
+now asserts the allowed patient's data IS present as well as the withheld one's
+absent, which is the stronger claim.

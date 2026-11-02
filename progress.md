@@ -1410,3 +1410,18 @@ corrupts the comparison, not just the assertion.
 
 **829 passed** (813 before). Controls: 2 / 2 / 2 red.
 **#901** carries the unwired half: no trigger, four sources missing, no route.
+
+### #896 (EPS B7) — the export, 2026-11-02
+
+`POST /api/v1/patients/export`, CSV or FHIR Bundle, selection-based.
+
+On the API blueprint because the admin surface loads no user at all — measured,
+and filed as #902. Scope is the same relationship spärr and consent use, with a
+test asserting the set filter and the per-patient gate agree. Withheld patients
+are absent rather than refused.
+
+No personnummer in the CSV (#405); the Bundle carries it by design. Audit one
+row per patient, and withheld patients are not audited. R5 only, tagged
+`not-eps-conformant` in the document. 413 by name past the cap of 100.
+
+**851 passed** (829 before). Controls: 4 / 1 / 1 / 2 red.
