@@ -1476,3 +1476,17 @@ clinician picked. `negation` maps to the section's absent code, so a mandatory
 `recorded_at`. Provenance survives on every path, including the negated one.
 
 **906 passed** (888 before). Controls: 2 / 1 / 2 / 2 red.
+
+### #888 (EPS C2) — addresses with periods, 2026-11-02
+
+`patient_address()` with line, postalCode, city, country and an open-ended
+`period`; telecom and RelatedPerson get one too, and the inline
+`Patient.contact` mirror carries it so the two copies cannot disagree.
+
+The payoff is asserted end to end: the state projection's address facts now
+have a real `valid_from`, and an as-at read before the move excludes the
+address while one after includes it.
+
+A test of mine was a tautology (`A or <always true>`) and the control caught
+it — the second time this session. **923 passed** (907 before).
+Controls: 3 / 1 / 1 / 1 red.

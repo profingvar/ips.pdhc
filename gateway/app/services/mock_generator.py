@@ -235,15 +235,26 @@ def generate(clinic_guid, count=4, skip_clinical=False,
                 "reference": f"Organization/{org_guid}" if org_guid else None,
                 "display": org_name,
             },
-            "address": [{
-                "use": "home",
-                "city": city,
-                "country": euips_header.COUNTRY_OF_ORIGIN,
-            }],
+            # #888: a full address with line, postalCode and -- the element
+            # that matters -- a `period`. Before this, every demographic fact
+            # in the state projection (#895) carried valid_from = NULL,
+            # meaning "we do not know when this became true". The city is
+            # passed in rather than drawn inside, because it determines the
+            # Coverage insurer's region (#792).
+            "address": [euips_header.patient_address(
+                city,
+                moved_in=euips_header._past_date_after_birth(
+                    mp["birth"], min_age=18, rnd=random),
+                rnd=random)],
             "telecom": [{
                 "system": "phone",
                 "value": f"+4670{random.randint(1000000, 9999999)}",
                 "use": "mobile",
+                # #888: a number is held FROM a date. Open-ended because it is
+                # the current one; a closed period would say it is no longer
+                # reachable, which is a different claim.
+                "period": {"start": euips_header._past_date_after_birth(
+                    mp["birth"], min_age=16, rnd=random)},
             }],
             "communication": euips_header.patient_communication(language),
         }

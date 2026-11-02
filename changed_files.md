@@ -1365,3 +1365,77 @@ stored.resource_json`. Identity cannot pass accidentally. The mutation check is
 kept as a secondary assertion.
 
 **907 passed** (906 before). Control: revert the deep copy -> 1 red.
+
+---
+
+## 2026-11-02 — #888 (EPS C2): address, contact and telecom with real periods
+
+- `gateway/app/services/euips_header.py` (`patient_address`, period helpers,
+  the contact mirror)
+- `gateway/app/services/mock_generator.py` (full address + telecom period)
+- `gateway/tests/test_eps_address_periods_888.py` (new, 16 tests)
+
+Before this the generator wrote `use`, `city` and `country`. A service meant to
+hold "all state information about a patient" could not say what street they
+live on, and **had no validity period anywhere** — so every demographic fact in
+the state projection (#895) carried `valid_from = NULL`: honest, and useless
+for answering "where did this patient live in March".
+
+### The payoff, asserted end to end
+
+`TestThePayoff` is what makes this ticket worth anything. It asserts the
+projection's address facts now carry a real `valid_from`, that `address.line`
+and `address.postalCode` appear at all, and — the part that proves the period
+is doing work rather than decorating — that an `as_at` read **before** the move
+excludes the address while one **after** includes it. The second half is the
+control: without it, an as-at read that returned nothing would pass the first.
+
+### Three coherence rules, each a refusal rather than a default
+
+  - **The city is passed in, never redrawn.** It determines the Coverage
+    insurer's region (#792); drawing it inside would put a Stockholm resident
+    on Region Skåne's books.
+  - **The postcode's leading block follows the city.** A postcode contradicting
+    the city is the sort of incoherence that makes a cohort useless for testing
+    a real integration.
+  - **No period unless one is given.** A period must be data, not a default —
+    an invented start is the single-axis mistake #895 refuses.
+
+A start before the patient was born is an impossible fact, not a bad date — the
+same reasoning #900 applies to `ended_at` before `assigned_at` — so the lower
+bound is derived from the birth year. A degenerate range (born last year, "moved
+in at 18") is clamped rather than raising, and the property that survives is
+that the date is still in the PAST.
+
+### The contact mirror carries the period, or the two copies can disagree
+
+`RelatedPerson` and the inline `Patient.contact` are generated from ONE list
+precisely so they cannot disagree. A period on the resource but not on the
+inline copy would be exactly that disagreement — with the inline copy being the
+one most consumers read.
+
+### A test of mine was a tautology, and the control caught it
+
+`test_a_start_is_after_birth_and_in_the_past` asserted
+`got >= birth+18 OR got <= this_year`. The second branch is true for every past
+date, so the whole thing was vacuous: the control that let the start be drawn
+from 1900 **passed it**. Replaced with a conjunction that handles the
+degenerate range explicitly.
+
+That is the second time in this session a control caught a test that could not
+fail — #897's mutation test was the first. Both were found only because the
+control was run rather than assumed, which is the argument for running them at
+all.
+
+Street names are deliberately among the most common in Sweden and exist in
+hundreds of municipalities: plausible in shape, resembling no particular real
+address. The same judgement #792 applied to a contact's surname.
+
+**923 passed** (907 before). Controls, each with an import check first:
+
+| breakage | red |
+|---|---|
+| the generator writes no period | 3 |
+| the contact mirror drops the period | 1 |
+| postcode drawn independently of the city | 1 |
+| allow a start BEFORE birth | 1 — *after the tautology was fixed; 0 before* |

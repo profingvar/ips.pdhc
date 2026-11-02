@@ -203,6 +203,10 @@ def related_person_resources(patient_ref: str, *, family: str,
             "value": "+4670%d" % rnd.randint(1000000, 9999999),
             "use": "mobile",
         }],
+        # #888: when this person became the patient's contact. Open-ended,
+        # because they still are. Mirrored onto Patient.contact by
+        # `patient_contact` so the two copies cannot disagree.
+        "period": {"start": _contact_since(birth_date, rnd)},
     }]
 
     if needs_guardian(birth_date, asof):
@@ -240,6 +244,100 @@ def related_person_resources(patient_ref: str, *, family: str,
     return out
 
 
+#: Street names deliberately chosen because they are among the most common in
+#: Sweden and exist in hundreds of municipalities, so a generated address is
+#: plausible in SHAPE without resembling any particular real address. The same
+#: judgement #792 applied to a contact's surname: synthetic data that is
+#: obviously synthetic exercises nothing, and synthetic data that could be
+#: somebody's actual address is worse.
+_STREETS = ("Storgatan", "Kyrkogatan", "Skolgatan", "Järnvägsgatan",
+            "Nygatan", "Parkvägen", "Björkgatan")
+
+#: First three digits per city, so the postcode is not contradicted by the
+#: city. Only the leading block is fixed; the rest is drawn, which keeps the
+#: pair coherent without pinning a street.
+_POSTCODE_PREFIX = {
+    "Stockholm": "11", "Göteborg": "41", "Malmö": "21",
+    "Uppsala": "75", "Lund": "22",
+}
+
+
+def _year_between(lo: int, hi: int, rnd: random.Random) -> int:
+    """A year in [lo, hi], or `hi` when the range is empty.
+
+    Degenerate ranges happen: a patient born last year has no plausible
+    "moved in at 18". Clamping rather than raising keeps the generator usable
+    for the whole birth-year range it draws from, and returning `hi` means the
+    date is still in the past, which is the property that matters.
+    """
+    return rnd.randint(lo, hi) if lo <= hi else hi
+
+
+def _past_date_after_birth(birth_date: str, *, min_age: int,
+                           rnd: random.Random) -> str:
+    """A date after the patient turned `min_age` and before today.
+
+    A validity start BEFORE the patient was born is not a bad date, it is an
+    impossible fact -- the same reasoning #900 applies to `ended_at` before
+    `assigned_at`. So the lower bound is derived from the birth year rather
+    than drawn freely.
+    """
+    try:
+        birth_year = int(str(birth_date)[:4])
+    except (TypeError, ValueError):
+        birth_year = date.today().year - 40
+    this_year = date.today().year
+    y = _year_between(birth_year + min_age, this_year - 1, rnd)
+    return f"{y:04d}-{rnd.randint(1, 12):02d}-{rnd.randint(1, 28):02d}"
+
+
+def _contact_since(birth_date: str, rnd: random.Random) -> str:
+    """When a next-of-kin relationship began. At least adulthood-ish, so a
+    contact is not recorded as having been one since infancy."""
+    return _past_date_after_birth(birth_date, min_age=16, rnd=rnd)
+
+
+def patient_address(city: str, *, moved_in: str | None = None,
+                    rnd: random.Random | None = None) -> list[dict]:
+    """A FHIR R5 `Address` with the elements a registry actually needs (#888).
+
+    Before this, the generator wrote `use`, `city` and `country` and nothing
+    else — so a service meant to hold "all state information about a patient"
+    could not say what street they live on, and **had no validity period at
+    all**.
+
+    `period` is the element that matters most here, and not for completeness:
+    it is the begin/end the state requirement asks for, and FHIR already has
+    it. Until this existed, every demographic fact in the state projection
+    (#895) carried `valid_from = NULL`, meaning "we do not know when this
+    became true" — honest, and useless for answering "where did this patient
+    live in March". This is what gives that axis real data.
+
+    `city` is PASSED IN rather than drawn here, because the city determines the
+    Coverage insurer's region (#792): drawing it independently would put a
+    Stockholm resident on Region Skåne's books. The postcode's leading block
+    follows the city for the same reason — a postcode contradicting the city is
+    the sort of incoherence that makes a cohort useless for testing a real
+    integration.
+    """
+    rnd = rnd or random
+    prefix = _POSTCODE_PREFIX.get(city, "10")
+    addr = {
+        "use": "home",
+        "type": "both",
+        "line": [f"{rnd.choice(_STREETS)} {rnd.randint(1, 120)}"],
+        "postalCode": f"{prefix}{rnd.randint(100, 999)}",
+        "city": city,
+        "country": COUNTRY_OF_ORIGIN,
+    }
+    if moved_in:
+        # Open-ended: they still live there. A closed period would say they
+        # have moved out and we do not know where to, which is a different
+        # and much stronger claim.
+        addr["period"] = {"start": moved_in}
+    return addr
+
+
 def patient_contact(related: list[dict]) -> list[dict]:
     """Mirror RelatedPerson entries into `Patient.contact`.
 
@@ -256,6 +354,13 @@ def patient_contact(related: list[dict]) -> list[dict]:
             entry["name"] = rp["name"][0]
         if rp.get("telecom"):
             entry["telecom"] = rp["telecom"]
+        # #888: the period is mirrored too. The whole reason both copies are
+        # generated from ONE list is that they cannot disagree, and a validity
+        # period present on the RelatedPerson but absent from the inline copy
+        # would be exactly that disagreement -- with the inline copy being the
+        # one most consumers read.
+        if rp.get("period"):
+            entry["period"] = rp["period"]
         out.append(entry)
     return out
 
