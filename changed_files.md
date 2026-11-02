@@ -1172,3 +1172,83 @@ suspect the data or the rebuild.
 it is behind on `add_reform_patient_flags.sql` (#404). Nothing was written to
 it; the probe's transaction aborted. Worth running before anyone tests the
 opt-out projection against dev.
+
+---
+
+## 2026-11-02 — #900 (EPS C4c): the write path that can END an assignment
+
+- `gateway/app/services/patient_assignment.py` (new)
+- `gateway/app/api/patient_routes.py` (two routes)
+- `gateway/tests/test_eps_assignment_write_900.py` (new, 21 tests)
+
+**This closes a chain that was otherwise inert.** #891 gave the schema an
+`ended_at` and the partial unique index; #899(b) made spärr, consent and care
+access honour it; #901 made the state projection follow it. Nothing could SET
+it, so all three guarded a state that never occurred.
+
+### Two operations, not one
+
+    POST /api/v1/patients/<guid>/assignments                     open one
+    POST /api/v1/patients/<guid>/assignments/<clinic>/end        close one
+
+`assign` refuses an OPEN duplicate and ALLOWS a closed one, because "left and
+came back" is exactly the case #891's partial index exists for. The refusal is
+a **named error with its own code**, not an `IntegrityError`: the database
+would refuse it too, but as a 500 carrying a constraint name, which tells a
+caller nothing about what to do. Each refusal gets a distinct code —
+`already_assigned` and `not_assigned` need different actions and a shared code
+would make them indistinguishable in a client log.
+
+### The first writer of validity time, and two refusals that follow
+
+`ended_at` defaults to now and **accepts a past date**, because learning of a
+move after the fact is the ordinary case. It is not `utcnow()` only — that is
+the single-axis mistake #895 exists to prevent, and this is where the platform
+first had to have an opinion.
+
+Two bounds, both refusals rather than silent coercions:
+
+  - **`ended_at` before `assigned_at`** — an interval that ends before it
+    begins is not a bad date, it is an impossible fact.
+  - **A FUTURE `ended_at`** — a planned future end is an EXPIRY, and #891's
+    model note is explicit that `ended_at` is not `expires_at`: an expiry in
+    the future means "still valid" while a non-NULL `ended_at` always means
+    "over". Accepting a future date would make that distinction false for
+    every consumer reading it. This refusal was not in the ticket; it follows
+    from #891's own reasoning.
+
+### Who may change it is NARROWER than who may read the patient
+
+Admin, or staff assigned to **the clinic being changed**. Deliberately not
+"may see the patient": ending an assignment removes access for everyone at that
+clinic, so being able to read a patient is not reason enough to detach them
+from a clinic you have nothing to do with.
+
+### The tz comparison was normalised on purpose
+
+SQLite stores no timezone, so a stored value reads back naive while
+`datetime.now(timezone.utc)` is aware, and comparing them raises. `_naive_ok`
+normalises so the RULE is identical on both backends rather than accidentally
+skipped on one — the #895 lesson, where a tz mismatch silently corrupted a
+comparison instead of failing.
+
+### Audit says the CONSEQUENCE, not just the fact
+
+The end row carries `effect: "staff at this clinic lose spärr, consent and
+care access for this patient"` and a `backdated` flag. Someone reading the log
+cares that access was removed, not only that a timestamp was written.
+
+**888 passed** (867 before). Controls, each with an import check first:
+
+| breakage | red |
+|---|---|
+| `end()` DELETES instead of setting `ended_at` | 6 |
+| accept a FUTURE `ended_at` | 2 |
+| let the DB raise instead of a named refusal | 2 |
+| anyone may change any clinic | 1 |
+
+`TestItMakes899Live` is the one that matters: it asserts
+`consents_routes._can_act_on_patient` goes True -> False across an `end()`, the
+patient leaves the clinic roster, and the state projection's
+`clinic_assignment` fact closes. **That is the first time #899(b)'s narrowing
+has had any effect.**

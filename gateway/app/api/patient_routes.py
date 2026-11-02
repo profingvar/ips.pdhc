@@ -308,6 +308,106 @@ def search_patients():
     return jsonify({"patient_guids": guids, "count": len(guids)})
 
 
+def _assignment_error(e):
+    """Map an assignment refusal to a status and a code.
+
+    Each refusal gets its OWN code, because "409 already assigned" and
+    "409 no open assignment" need different actions from the caller and a
+    shared code would make them indistinguishable in a client log.
+    """
+    from app.services import patient_assignment as pa
+    if isinstance(e, pa.NotPermitted):
+        return {"error": str(e), "code": "not_permitted"}, 403
+    if isinstance(e, pa.AlreadyAssigned):
+        return {"error": str(e), "code": "already_assigned"}, 409
+    if isinstance(e, pa.NotAssigned):
+        return {"error": str(e), "code": "not_assigned"}, 404
+    if isinstance(e, pa.ImpossibleInterval):
+        return {"error": str(e), "code": "impossible_interval"}, 400
+    raise e
+
+
+def _when(name, data):
+    raw = (data.get(name) or "").strip()
+    if not raw:
+        return None, None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")), None
+    except ValueError:
+        return None, f"{name} is not a date: {raw!r}"
+
+
+@bp.route("/<guid>/assignments", methods=["POST"])
+@require_auth
+def assign_patient_to_clinic(guid):
+    """Open an assignment of this patient to a clinic (#900).
+
+    Body: `{"clinic_guid": "...", "assigned_at": "...optional..."}`
+
+    409 `already_assigned` when an OPEN assignment to that clinic exists. The
+    partial unique index would refuse it too, but as a 500 carrying a
+    constraint name — which tells a caller nothing about what to do.
+    """
+    from app.services import patient_assignment as pa
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed patient guid"}), 400
+    data = request.get_json(silent=True) or {}
+    clinic_guid = (data.get("clinic_guid") or "").strip()
+    if not is_uuid(clinic_guid):
+        return jsonify({"error": "clinic_guid is required and must be a guid"}), 400
+    assigned_at, err = _when("assigned_at", data)
+    if err:
+        return jsonify({"error": err}), 400
+    try:
+        row = pa.assign(guid, clinic_guid, assigned_at=assigned_at)
+    except Exception as e:                       # noqa: BLE001 - mapped below
+        body, status = _assignment_error(e)
+        return jsonify(body), status
+    db.session.commit()
+    return jsonify({"patient_guid": guid, "clinic_guid": clinic_guid,
+                    "assigned_at": row.assigned_at.isoformat()
+                    if row.assigned_at else None,
+                    "ended_at": None}), 201
+
+
+@bp.route("/<guid>/assignments/<clinic_guid>/end", methods=["POST"])
+@require_auth
+def end_patient_assignment(guid, clinic_guid):
+    """END this patient's assignment to a clinic (#900).
+
+    Body: `{"ended_at": "...optional..."}` — a VALIDITY end, defaulting to now
+    and accepting a PAST date, because learning of a move after the fact is the
+    ordinary case. A FUTURE date is refused: that would be an expiry, and
+    `ended_at` is not `expires_at` (#891).
+
+    **This is the operation that makes #899(b) live.** Until now nothing could
+    set `ended_at`, so the three authorisation paths that honour it guarded a
+    state that never occurred. After this, staff at the ended clinic lose
+    spärr, consent and care access for this patient — which is why the audit
+    row says so.
+    """
+    from app.services import patient_assignment as pa
+    if not is_uuid(guid) or not is_uuid(clinic_guid):
+        return jsonify({"error": "malformed guid"}), 400
+    data = request.get_json(silent=True) or {}
+    ended_at, err = _when("ended_at", data)
+    if err:
+        return jsonify({"error": err}), 400
+    try:
+        row = pa.end(guid, clinic_guid, ended_at=ended_at)
+    except Exception as e:                       # noqa: BLE001 - mapped below
+        body, status = _assignment_error(e)
+        return jsonify(body), status
+    db.session.commit()
+    return jsonify({
+        "patient_guid": guid, "clinic_guid": clinic_guid,
+        "ended_at": row.ended_at.isoformat() if row.ended_at else None,
+        "backdated": ended_at is not None,
+        "effect": ("staff at this clinic no longer have spärr, consent or "
+                   "care access for this patient (#899b)"),
+    })
+
+
 @bp.route("/<guid>/state", methods=["GET"])
 @require_auth
 def patient_state_read(guid):

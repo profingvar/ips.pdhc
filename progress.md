@@ -1443,3 +1443,21 @@ projectors now coerce, and the test asserts the property not the fields.
 
 **867 passed** (851 before). Controls: 3 / 1 / 4 / 6 / 1 red.
 Dev Postgres is behind on `add_reform_patient_flags.sql` — noticed, not fixed.
+
+### #900 (EPS C4c) — assignments can now be ended, 2026-11-02
+
+`POST /patients/<g>/assignments` and `.../assignments/<clinic>/end`. Closes the
+chain: #891 (schema), #899b (auth honours it), #901 (projection follows), and
+now something can SET it.
+
+`assign` refuses an open duplicate by name rather than letting the partial
+unique index raise a 500. `end` accepts a backdated date — the ordinary case —
+and refuses two things: an end before the start (an impossible fact) and a
+FUTURE end (that would be an expiry, and #891 is explicit the two differ).
+
+Who may change it is narrower than who may read: admin, or staff at the clinic
+being changed.
+
+**888 passed** (867 before). Controls: 6 / 2 / 2 / 1 red. `TestItMakes899Live`
+asserts consent access goes True -> False across an end — the first time that
+narrowing has had any effect.
