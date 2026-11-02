@@ -1492,3 +1492,17 @@ address. The same judgement #792 applied to a contact's surname.
 - gateway/app/__init__.py — implant_bp registered.
 - gateway/tests/test_api_key_scopes_903.py (new) — 18 checks.
 - gateway/tests/test_implant_transport_903.py (new) — 32 checks.
+
+## 2026-11-02 — #893 (EPS D2): decision not to rename; the pins guarded
+- gateway/.env.example — COMPOSE_PROJECT_NAME=ips documented, with why it is a
+  SECOND pin (the variable overrides the compose file's `name:`) and why it
+  must not diverge.
+- gateway/tests/test_compose_project_pin_893.py (new) — 8 checks: the compose
+  pin, the .env.example pin, that they AGREE, that the pin matches the live
+  container names, and that `pgdata` stays `name: ips_pgdata, external: true`.
+- plans/eps_state_reform.md §1 — the decision recorded, #893's wrong hazard
+  corrected, and the rename cost recounted (832 occurrences / 19 dirs, not
+  ~411 / 15).
+- NOT changed: no rename, and `eps` deliberately NOT added to the
+  CapabilityStatement — there is no EPS operation to declare, so declaring it
+  would be #804 in the one document whose job is to say what the server does.

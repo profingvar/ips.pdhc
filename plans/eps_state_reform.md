@@ -74,6 +74,79 @@ EU exchange in scope.
 The capability is EPS. The service is a patient registry. Those are different
 nouns, and the current name is closer to the second than `eps.pdhc` would be.
 
+### DECISION, 2026-11-02 (#893): the service is NOT renamed
+
+Taken, recorded here so it is a decision rather than a ticket nobody closed.
+What was delivered instead, and what was deliberately not:
+
+**Delivered.** The compose project name is pinned and guarded, and the external
+volume is guarded — `tests/test_compose_project_pin_893.py`. Both were on
+#893's own list of things to do *first* if the rename ever happens, and both
+are worth having whether it happens or not.
+
+**#893 was WRONG about one of its three hazards.** It reported
+`COMPOSE_PROJECT_NAME` as "not pinned anywhere in this repo — verified, no
+occurrence in any .yml, .sh, .env* or .md". The verification is accurate; the
+conclusion is not. The project name **is** pinned, by `name: ips` on the first
+line of `gateway/docker-compose.yml`, which is Compose v2's own project key.
+That is why the live containers are `ips-app-1` / `ips-db-1` rather than
+`ipspdhc-*` — and the hyphens are themselves the evidence that production runs
+Compose v2, since v1 named containers `project_service_1` with underscores.
+
+The grep looked for the VARIABLE and missed the KEY that does the same job.
+Same lesson as #804, and as the `KNOWN_SERVICES` table that was wrong twice:
+searching for an identifier is not checking for a capability.
+
+**The hazard, correctly stated.** Measured with a throwaway compose file:
+`COMPOSE_PROJECT_NAME` in the environment **overrides** `name:` in the file.
+So the risk was never an unpinned project; it is that the variable, if anyone
+ever sets it, silently wins — and a blank nobody filled is a blank somebody can
+fill wrongly. That is exactly how dashboard's project became `current` (#113).
+The value is therefore written in `.env.example` too, and a test asserts the
+two copies AGREE, because two pins that can disagree are worse than one.
+
+**The recommended alternative is BLOCKED, and that needs saying.** #893's
+recommendation is "add EPS as a declared capability instead" — an EPS
+Composition profile, an EPS Bundle endpoint (EPS B4), and `eps` in the
+CapabilityStatement. Measured today, the EPS surface is **two inspection
+routes**, `GET /api/v1/patients/<guid>/euips-header` and `.../euips-sections`.
+The CapabilityStatement declares the IPS `$summary` operation
+(`fhir_routes.py`, Patient's `operation[]`) and there is **no EPS equivalent**.
+
+So `eps` was deliberately NOT added to the CapabilityStatement. Declaring it
+now would advertise a capability that is not there, which is the #804 defect in
+the one document whose entire job is to tell a consumer what this server can
+do. The declaration is a follow-up on **EPS B4**, not on this ticket, and it
+should land in the same change as the endpoint it describes.
+
+Net position: *do neither* for now — do not rename, and do not declare. That is
+a weaker outcome than #893 implies and is better stated than implied.
+
+### What a rename would actually cost, RECOUNTED 2026-11-02
+
+The figures below the next heading are the original count. Recounted today by
+walking each top-level directory with `grep -rIo`, excluding `.git`, venvs,
+`node_modules` and `backups/`, and counting OCCURRENCES:
+
+| | original (#893) | recounted |
+|---|---|---|
+| occurrences | ~411 | **832** |
+| directories | 15 | **19** |
+| ips.pdhc itself | 91 | **193** |
+
+Roughly double. Part of that is this repo's own growth through the EPS work,
+but four directories were missing from the original list entirely — `results`,
+`css_instrux`, `tools` and `pdhc` (the website, 69 occurrences, which is served
+from a plain directory that nothing syncs; see platform CLAUDE.md §7).
+
+Top directories now: ips.pdhc 193, analyse 77, request 75, pdhc 69,
+dashboard 68, contract 63, results 61, cdr 46, cdr_6 36, icd11 24,
+css_instrux 22, tools 20, sim 20, gateway 18, rosetta 17, sso 11, alert 7.
+
+The direction of the error matters more than the figure: a cost estimate that
+drifts upward while the work is deferred is an estimate that will keep
+justifying the deferral, and that is the honest reading here.
+
 ### What a rename would actually cost, measured
 
 Counted with `find | xargs grep`, not a tree-wide `grep -r`, because `grep` on

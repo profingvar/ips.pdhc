@@ -1720,3 +1720,68 @@ must never change: doing so would make every pushed assertion look new.
 3. alert POSTs batches of up to 500 assertions to
    `/api/v1/implants/assertions` and may retry freely; a re-push is counted as
    a duplicate and creates nothing.
+
+## #893 — EPS D2: decided NOT to rename (2026-11-02)
+
+**1096 passing**, from 1088. Three controls, each failing on its own assertion.
+
+### The decision
+
+The service is not renamed. Recorded in `plans/eps_state_reform.md` §1 so it
+is a decision rather than a ticket nobody closed.
+
+### #893 was wrong about one of its three hazards
+
+It reported `COMPOSE_PROJECT_NAME` as "not pinned anywhere in this repo —
+verified, no occurrence in any .yml, .sh, .env* or .md". The verification is
+accurate and the conclusion is not: the project name **is** pinned, by
+`name: ips` on line 1 of `gateway/docker-compose.yml`, Compose v2's own project
+key. That is why the live containers are `ips-app-1` / `ips-db-1` and not
+`ipspdhc-*` — and the hyphens are themselves evidence that production runs
+Compose v2, since v1 named containers with underscores.
+
+The grep looked for the VARIABLE and missed the KEY that does the same job.
+
+### The hazard, correctly stated — and it is real
+
+Measured with a throwaway compose file: `COMPOSE_PROJECT_NAME` in the
+environment **overrides** `name:` in the file. So the risk was never an
+unpinned project; it is that the variable, if ever set, silently wins, and a
+blank nobody filled is a blank somebody can fill wrongly — which is exactly how
+dashboard's project became `current` (#113). The value is now in
+`.env.example` as well and a test asserts the two **agree**, because two pins
+that can disagree are worse than one.
+
+The external volume is guarded too. `pgdata` is `name: ips_pgdata,
+external: true`, which #893 calls "the good luck"; a test makes it something
+other than luck, since dropping `external: true` hands the production data to
+compose.
+
+### The recommended alternative is blocked, and that needed saying
+
+#893 recommends "add EPS as a declared capability instead". Measured, the EPS
+surface is two inspection routes (`euips-header`, `euips-sections`); the
+CapabilityStatement declares the IPS `$summary` operation and there is **no EPS
+equivalent**. So `eps` was deliberately NOT added: declaring it would advertise
+a capability that is not there, which is #804 in the one document whose whole
+job is telling a consumer what this server can do. That declaration belongs in
+the same change as **EPS B4**, the endpoint it would describe.
+
+Net position: do neither for now. Weaker than #893 implies, and better stated
+than implied.
+
+### The cost recounted, and it doubled
+
+| | #893 | recounted |
+|---|---|---|
+| occurrences | ~411 | **832** |
+| directories | 15 | **19** |
+| ips.pdhc itself | 91 | **193** |
+
+Four directories were missing from the original list entirely: `results`,
+`css_instrux`, `tools` and `pdhc` (the website, 69 occurrences). Part of the
+rest is this repo's own growth through the EPS work.
+
+The direction matters more than the figure: a cost estimate that drifts upward
+while the work is deferred is an estimate that will keep justifying the
+deferral. Worth knowing that is what is happening.
