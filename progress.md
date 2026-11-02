@@ -1392,3 +1392,21 @@ names a path containing `ips` — the absence claim that makes #893's rename fre
 for cross-service calls.
 
 **17 ok, 0 failed**, plus two live gate tests that exited 1 and left no residue.
+
+### #895 (EPS C1) — the bitemporal state projection, 2026-11-02
+
+`patient_state_facts`, derived from `fhir_resources` Patient versions and
+`patient_clinic_assignments`. Both time axes; the record axis comes free from
+the existing append-only write path. `valid_from` stays NULL where no FHIR
+`period` exists, because inventing it from `recorded_at` is the single-axis
+mistake this table exists to prevent.
+
+The March/July case is tested and taught me something: FHIR versioning replaces
+the whole resource, so "as known in August, where did they live in January?"
+correctly returns nothing. I had asserted the opposite.
+
+Verified against real Postgres as well as SQLite — the SQLite tz mismatch
+corrupts the comparison, not just the assertion.
+
+**829 passed** (813 before). Controls: 2 / 2 / 2 red.
+**#901** carries the unwired half: no trigger, four sources missing, no route.

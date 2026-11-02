@@ -191,6 +191,34 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.services import euips_report
         _click.echo(euips_report.format_report(euips_report.report()))
 
+    @app.cli.command("rebuild-patient-state")
+    @click.option("--patient", "patient_guid", default=None,
+                  help="One patient guid. Omit to rebuild every patient.")
+    def _rebuild_patient_state_cli(patient_guid):  # noqa: D401
+        """Re-derive the bitemporal patient-state projection (#895).
+
+        SAFE TO RUN AT ANY TIME. `patient_state_facts` is a projection: every
+        row comes from `fhir_resources` or `patient_clinic_assignments`, and
+        this command deletes and re-derives rather than patching. If the
+        projection is ever wrong, the answer is to run this -- nothing
+        originates there, so nothing can be lost by rebuilding it.
+
+        Nothing calls it automatically yet, which means the projection is
+        EMPTY until it is run. That is the open half of #895 and is tracked
+        separately: a projection nothing rebuilds is the same shape as a
+        column nothing populates (#900).
+        """
+        import click as _click
+        from app.models.patient_index import PatientIndex
+        from app.services import patient_state
+        guids = ([patient_guid] if patient_guid else
+                 [str(g) for (g,) in db.session.query(PatientIndex.guid).all()])
+        total = 0
+        for g in guids:
+            total += patient_state.rebuild_for_patient(g)
+        db.session.commit()
+        _click.echo(f"rebuilt {len(guids)} patient(s), {total} fact rows")
+
     @app.cli.command("euips-report-batch")
     @click.argument("batch_guid")
     def _euips_report_batch_cli(batch_guid):  # noqa: D401

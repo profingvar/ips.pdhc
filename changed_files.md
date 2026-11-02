@@ -916,3 +916,81 @@ given a client) which both exited 1 and were then removed with no residue.
 
 **17 ok, 0 failed.** The real tree reads `unchanged against the baseline`,
 exit 0.
+
+---
+
+## 2026-11-02 — #895 (EPS C1): the bitemporal patient-state projection
+
+- `gateway/app/models/patient_state.py` (new)
+- `gateway/app/services/patient_state.py` (new)
+- `gateway/app/models/__init__.py` (registered)
+- `gateway/app/__init__.py` (`flask rebuild-patient-state`)
+- `gateway/migrations/add_patient_state_facts.sql` (new)
+- `gateway/tests/test_eps_patient_state_895.py` (new, 16 tests)
+
+Built to #894 (EPS A2) option c: the write path stays `fhir_resources`,
+append-only and already there, and this is a DERIVED projection for reading.
+`rebuild_for_patient()` deletes and re-derives, which is what makes it a
+projection rather than a second source of truth — if it is wrong, it is
+rebuilt, and nothing is lost because nothing originates there.
+
+**Two axes, and the pair is what justifies the table:**
+
+    validity   valid_from / valid_to          when was this TRUE of the patient
+    record     recorded_at / recorded_until   when did WE know it
+
+The record axis comes free from `fhir_resources`: `update_resource()` already
+writes a new version rather than mutating, so version N's `recorded_until` is
+version N+1's `created_at`.
+
+**`valid_from` is NULL for every demographic fact today, and that is the
+point.** Measured: the generator writes no `period` on any Patient element.
+NULL means *we do not know when this became true* — a different claim from *it
+became true when we recorded it*. Filling it from `recorded_at` is the
+single-axis mistake, and a control test pins it.
+
+`patient_clinic_assignments` is the ONE source with real validity data after
+#891, so it is what demonstrates both axes properly. Its two axes COINCIDE
+because the source carries one timestamp — stated in the code and asserted in a
+test, so a reader comparing the columns does not conclude the model conflates
+them.
+
+**A semantic finding that surprised me, and the test now records it.** FHIR
+versioning replaces the WHOLE RESOURCE, not one fact. So *"as known in August,
+where did the patient live in January?"* correctly returns NOTHING: the current
+record only asserts Nystad from March, and the January belief stopped being
+current in July. The earlier belief is still reachable with
+`as_known_on=April`. I had asserted the opposite; the code was right and the
+test was rewritten to record why.
+
+**Proven on the real backend, not only on SQLite.** The suite runs SQLite,
+which stores no timezone — and mixing aware and naive values there does not
+merely break an assertion, it corrupts the SQL comparison: `as_at=JANUARY`
+matched a fact whose validity starts in MARCH. The test clock is therefore
+naive with the reason written in, and all four bitemporal queries were
+additionally run against a throwaway `postgres:16-alpine` with `TIMESTAMPTZ`:
+
+    as_at=APR known=APR -> Gamlestad     as_at=JAN known=AUG -> (none)
+    as_at=APR known=AUG -> Nystad        as_at=JAN known=APR -> Gamlestad
+
+Same answers on both. A time comparison verified only on SQLite is not
+verified.
+
+The migration was also proven against real Postgres: table plus three indexes,
+re-run a clean no-op. It carries NO unique constraint on
+`(patient_guid, fact_type)` deliberately — the cardinality is 1:N per patient
+and 1:1 only per `(patient, fact_type, validity period)`, which is the
+operator's correction to the original 1:1 framing.
+
+**829 passed** (813 before). Controls, each with an import check first:
+
+| breakage | red |
+|---|---|
+| drop the RECORD axis (single-axis store) | 2, the March/July pair |
+| fill validity from the record time | 2 |
+| make rebuild incremental instead of total | 2 |
+
+**#901 carries what is unwired:** nothing rebuilds the projection
+automatically, four of the five existing state bearers are not projected, and
+no route exposes the read. Until (a) lands, `patient_state_facts` is empty
+unless `flask rebuild-patient-state` is run by hand.

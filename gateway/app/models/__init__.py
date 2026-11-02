@@ -6,6 +6,7 @@ from app.models.clinic import Clinic, UserClinicAssignment
 from app.models.api_key import ApiKey
 from app.models.fhir_resource import FhirResource
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
+from app.models.patient_state import PatientStateFact, FACT_TYPES
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
 from app.models.push_destination import PushDestination
@@ -25,6 +26,8 @@ __all__ = [
     "FhirResource",
     "PatientIndex",
     "PatientClinicAssignment",
+    "PatientStateFact",
+    "FACT_TYPES",
     "IpsCard",
     "IpsSnapshot",
     "PushDestination",
