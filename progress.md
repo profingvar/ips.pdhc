@@ -1914,3 +1914,61 @@ be right. Verified by control: marking a third section EPS-required fails
   "no known devices" satisfies EPS, which is the whole reason the absent codes
   exist — asserted, because reading 1..1 as "must have content" is the obvious
   mistake.
+
+## #907 — three R5 element names, fixed (2026-11-02)
+
+**1181 passing**, from 1164. Four controls, each failing on its own assertion.
+
+### The decision that had to come first
+
+Removing `Device.patient` removes the only patient reference inside the Device
+JSON. In R5 that is **not a loss to work around** — it is the standard's own
+choice: the association moved to `DeviceUsage.patient` and
+`DeviceAssociation`, so a bare R5 Device genuinely cannot say whose it is.
+
+That reframes the problem. The linkage is the row's
+`FhirResource.patient_guid`, and measuring the write paths showed every one of
+them already passes it explicitly — `mock_generator`, `admin.py:526`, and the
+implant transport. Only the generic FHIR create route derived it from the body,
+and it now also accepts `?patient=`.
+
+`?patient=` is checked **only when the body supplied nothing**. A query
+parameter that could overrule the document would let a caller file one
+patient's resource under another, and that is asserted rather than assumed.
+
+### The negated case, decided in writing
+
+#886's negated implant path emits a Device with **no** DeviceUsage, because
+nothing is in use. So that Device has no reference anywhere in its JSON, by
+design, and its only link is the row — which is why the transport passes
+`patient_guid` explicitly. #907 said this was the part that must not be decided
+by accident; it is now decided, in a comment and in a test.
+
+### The test the ticket asked for earns its keep
+
+#907 predicted that "a test that the emitted Device carries no element R5 does
+not define would have caught all three, and is worth more than three
+per-element assertions". Verified by control:
+
+| control | `no_built_Device_carries_an_element_R5_does_not_define` |
+|---|---|
+| reintroduce `Device.patient` | **fails** |
+| reintroduce `DeviceUsage.subject` | its DeviceUsage sibling fails |
+| absent coding back in `Device.code` | **fails** |
+
+One test catches two of the three, its sibling the third. It also guards the
+guard: a test asserts the element LISTS do not contain the bad names, so
+"fixing" a failure by widening the list cannot pass.
+
+### Residual, filed as #908
+
+Rows written before today still carry the old shapes, and #896's export
+deep-copies `resource_json`. Nothing in ips breaks on it — the matcher keys on
+resource type and `_is_patient_asserted` reads both names by design — but an
+external validator would see it.
+
+**The local dev DB holds ZERO Device rows**, so the shape could not be measured
+there, and production was not probed. #908 carries the counting query, the three
+options and the recommendation: leave it while the rows are synthetic, migrate
+before #905 wires real implant data. It also records that the `subject` ->
+`patient` case is a RENAME, not a deletion, and must not drop the reference.

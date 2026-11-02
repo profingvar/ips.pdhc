@@ -225,15 +225,25 @@ def _no_known(section: str, resource_type: str, ref: str,
     cardinality with a real date is the choice that cannot be wrong in a way a
     validator will not tell us about.
     """
+    # #907: which element carries the coding is per resource type, and R5
+    # Device is the odd one out — it has `type` (0..*) and NO `code`.
+    code_field = {"Immunization": "vaccineCode", "Device": "type"}.get(
+        resource_type, "code")
     body = {
         "resourceType": resource_type,
         "id": str(uuid.uuid4()),
         "text": _narrative(text),
-        subject_field: {"reference": ref},
         "status": "completed" if resource_type == "Immunization" else "unknown",
-        ("vaccineCode" if resource_type == "Immunization" else "code"):
-            euips.absent_coding(section),
+        code_field: euips.absent_coding(section),
     }
+    # #907: `subject_field` is None for a resource type that cannot carry a
+    # patient reference. R5 Device is exactly that — the association lives on
+    # DeviceUsage.patient or DeviceAssociation, so a bare Device genuinely
+    # cannot say whose it is. Writing `patient` anyway produced an element R5
+    # does not define. The row-level `FhirResource.patient_guid` is the
+    # linkage, and every write path in this service passes it explicitly.
+    if subject_field:
+        body[subject_field] = {"reference": ref}
     if resource_type == "Immunization":
         body["occurrenceDateTime"] = datetime.now(timezone.utc).isoformat()
     return body
@@ -271,12 +281,21 @@ def _devices(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
     emitted here until #898, while the service declared fhirVersion 5.0.0.
     Old rows are still read, via `euips_sections.LEGACY_RESOURCE_TYPES`.
 
-    THREE ELEMENT NAMES HERE ARE WRONG AGAINST R5. #885 checked all three
-    against the published FHIR R5 specification and **every one of the three
-    guesses below was correct** — which is what marking them unverified was
-    for. Tracked for repair as **#907**; not repaired here, because removing
-    `Device.patient` removes the only patient linkage inside the Device JSON
-    and that needs a decision rather than an edit.
+    THREE ELEMENT NAMES HERE WERE WRONG AGAINST R5 AND ARE NOW FIXED (#907).
+    #885 checked all three against the published FHIR R5 specification and
+    every one of the three guesses below was correct — which is what marking
+    them unverified was for.
+
+    The decision #907 had to take first: removing `Device.patient` removes the
+    only patient reference inside the Device JSON, and in R5 that is not a
+    loss to work around but the standard's own choice — a bare Device cannot
+    say whose it is, because the association moved to `DeviceUsage.patient`
+    and `DeviceAssociation`. So the linkage is the row's
+    `FhirResource.patient_guid`, which every write path in this service
+    already passes explicitly (`mock_generator`, `admin.py:526`, the implant
+    transport). Only the generic FHIR create route derived it from the body,
+    and it now accepts `?patient=` for resource types that cannot carry a
+    reference.
 
       1. `Device.patient` — CONFIRMED an R4-ism. R5's Device element list has
          no `patient` at all; the association lives on `DeviceUsage.patient`
@@ -310,7 +329,9 @@ def _devices(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
             "resourceType": "Device",
             "id": device_id,
             "text": _narrative(f"{display}, in use."),
-            "patient": {"reference": ref},
+            # #907: no `patient` here. R5's Device element list has none; the
+            # association is on the DeviceUsage below. Row-level linkage is
+            # `FhirResource.patient_guid`, passed explicitly by every caller.
             "status": "active",
             "type": _cc("http://snomed.info/sct", code, display),
         },
@@ -318,7 +339,11 @@ def _devices(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
             "resourceType": "DeviceUsage",
             "id": str(uuid.uuid4()),
             "text": _narrative(f"{display} in use since {when[:10]}."),
-            "subject": {"reference": ref},
+            # #907: `patient`, not `subject`. R5 lists
+            # DeviceUseStatement.subject as Deleted and DeviceUsage.patient
+            # as Added Mandatory Element, 1..1 — so the right name is also
+            # the required one.
+            "patient": {"reference": ref},
             "status": "active",
             "device": {"reference": f"Device/{device_id}"},
             "timingDateTime": when,
@@ -399,7 +424,8 @@ _BUILDERS = {
                       "No known immunisations."),
     "procedures": (_procedures, "Procedure", "subject",
                    "No known procedures."),
-    "devices": (_devices, "Device", "patient", "No known devices."),
+    # #907: None, not "patient" — R5 Device has no patient element.
+    "devices": (_devices, "Device", None, "No known devices."),
     "diagnostic_results": (_diagnostic_results, None, None, None),
 }
 

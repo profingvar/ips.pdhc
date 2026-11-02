@@ -174,6 +174,25 @@ def create_clinical_resource(resource_type):
             if pi:
                 patient_guid = pi.guid
 
+    # #907: some R5 resource types cannot carry a patient reference at all --
+    # Device is the one here, its association having moved to
+    # DeviceUsage.patient / DeviceAssociation. Without this, a conformant bare
+    # Device would store with patient_guid NULL and be invisible to every
+    # patient-scoped query, including its own section. So the patient may be
+    # named in the QUERY instead of the body. Checked only when the body did
+    # not supply one, so it can never override a reference the body carries.
+    if not patient_guid:
+        q = (request.args.get("patient") or "").strip()
+        if q:
+            q = q.split("/", 1)[1] if q.startswith("Patient/") else q
+            pi = db.session.query(PatientIndex).filter_by(
+                resource_id=q).first()
+            if pi is None:
+                return _operation_outcome(
+                    "error", "not-found",
+                    f"patient {q!r} not found", 404)
+            patient_guid = pi.guid
+
     fhir_res = create_resource(resource_type, data, patient_guid=patient_guid)
     log_event("fhir_create", resource_type=resource_type, resource_guid=fhir_res.guid)
     db.session.commit()

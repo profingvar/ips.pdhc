@@ -148,7 +148,13 @@ def to_fhir(assertion: dict, *, patient_ref: str,
                      "No known implants.</div>"},
             "status": "unknown",
             "type": euips.absent_coding("devices"),
-            "patient": {"reference": patient_ref},
+            # #907: no `patient`. R5's Device has no such element — the
+            # association lives on DeviceUsage.patient, and this NEGATED path
+            # deliberately emits no DeviceUsage, because nothing is in use.
+            # So this Device's only link is the row's
+            # `FhirResource.patient_guid`, which the transport passes
+            # explicitly. That asymmetry is the one #907 said must not be
+            # decided by accident, so it is decided here and in writing.
             "meta": meta,
         }
         if device_id:
@@ -159,7 +165,8 @@ def to_fhir(assertion: dict, *, patient_ref: str,
     device = {
         "resourceType": "Device",
         "status": "active",
-        "patient": {"reference": patient_ref},
+        # #907: no `patient` — see the negated branch above. The paired
+        # DeviceUsage below carries it, which is R5's own arrangement.
         "type": {
             "coding": [{"system": assertion["code_system"],
                         "code": assertion["code"]}],

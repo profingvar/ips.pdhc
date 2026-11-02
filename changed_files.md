@@ -1550,3 +1550,16 @@ address. The same judgement #792 applied to a contact's surname.
 - 10 existing test call sites now declare IPS; one test was SPLIT, because
   "a missing recommended section does not break conformance" was true of one
   profile and false of the other.
+
+## 2026-11-02 — #907: three R5 element names in the device builders
+- gateway/app/services/euips_recommended.py — Device.patient removed,
+  DeviceUsage.subject -> patient, the absent coding moved from Device.code to
+  Device.type. `_BUILDERS["devices"]` subject_field is now None, and
+  `_no_known` omits the reference when there is no element to hold it.
+- gateway/app/services/alert_implants.py — Device.patient removed on BOTH
+  paths, including the negated one that emits no DeviceUsage.
+- gateway/app/fhir/fhir_routes.py — create accepts `?patient=`, checked ONLY
+  when the body supplied no reference, so it cannot override the document.
+- gateway/tests/test_r5_device_elements_907.py (new) — 17 checks, built around
+  the R5 element lists rather than three per-element assertions.
+- Filed #908: stored rows still carry the old shapes (operator-gated data).
