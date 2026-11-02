@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import csv
 import io
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from flask import g, session
@@ -216,8 +217,18 @@ def to_fhir_bundle(patient_guids: list[str], *, version: str = "R5") -> dict:
                           FhirResource.status == "active")
                   .order_by(FhirResource.resource_type,
                             FhirResource.resource_id).all()):
+            # DEEP COPY, and this is not caution — it is a defect #897 named
+            # in advance and #896 shipped anyway. `r.resource_json` is the ORM
+            # object's own dict: putting it in the bundle by reference means a
+            # caller mutating the bundle mutates the STORED resource, and if
+            # that object is then flushed the mutation is PERSISTED. Measured:
+            # setting a key on the entry appeared on `res.resource_json`.
+            #
+            # It is also the precondition for ever adding an R4 renderer
+            # (#897): a downgrade that edits in place would corrupt the R5
+            # output it was derived from.
             entries.append({"fullUrl": f"{r.resource_type}/{r.resource_id}",
-                            "resource": r.resource_json})
+                            "resource": deepcopy(r.resource_json)})
     return {
         "resourceType": "Bundle",
         "type": "collection",

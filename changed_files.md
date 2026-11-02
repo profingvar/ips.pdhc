@@ -1322,3 +1322,46 @@ named and codes are read from alert's own rows.
 Also checked and found harmless: `provenance="computed"` appears in alert's
 code and would violate its own check constraint — it is in a TEST, asserting
 the constraint refuses it.
+
+---
+
+## 2026-11-02 — #897 (EPS A1b): the version parameter, and a defect it predicted
+
+- `gateway/app/services/patient_export.py` (deep copy)
+- `gateway/tests/test_eps_patient_export_896.py` (one test added)
+
+Three of #897's four asks were already satisfied by #896 and are confirmed
+rather than rebuilt:
+
+| ask | state |
+|---|---|
+| the export renders R5 | done (#896) |
+| the renderer takes the version as a PARAMETER, R4 refused by name | done — `UnsupportedFhirVersion` |
+| advertised as an operation, not a conformance claim | the CapabilityStatement mentions no export and makes no conformance claim; the Bundle carries `not-eps-conformant` in its own `meta.tag` |
+| **render into a NEW dict; never mutate** | **was NOT satisfied — fixed here** |
+
+### The defect #897 named in advance and #896 shipped anyway
+
+`to_fhir_bundle` put `r.resource_json` — the ORM object's own dict — into the
+bundle **by reference**. Measured: setting a key on a bundle entry appeared on
+the stored `resource_json`, and if that object is later flushed the mutation is
+PERSISTED. An export is a read; it must not be able to write.
+
+It is also the precondition for ever adding an R4 renderer: a downgrade editing
+in place would corrupt the R5 output it was derived from, which is the reason
+#897 asked for it before any R4 work existed.
+
+### My first test for it could not fail
+
+I asserted the consequence — mutate the bundle, check the stored row is
+unchanged — and it passed **with and without the fix**. Whether a mutation
+propagates depends on session state: `_patient()` commits, which expires the
+object, so the next query reloads a fresh dict. A control that cannot fail is a
+guard that proves nothing, and the only reason it was caught is that the
+control was run at all.
+
+Rewritten to assert the **property** instead: `entry["resource"] is not
+stored.resource_json`. Identity cannot pass accidentally. The mutation check is
+kept as a secondary assertion.
+
+**907 passed** (906 before). Control: revert the deep copy -> 1 red.

@@ -312,6 +312,43 @@ class TestFhirBundle:
             b = px.export([str(a.guid)], fmt="fhir")["body"]
         assert PNR in str(b)
 
+    def test_the_bundle_does_NOT_share_the_stored_dict(self, client, db,
+                                                       acting, admin_user):
+        """#897 named this in advance and #896 shipped it anyway.
+
+        `r.resource_json` is the ORM object's own dict. Handing it to a caller
+        by reference means mutating the bundle mutates the STORED resource, and
+        if that object is later flushed the mutation is PERSISTED. An export is
+        a read; it must not be able to write. Measured before the fix: setting
+        a key on a bundle entry appeared on the stored `resource_json`.
+
+        It is also the precondition for ever adding an R4 renderer (#897): a
+        downgrade editing in place would corrupt the R5 output it came from.
+        """
+        from app.models.fhir_resource import FhirResource
+        a = _patient(db, "Referenssson")
+        stored = (_db.session.query(FhirResource)
+                  .filter_by(resource_type="Patient",
+                             patient_guid=a.guid).first())
+        with acting(admin_user):
+            b = px.export([str(a.guid)], fmt="fhir")["body"]
+        entry = next(e for e in b["entry"]
+                     if e["resource"]["resourceType"] == "Patient")
+
+        # IDENTITY, not mutation-propagation. My first attempt mutated the
+        # bundle and asserted the stored row was unchanged -- and it passed
+        # WITH AND WITHOUT the fix, because whether a mutation propagates
+        # depends on session state: a commit expires the object, so the next
+        # query reloads a fresh dict. Testing the consequence instead of the
+        # property gave a control that could not fail, which is the shape of a
+        # guard that proves nothing.
+        assert entry["resource"] is not stored.resource_json, \
+            "the export handed out the STORED dict by reference"
+
+        # And the mutation genuinely does not reach it.
+        entry["resource"]["MUTATED_BY_CALLER"] = True
+        assert "MUTATED_BY_CALLER" not in stored.resource_json
+
     def test_asking_for_R4_is_refused_BY_NAME(self, client, db):
         """#897: the version is a parameter so adding R4 later is additive
         rather than a refactor, and anything else is refused instead of being
