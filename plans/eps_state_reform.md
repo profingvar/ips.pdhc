@@ -439,6 +439,31 @@ The existing plan says nine. Measured today it is **eleven**: request, contract,
 analyse, rosetta, dashboard, cdr, cdr_6, sim, icd11, gateway and alert — the
 last two having arrived since that plan was written.
 
+> **CORRECTED 2026-11-02 by #892, which is the ticket this paragraph asked
+> for: the number is TEN, and the eleventh is a trap.**
+>
+> `alert.pdhc` is NOT a consumer. Its only ips references are two
+> `os.environ.get` lines in `app/config.py` — no client, no call. It holds two
+> config keys nothing reads, so setting or rotating them changes nothing. Same
+> shape as the SSO External Partner secret that authenticates nowhere.
+>
+> The hand count also could not have found `sim.pdhc`, which uses
+> `IPS_PDHC_BASE_URL` and `IPS_PDHC_API_KEY` while every other sibling uses
+> `IPS_BASE_URL`. A grep for one spelling reports sim as a non-consumer;
+> `icd11.pdhc` carries eight spellings of its own. The number has now been
+> wrong three times in three counts — nine, then eleven, now ten — which is
+> the argument for `tools/pin_ips_consumers.py` rather than for a better
+> paragraph.
+>
+> That tool discovers the spelling (`IPS[A-Z0-9_]*`), walks each service
+> directory explicitly, separates **calls** from **configures_only**, and
+> diffs a committed baseline: a new consumer, or a config-only service that
+> starts calling, exits non-zero. Narrowing informs and exits zero.
+>
+> Note what it does and does not answer. It answers "which services call ips at
+> all" (ten). It does NOT answer "which services read `patient_index`", which
+> is narrower and is the claim that table's own comment makes.
+
 `patient_index`'s own comments state the rule this creates: *"nine sibling
 services read this table — so every change here is additive by rule."* Three
 additions already follow it (`generation_batch_guid`, `archived_at`, the opt-out

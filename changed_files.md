@@ -862,3 +862,57 @@ later reader folding these into an existing section:
 | endpoint stops reporting them | 1 |
 
 `CODES_VERIFIED` untouched; same provenance caveat as #881.
+
+---
+
+## 2026-11-02 — #892 (EPS D1): pin who consumes ips, derived rather than counted
+
+- `tools/pin_ips_consumers.py` (new, in the workspace repo)
+- `tools/ips_consumers_baseline.json` (new, committed on purpose)
+- `tools/test_pin_ips_consumers.py` (new, 17 checks)
+- `results/ips_consumers.json` (generated)
+- `plans/eps_state_reform.md` (§3.6 corrected)
+
+**The number was wrong three times in three counts: nine, then eleven, now
+TEN.** That is the argument for a tool rather than for a better paragraph —
+the same conclusion CLAUDE.md §3 already reached about `KNOWN_SERVICES`, which
+was hand-maintained and wrong twice in one week.
+
+Two findings a hand count could not reach:
+
+**`alert.pdhc` is not a consumer.** Its only ips references are two
+`os.environ.get` lines in `app/config.py` — no client, no call. Two config keys
+nothing reads, so setting or rotating them changes nothing. Same shape as the
+SSO External Partner secret that authenticates nowhere.
+
+**The config symbol is not uniform.** `sim.pdhc` uses `IPS_PDHC_BASE_URL` and
+`IPS_PDHC_API_KEY` while every other sibling uses `IPS_BASE_URL`, and
+`icd11.pdhc` carries eight spellings including `IPS_INTEGRATION_BASE_URL` and
+`IPS_AUTH_SCHEME`. A grep for one spelling reports sim as a non-consumer. The
+tool therefore DISCOVERS spellings via `IPS[A-Z0-9_]*` instead of taking a
+list.
+
+Three rules it follows, each from a measured failure: walk each service
+directory explicitly (`grep -r` from the root silently skips every service repo
+— ugrep plus a whitelist `.gitignore`); discover the symbol; and attribute
+paths only from files that name an ips symbol, which over-attributes when one
+file talks to two services and is stated as a limit rather than hidden.
+
+The claim that survives counting entirely is the one about ABSENCE: **no
+sibling names a path containing `ips`**, which is what makes #893's rename free
+for cross-service calls. The tool asserts it and would report it breaking.
+
+**Widening blocks, narrowing informs** — the same asymmetry as
+`check_platform_baseline.py` (#748), for the same reason: a gate that fails on
+every removal gets deleted in its first week. A config-only service that starts
+CALLING is a widening too, and is reported as such; a membership count alone
+would miss it.
+
+`--root` and `--baseline` exist so the gate can be tested against a fixture
+tree. **A gate that can only be observed in its passing state has not been
+shown to fail.** Proven both ways: 17 fixture checks, plus two live gate tests
+against the real workspace (a new consumer injected into onboard, and alert
+given a client) which both exited 1 and were then removed with no residue.
+
+**17 ok, 0 failed.** The real tree reads `unchanged against the baseline`,
+exit 0.

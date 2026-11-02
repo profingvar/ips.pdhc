@@ -1376,3 +1376,19 @@ It waits on #896 (EPS B7).
 
 **813 passed** (802 before). Controls: 6 / 2 / 1 red — the middle one being the
 guard against adding them to `SECTIONS`.
+
+### #892 (EPS D1) — who consumes ips, pinned, 2026-11-02
+
+`tools/pin_ips_consumers.py` + a committed baseline + 17 fixture checks.
+
+**TEN consumers, not eleven.** `alert.pdhc` configures `IPS_BASE_URL` and
+`IPS_API_KEY` and never calls — config keys nothing reads. And a hand count
+could not have found `sim.pdhc`, which spells the key `IPS_PDHC_BASE_URL`;
+`icd11.pdhc` has eight spellings. The tool discovers spellings rather than
+taking a list.
+
+Widening blocks (including config-only -> calls), narrowing informs. No sibling
+names a path containing `ips` — the absence claim that makes #893's rename free
+for cross-service calls.
+
+**17 ok, 0 failed**, plus two live gate tests that exited 1 and left no residue.
