@@ -264,7 +264,32 @@ def _procedures(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
 # --------------------------------------------------------------------- devices
 
 def _devices(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
-    """Device + DeviceUseStatement — THE section that did not exist at all."""
+    """Device + DeviceUsage — the section that had no resource types.
+
+    R5 names it DeviceUsage; DeviceUseStatement was the R4 spelling and was
+    emitted here until #898, while the service declared fhirVersion 5.0.0.
+    Old rows are still read, via `euips_sections.LEGACY_RESOURCE_TYPES`.
+
+    THREE ELEMENT NAMES HERE ARE UNVERIFIED AGAINST THE PUBLISHED IG, found
+    while doing #883 and deliberately NOT changed, because deciding them from
+    memory is the guessing this module refuses to do (CODES_VERIFIED is False).
+    Checked and settled by #885:
+
+      1. `Device.patient` — R4 had it. R5 appears to have moved the patient
+         association off Device (DeviceUsage / DeviceAssociation), in which
+         case this element is an R4-ism like the resource name was.
+      2. `DeviceUsage.subject` — R4's DeviceUseStatement used `subject`; R5's
+         DeviceUsage appears to require `patient` (1..1) instead. If so these
+         two are swapped relative to the standard.
+      3. `_no_known("devices", "Device", ...)` writes the absent coding into
+         `code`; R5 Device appears to use `type`. Pre-existing from #794, not
+         introduced by #883.
+
+    All three are inert today: the HTTP create route reads BOTH `subject` and
+    `patient` for patient linkage, so the rows link either way, and the section
+    matcher keys on resource type rather than on these fields. They become real
+    the moment an external validator sees the export.
+    """
     age = _age(birth)
     eligible = [d for d in _DEVICES if age >= d[2]]
     if not eligible:
@@ -283,7 +308,7 @@ def _devices(ref: str, birth: date | None, rng: random.Random) -> list[dict]:
             "type": _cc("http://snomed.info/sct", code, display),
         },
         {
-            "resourceType": "DeviceUseStatement",
+            "resourceType": "DeviceUsage",
             "id": str(uuid.uuid4()),
             "text": _narrative(f"{display} in use since {when[:10]}."),
             "subject": {"reference": ref},

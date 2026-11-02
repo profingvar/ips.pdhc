@@ -62,14 +62,18 @@ class TestMedicalDevicesNowExist:
         _generate(client, _clinic(db), 40)
         assert _rows("Device"), "no Device resource was generated at all"
 
-    def test_a_device_has_a_use_statement_pointing_at_it(self, client, db):
+    def test_a_device_has_a_usage_pointing_at_it(self, client, db):
+        """Renamed from DeviceUseStatement to DeviceUsage by #898: the R4
+        spelling was being written while the service declares R5. The property
+        asserted here is unchanged — a Device nobody uses is a catalogue
+        entry, not a clinical fact."""
         _generate(client, _clinic(db), 40)
         devices = {r.resource_json["id"] for r in _rows("Device")}
-        uses = _rows("DeviceUseStatement")
-        assert uses, "Device without any DeviceUseStatement"
+        uses = _rows("DeviceUsage")
+        assert uses, "Device without any DeviceUsage"
         for u in uses:
             target = u.resource_json["device"]["reference"].split("/")[1]
-            assert target in devices, f"DeviceUseStatement -> missing {target}"
+            assert target in devices, f"DeviceUsage -> missing {target}"
 
     def test_the_cgm_sensor_is_in_the_vocabulary(self):
         """cgm.pdhc is a live provider on this platform, so the simulator and
@@ -217,8 +221,12 @@ class TestStructuralValidity:
 
     def test_every_resource_carries_narrative(self, client, db):
         _generate(client, _clinic(db), 15)
+        # DeviceUsage, not DeviceUseStatement (#898). Left unchanged this
+        # loop would still have PASSED while checking nothing: `_rows` on a
+        # type nothing writes returns [], and an empty inner loop asserts
+        # nothing.
         for rtype in ("Immunization", "Procedure", "Device",
-                      "DeviceUseStatement", "DiagnosticReport"):
+                      "DeviceUsage", "DiagnosticReport"):
             for r in _rows(rtype):
                 txt = (r.resource_json or {}).get("text")
                 assert isinstance(txt, dict) and "xhtml" in (txt.get("div") or ""), \

@@ -22,6 +22,21 @@ SUPPORTED_RESOURCE_TYPES = [
     "Procedure",
     "DocumentReference",
     "DiagnosticReport",
+    # #883 — EPS makes section 46264-8 (medical devices and implants) 1..1, so
+    # these must be writable and advertised. They were already GENERATED
+    # (euips_recommended._devices, since #794) and already STORABLE
+    # (`resource_type` is a free String(64)), but absent from this list — so
+    # the HTTP API refused them and the CapabilityStatement did not mention
+    # them. The gap was visibility, not existence.
+    #
+    # `DeviceUsage`, never `DeviceUseStatement`: R5's spelling (#898). The old
+    # name is accepted on READ only, via
+    # `euips_sections.LEGACY_RESOURCE_TYPES`, and must NOT appear here — this
+    # list is what `_default_capability_statement` advertises, and
+    # test_capability_truth.py asserts the two agree in both directions, so a
+    # legacy spelling here would be pinned as correct rather than caught.
+    "Device",
+    "DeviceUsage",
 ]
 
 

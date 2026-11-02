@@ -1281,3 +1281,51 @@ from `gateway/`. The bundle refused it as `MISSING-NEW` and aborted before
 writing anything. Moved to `gateway/scripts/`, so it now runs as
 `docker exec ips-app-1 python /app/scripts/contract_check.py` without a
 `docker cp`.
+
+### #881 (EPS B1) — the two EPS LOINC codes, 2026-11-02
+
+`alerts` 104605-1 and `travel_history` 10182-4, from the EPS specification of
+2026-10-30. Both notes record the provenance and that the source is a CI-build
+of a STU 1 Ballot; a test pins that the provenance survives future edits.
+
+`patient_provided` stays `None` by decision (#880 — EPS does not profile it, so
+it is domestic), with a control test so a later "fill the empty ones" change
+turns red.
+
+`CODES_VERIFIED` unchanged: filling from a document is not verifying against
+the published IG (#885).
+
+**758 passed** (750 before). Controls: 3 / 2 / 6 red on deliberate breakage.
+
+### #898 (EPS B8) — DeviceUsage, 2026-11-02
+
+The service declared R5 and wrote the R4 resource name. Now writes
+`DeviceUsage`; `LEGACY_RESOURCE_TYPES` accepts `DeviceUseStatement` on READ
+only, normalised inside `section_matches()`, with the removal condition
+documented beside it. The alias is kept out of `Section.resource_types`
+because that tuple is served over the API and so describes what to write.
+
+Two existing tests rewritten rather than deleted — including a narrative loop
+that would have kept passing while checking nothing.
+
+**772 passed** (758 before). Controls: 3 / 2 / 2 red on deliberate breakage.
+Production row count for the old spelling still unmeasured; the accept-both
+path makes it non-blocking.
+
+### #883 (EPS B3) — Device and DeviceUsage visible to the API, 2026-11-02
+
+Added to `SUPPORTED_RESOURCE_TYPES`; the CapabilityStatement follows
+automatically. The gap was visibility, not existence — the resources were
+already generated and already storable.
+
+The feared patient-linkage bug did not exist: the create route already reads
+`patient` as well as `subject`. Pinned with tests rather than patched.
+
+`POST /fhir/DeviceUseStatement` stays refused: accept-both is for reading old
+rows, not for admitting new ones.
+
+Three R5 element-name questions recorded at the builder for #885 rather than
+guessed (`Device.patient`, `DeviceUsage.subject`, `Device.code` in the absent
+assertion).
+
+**781 passed** (772 before). Controls: 7 / 2 red on deliberate breakage.

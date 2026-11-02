@@ -523,3 +523,155 @@ count unchanged at 19.
 NOT changed: production. `ips-app-1` has run `--bind 0.0.0.0:9040` all along —
 the repo was the divergence, and the repo is what a `--build` would have
 deployed. No redeploy was performed.
+
+---
+
+## 2026-11-02 — #881 (EPS B1): the two LOINC codes the EPS specification supplies
+
+- `gateway/app/services/euips_sections.py`
+- `gateway/tests/test_eps_section_codes_881.py` (new)
+
+    section            was    now
+    alerts             None   104605-1
+    travel_history     None   10182-4
+    patient_provided   None   None — DELIBERATELY, see below
+
+**The win existed only because nothing was guessed.** `CODES_VERIFIED = False`
+and a `None` LOINC were deliberate; the note on `alerts` read *"LOINC code not
+established for this EU addition — left None rather than guessed."* When the
+real values arrived there was nothing to unpick. The alternative is on record
+elsewhere in this project as 51 and 58 corrections (#810/#816).
+
+Both notes now say **where the value came from** — the EPS specification,
+dated, and that it is a CI-build of a STU 1 Ballot — rather than that it is
+missing. A code with no provenance is indistinguishable from a guess, which is
+the state this change exists to leave behind, so a test asserts the provenance
+survives a future edit.
+
+`patient_provided` stays `None` and its note now records that as the #880
+decision rather than a gap: EPS does not profile it at all, so it is a DOMESTIC
+section. The note ends *"Do not fill this in to make the catalogue look
+complete."*
+
+`travel_history`'s note also warns against the layer confusion: `10182-4` is
+the Composition SECTION code, while `TRAVEL_CODES` holds the SNOMED code on the
+Observation itself.
+
+`CODES_VERIFIED` is untouched. Filling a code from a document is not verifying
+it against the published IG — that is #885.
+
+**758 passed** (750 before). Controls proven by deliberate breakage:
+
+| breakage | red |
+|---|---|
+| revert both codes to None | 3 |
+| fill `patient_provided` too (the over-eager change) | 2 |
+| flip `CODES_VERIFIED` to True | 6, across four test files |
+
+The third shows the flag was already guarded in two pre-existing files; the new
+test joins them rather than duplicating them.
+
+---
+
+## 2026-11-02 — #898 (EPS B8): DeviceUseStatement -> DeviceUsage, write new / read both
+
+- `gateway/app/services/euips_sections.py`
+- `gateway/app/services/euips_recommended.py`
+- `gateway/tests/test_eps_device_usage_898.py` (new)
+- `gateway/tests/test_recommended_sections_794.py` (two references rewritten)
+
+R5 renamed the resource; this repo emitted the R4 spelling while
+`fhir_routes.py:280` declares `fhirVersion: "5.0.0"`. The R5 claim was false in
+that one respect — and it matters more since #877 chose to EXPORT R5 rather
+than render R4, because the export's correctness now rests entirely on the
+stored shapes being R5.
+
+**Write the new name, read both.** `fhir_resources.resource_type` is a plain
+`String(64)`, so rows keep whatever was written. The production count of old
+rows could NOT be measured (the read was not permitted), so nothing was
+migrated blind:
+
+    LEGACY_RESOURCE_TYPES = {"DeviceUseStatement": "DeviceUsage"}
+
+normalised in `section_matches()` only, with the removal condition written next
+to it: once the count is 0 in every deployment, the entry and the
+normalisation go together.
+
+**The alias is deliberately NOT in `Section.resource_types`.** That tuple is
+serialised into the `/patients/<guid>/euips-status` response, so it tells a
+producer what to WRITE. An alias published there is an invitation to keep
+using it. A test asserts the legacy name appears in no section's tuple.
+
+**Two existing tests were rewritten, not deleted**, and the second one is the
+interesting half:
+
+  - `test_a_device_has_a_use_statement_pointing_at_it` -> `..._a_usage_...`.
+    The property is unchanged; only the type name moved.
+  - the narrative loop at line ~221 iterated `"DeviceUseStatement"`. Left
+    alone it would have **kept passing while checking nothing**: `_rows` on a
+    type nothing writes returns `[]`, and an empty inner loop asserts nothing.
+    That is the silent form of the same defect, and a comment now says so.
+
+The stale catalogue note is gone. It claimed *"THE MISSING ONE. No Device
+resource type exists in fhir_resources at all"*, which had been wrong since
+2026-10-07 when #794 added the builder — and was quoted into
+`plans/eps_state_reform.md` §2.5 as fact. The module docstring's *"What was
+wrong before"* entry is left alone: it is past tense and labelled as history.
+
+**772 passed** (758 before). Controls proven by deliberate breakage:
+
+| breakage | red |
+|---|---|
+| builder emits the R4 name again | 3 |
+| drop the alias normalisation from the matcher | 2 |
+| publish the alias in `resource_types` | 2 |
+
+**Still unmeasured, and tracked in the code rather than as a caveat:** how many
+production rows carry the old spelling. The accept-both read path makes the
+answer non-blocking, but the removal condition needs it.
+
+---
+
+## 2026-11-02 — #883 (EPS B3): Device and DeviceUsage made visible to the API
+
+- `gateway/app/services/fhir_service.py` (`SUPPORTED_RESOURCE_TYPES`)
+- `gateway/app/services/euips_recommended.py` (three IG questions recorded)
+- `gateway/tests/test_eps_device_api_883.py` (new)
+
+EPS makes section 46264-8 **1..1**, so these must be writable and advertised.
+**The gap was visibility, not existence** — and the correction changed what the
+fix was. They were already generated (#794) and already storable (`resource_type`
+is a free `String(64)`); they were missing only from
+`SUPPORTED_RESOURCE_TYPES`, which gates the generic `/fhir/<type>` handler and
+feeds `_default_capability_statement`. Adding them made the CapabilityStatement
+follow with no further edit, because the generator loops that list and
+`test_capability_truth.py` asserts the two agree in both directions.
+
+**A risk checked and found already handled.** I expected the create route to
+read patient linkage from `subject` only, which would have stored every Device
+with `patient_guid` NULL — silently dropping it out of patient-scoped reads and
+Rule 24 scope. It already has a `patient` fallback, with a comment saying why.
+So nothing was built for it; a test pins that it keeps working for the newly
+admitted types, and a third test pins that a body with NEITHER field is stored
+unlinked, so the linkage is known to come from the body rather than from the
+type being admitted.
+
+**Accept-both does not extend to the API.** `POST /fhir/DeviceUseStatement` is
+refused `not-supported`. Reading stored rows under the old spelling is #898's
+concession; admitting new ones would mean the alias never becomes removable.
+
+The absent-code half needed no work: `_BUILDERS` already carries
+`("devices", … "no known devices")` and `test_recommended_sections_794.py:184`
+already asserts every recommended section exhibits PRESENT,
+EXPLICITLY_ABSENT and MISSING. Not duplicated.
+
+**Three element names recorded as UNVERIFIED and deliberately not changed**
+(now in the `_devices` docstring, for #885): `Device.patient` and
+`DeviceUsage.subject` look swapped relative to R5, and the absent assertion
+writes `Device.code` where R5 appears to use `type`. All three are inert today —
+the create route reads both reference fields and the matcher keys on type — and
+become real the moment an external validator sees the export. Deciding them
+from memory is the guessing this module refuses to do.
+
+**781 passed** (772 before). Controls: removing the two types -> 7 red;
+admitting the legacy spelling -> 2 red.

@@ -125,11 +125,18 @@ SECTIONS: tuple[Section, ...] = (
     Section("procedures", "History of procedures", RECOMMENDED,
             ("Procedure",), "47519-4", "no-known-procedures"),
     Section("devices", "Medical devices and implants", RECOMMENDED,
-            ("Device", "DeviceUseStatement"), "46264-8", "no-known-devices",
-            note="THE MISSING ONE. No Device resource type exists in "
-                 "fhir_resources at all (live types: Observation, Patient, "
-                 "MedicationStatement, Condition, Immunization, "
-                 "AllergyIntolerance, DiagnosticReport, Procedure)."),
+            ("Device", "DeviceUsage"), "46264-8", "no-known-devices",
+            note="R5 names this resource DeviceUsage; R4 called it "
+                 "DeviceUseStatement, and this catalogue said the R4 name while "
+                 "the service declares fhirVersion 5.0.0 — corrected by #898. "
+                 "Old rows are still matched, via LEGACY_RESOURCE_TYPES; this "
+                 "tuple is CANONICAL because it is served over the API "
+                 "(/patients/<g>/euips-status) and so describes what to WRITE. "
+                 "EPS makes this section 1..1, and the implant list is real "
+                 "data in alert.pdhc (ICD-10-SE Z95.x) rather than something to "
+                 "generate — see #886. The previous note here claimed no Device "
+                 "type existed at all; that had been wrong since 2026-10-07, "
+                 "when #794 added the builder."),
     Section("diagnostic_results", "Diagnostic results (lab and imaging)",
             RECOMMENDED, ("DiagnosticReport", "Observation"), "30954-2",
             discriminator="diagnostic",
@@ -168,25 +175,69 @@ SECTIONS: tuple[Section, ...] = (
 
     # ---- EU ADDITIONS (eHealth Network / Xt-EHR building blocks)
     Section("alerts", "Medical alerts", EU_ADDITION,
-            ("Flag",), None,
-            note="LOINC code not established for this EU addition — left None "
-                 "rather than guessed. Safety-weighted: it is what a clinician "
-                 "abroad is meant to see first. A SIMULATED alert must stay "
-                 "distinguishable from a COMPUTED one from request.pdhc's "
-                 "alerting path, which is the MDR-relevant surface."),
+            ("Flag",), "104605-1",
+            note="LOINC from the EPS specification (docs/EPS_patientoversikt.docx "
+                 "and EPS_sektioner_vokabularer.xlsx, both 2026-10-30), filled "
+                 "by #881. It was None before that — left None rather than "
+                 "guessed, which is why there was nothing to unpick when the "
+                 "real value arrived. STILL UNVERIFIED against the published IG: "
+                 "the source is a CI-build of a STU 1 Ballot, so CODES_VERIFIED "
+                 "stays False and only #885 may change it. "
+                 "Safety-weighted: it is what a clinician abroad is meant to see "
+                 "first. A SIMULATED alert must stay distinguishable from a "
+                 "COMPUTED one from request.pdhc's alerting path, which is the "
+                 "MDR-relevant surface."),
     Section("travel_history", "Travel history", EU_ADDITION,
-            ("Observation",), None, discriminator="travel_code",
-            note="Dates should relate to any relevant condition rather than "
+            ("Observation",), "10182-4", discriminator="travel_code",
+            note="LOINC from the EPS specification (2026-10-30), filled by "
+                 "#881; was None. UNVERIFIED against the published IG — "
+                 "CODES_VERIFIED stays False, see #885. Not to be confused with "
+                 "TRAVEL_CODES: this is the COMPOSITION SECTION code, while "
+                 "TRAVEL_CODES holds the SNOMED code on the Observation itself. "
+                 "Dates should relate to any relevant condition rather than "
                  "float free, since travel history exists for "
                  "infectious-disease reasoning."),
     Section("patient_provided", "Patient-provided information", EU_ADDITION,
             ("Observation", "QuestionnaireResponse"), None,
             discriminator="patient_asserted",
-            note="Distinguished by the resource's source/performer, not by a "
+            note="LOINC stays None DELIBERATELY, and that is a decision rather "
+                 "than a gap (#880): EPS does not profile this section at all. "
+                 "It has Patient Story (81338-6) and Patient History "
+                 "(11329-0); neither means 'information the patient asserted'. "
+                 "So this section is DOMESTIC — kept here with its coded "
+                 "content, and not carried as such into the international "
+                 "export format. Do not fill this in to make the catalogue look "
+                 "complete. "
+                 "Distinguished by the resource's source/performer, not by a "
                  "separate type. The distinction IS the section: information "
                  "the patient asserted carries different weight, and unmarked "
                  "it is decorative."),
 )
+
+#: Resource-type spellings this service no longer WRITES but must still READ.
+#:
+#: `fhir_resources.resource_type` is a plain `String(64)`, so rows keep whatever
+#: string was written when they were created. R5 renamed DeviceUseStatement to
+#: DeviceUsage (#898), and rather than migrate rows blind — the production count
+#: was unavailable when the change was made — the old spelling is accepted on
+#: READ and never produced on WRITE.
+#:
+#: Deliberately NOT merged into `Section.resource_types`: that tuple is served
+#: over the API and therefore describes what a producer should write. An alias
+#: published there is an invitation to keep using it.
+#:
+#: Removal condition: once `select count(*) from fhir_resources where
+#: resource_type = 'DeviceUseStatement'` is 0 in every deployment, this entry
+#: and the normalisation in `section_matches` can go together.
+LEGACY_RESOURCE_TYPES: dict[str, str] = {
+    "DeviceUseStatement": "DeviceUsage",
+}
+
+
+def canonical_resource_type(resource_type: str) -> str:
+    """The spelling this service writes today, for a possibly older row."""
+    return LEGACY_RESOURCE_TYPES.get(resource_type, resource_type)
+
 
 BY_KEY: dict[str, Section] = {s.key: s for s in SECTIONS}
 REQUIRED_KEYS: tuple[str, ...] = tuple(
@@ -354,7 +405,7 @@ def section_matches(section: Section, resource_type: str,
     condition made `problems` read PRESENT while the active problem list was
     empty. That was the shipped behaviour of #791 until #795 exposed it.
     """
-    if resource_type not in section.resource_types:
+    if canonical_resource_type(resource_type) not in section.resource_types:
         return False
     d = section.discriminator
     if d is None:
