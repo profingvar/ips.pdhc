@@ -16,6 +16,9 @@ from app.models.capability_statement import CapabilityStatement
 from app.models.patient_block import PatientBlock
 from app.models.patient_consent import PatientConsent
 from app.models.emergency_access import EmergencyAccess
+from app.models.patient_proxy_grant import (
+    PatientProxyGrant, PROXY_SCOPES,
+)
 
 __all__ = [
     "db",
@@ -37,4 +40,6 @@ __all__ = [
     "PatientBlock",
     "PatientConsent",
     "EmergencyAccess",
+    "PatientProxyGrant",
+    "PROXY_SCOPES",
 ]

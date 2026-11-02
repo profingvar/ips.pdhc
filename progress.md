@@ -1490,3 +1490,78 @@ address while one after includes it.
 A test of mine was a tautology (`A or <always true>`) and the control caught
 it — the second time this session. **923 passed** (907 before).
 Controls: 3 / 1 / 1 / 1 red.
+
+## EPS C3 — #889 delivered (2026-11-02)
+
+**990 passing**, from a 923 baseline: 923 + 67 new, and no other test outcome
+moved. Three controls run, each failing on its own assertion with the import
+verified first.
+
+### The premise in #889 was wrong in both directions
+
+#889 estimated 8–15 days because `care_access_policy` is "read by eleven
+services", so a new branch meant eleven consumers.
+
+**Cheaper:** a patient reading their own record never touches that module. It
+answers a question whose every argument is a CARE identity; the patient surface
+is gated by `require_patient`. `evaluate_care_access` has exactly two call
+sites inside ips, both in `care_access_routes.py`. No new zone was needed and
+the eleven consumers were untouched.
+
+**More expensive, and this is the finding:** `require_patient` does not gate a
+data surface, it gates the patient's self-determination controls. Ten of the
+seventeen routes behind the patient identity are POST: create-block,
+**lift-block**, extend-block, create-consent, revoke-consent, in both the JSON
+and HTML surfaces. A relative admitted there without a method gate could lift
+the patient's spärr and then read what it had been hiding — an escalation
+chain, the same shape as #729 and #760, and forbidden outright by A3 (only the
+patient may increase access; lifting a spärr increases access).
+
+### What was built
+
+- `PatientProxyGrant` beside `patient_consents`, with a validity interval
+  carrying BOTH ends (so "while I am in hospital next month" is expressible)
+  and revocation by either party.
+- `evaluate_proxy_access` in `care_access_policy` with its own basis
+  `patient_proxy` — a new AXIS, not a fourth zone. The existing zone rule is
+  asserted untouched.
+- `require_patient_or_proxy`: refuses every non-safe method **centrally**,
+  because per-route is how one gets missed, plus `PROXY_RESERVED_ACTIONS` so a
+  future scope widening cannot silently un-refuse the spärr controls.
+- `require_proxy_self`: the one write a relative may make anywhere in ips is
+  ending their own grant (A3 clause 4). A separate door that sets
+  `g.proxy_user_guid` and never `g.patient_guid`, so a route behind it cannot
+  reach the patient surface.
+- The two patient-facing JSON read routes wired, so the chain is live rather
+  than inert (#901's lesson).
+
+### Things that needed care
+
+- **The audit row must be COMMITTED.** Every other audit helper here does
+  `add` + `flush` and lets the route's commit carry it. A proxy read is a GET
+  and a GET commits nothing, so a flushed row is rolled back — visible in a
+  fixture that shares the session, gone in production. Control 2 proved it.
+- **Both denial codes, one response.** The audit distinguishes "never granted"
+  from "no longer granted"; the HTTP response must not, or it confirms that
+  this patient once named this person.
+- **#890 corrected.** Its §5 put the grant in sso. #889 requires it beside
+  `patient_consents`, so it is here, and sso carries identity only. ips's
+  `AuditLog` already separates `actor_guid` from `patient_guid`, so the blob
+  field #890 proposed turned out to be unnecessary.
+
+### Honest limits
+
+- The migration `gateway/migrations/add_patient_proxy_grants.sql` is **not
+  applied to production**. It joins the two EPS migrations already waiting.
+- The method gate is currently **redundant at the HTTP level**, because only
+  GET routes are wired and the POST routes are still `@require_patient`, which
+  refuses a relative blob outright. Control 1 showed exactly this: widening
+  `PROXY_SAFE_METHODS` failed four policy tests and no HTTP test. The gate
+  protects the next person who wires a POST route to the new decorator.
+- The HTML portal (`patient_portal.py`, 10 routes) is untouched. What a proxy
+  should SEE there — the lift and extend forms they cannot submit — is a UI
+  decision, not this ticket.
+- #889 asks for "a test per consuming service that an ungranted relative is
+  refused". The refusal is asserted at ips's own boundary, in both the dev and
+  the production auth path. The other consumers cannot be tested from this
+  repo, and they are untouched because no zone changed.

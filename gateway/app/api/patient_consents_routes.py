@@ -34,7 +34,9 @@ from flask import Blueprint, g, jsonify, request
 from app.models.base import db, utcnow
 from app.models.patient_consent import PatientConsent
 from app.models.patient_index import PatientIndex
-from app.services.auth_service import require_patient
+from app.services.auth_service import (
+    require_patient, require_patient_or_proxy,
+)
 
 
 bp = Blueprint(
@@ -136,7 +138,7 @@ def _patient_audit(event_type, *, consent, detail_extra=None):
 # ---------------------------------------------------------------------------
 
 @bp.route("", methods=["GET"])
-@require_patient
+@require_patient_or_proxy  # EPS C3 #889: a granted proxy may read
 def list_own_consents():
     patient = _patient_or_404(g.patient_guid)
     if patient is None:

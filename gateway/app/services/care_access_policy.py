@@ -129,3 +129,144 @@ def evaluate_care_access(
     if not has_sharing_consent:
         return False, 3, None, REASON_NO_SHARING_CONSENT
     return True, 3, BASIS_CROSS_ORG_CONSENT, None
+
+
+# ======================================================================
+# A patient-granted proxy (next of kin) — EPS C3, #889.
+#
+# This is a NEW AXIS in the access model, not a new value in an existing
+# one, which is why it gets its own function and its own basis rather
+# than a fourth zone. Everything above answers "may this CARE identity
+# read data authored by that care identity?" — every argument is a care
+# identity. A relative is not one. There is no care unit, no caregiver
+# and no organisation on this side of the question, so zone_for() has
+# nothing to classify.
+#
+# It lives in THIS module anyway, because the docstring at the top claims
+# this file is the single source of the access rule "so no two consumers
+# may enforce different zone rules". A second access axis decided in a
+# decorator somewhere would make that claim false.
+#
+# WHAT THIS DELIBERATELY DOES NOT DO: it does not consult spärr or
+# consent. A patient's own data is never hidden from the patient — spärr
+# hides data from OTHER care providers — and a proxy reading as the
+# patient inherits exactly the patient's own view. Folding blocks in here
+# would give the relative a DIFFERENT view from the patient's, in one
+# direction or the other, and neither is what A3 ratified.
+# ======================================================================
+
+BASIS_PATIENT_PROXY = "patient_proxy"
+
+REASON_NO_PROXY_GRANT = "no_proxy_grant"
+REASON_PROXY_GRANT_INACTIVE = "proxy_grant_inactive"
+REASON_PROXY_WRITE_REFUSED = "proxy_write_refused"
+REASON_PROXY_ACTION_RESERVED = "proxy_action_reserved_to_patient"
+
+# A proxy is READ-ONLY. This is the #729/#760 lesson stated as code: on
+# this platform, twice, an identity added so that it could READ turned
+# out to be able to WRITE, because the grant was checked on a read path
+# and the writes shared it.
+#
+# Here the stakes are higher than an over-broad write. The patient
+# surface behind ``require_patient`` is not a data surface — it is the
+# patient's self-determination controls. Measured 2026-11-02: of the 17
+# routes behind the patient identity in ips, TEN are POST, and they are
+# create-block, LIFT-block, extend-block, create-consent and
+# revoke-consent (×2, JSON and HTML).
+#
+# So a proxy admitted without a method gate could lift the patient's
+# spärr and then read what the spärr was hiding. That is an escalation
+# chain, not an over-grant. And A3 forbids it directly: only the patient
+# may INCREASE access, and lifting a spärr increases access.
+PROXY_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Named actions that are reserved to the patient *categorically* — not
+# merely absent from today's scopes. Should a future scope ever grant a
+# proxy some write, these must still refuse, so the refusal cannot be
+# lost by widening a scope. Belt and braces over PROXY_SAFE_METHODS,
+# which already covers them by method.
+PROXY_RESERVED_ACTIONS = frozenset({
+    "block_create", "block_lift", "block_extend",
+    "consent_create", "consent_revoke",
+    "proxy_grant_create", "proxy_grant_widen",
+})
+
+
+def evaluate_proxy_access(
+    *,
+    patient_guid,
+    proxy_user_guid,
+    grants,
+    at=None,
+    method="GET",
+    action=None,
+):
+    """Decide one read performed by a proxy acting for ``patient_guid``.
+
+    Args:
+        patient_guid: the SUBJECT patient the proxy claims to act for.
+        proxy_user_guid: the proxy's sso ``users.guid``.
+        grants: the patient's ``PatientProxyGrant`` rows for this proxy,
+            in ANY state. Unlike ``active_blocks`` above, these are NOT
+            pre-filtered: passing revoked and not-yet-valid rows in is
+            what lets this function tell "never granted" from "no longer
+            granted", which the audit needs.
+        at: evaluation time; defaults to now via ``is_active``.
+        method: the HTTP method of the request.
+        action: optional named action for the reserved-action check.
+
+    Returns:
+        ``(allowed, basis, reason)``. ``basis`` is ``patient_proxy`` on
+        success and None on denial; ``reason`` carries the code on
+        denial.
+
+    NOTE ON THE TWO DENIAL CODES. ``no_proxy_grant`` and
+    ``proxy_grant_inactive`` are different facts and the AUDIT wants
+    both. The HTTP response must NOT distinguish them: telling a caller
+    "there was a grant, but it is revoked" confirms that this patient
+    once named this person, which is exactly the kind of existence leak
+    the platform refuses elsewhere (absent, not refused). Callers map
+    both to one refusal body and log the precise code.
+    """
+    if action is not None and action in PROXY_RESERVED_ACTIONS:
+        return False, None, REASON_PROXY_ACTION_RESERVED
+
+    if str(method).upper() not in PROXY_SAFE_METHODS:
+        return False, None, REASON_PROXY_WRITE_REFUSED
+
+    if not patient_guid or not proxy_user_guid:
+        # Missing input falls to the SAFE value, as everywhere above.
+        return False, None, REASON_NO_PROXY_GRANT
+
+    pg, px = str(patient_guid), str(proxy_user_guid)
+    matching = [
+        g for g in grants or []
+        if str(g.patient_guid) == pg and str(g.proxy_user_guid) == px
+    ]
+    if not matching:
+        return False, None, REASON_NO_PROXY_GRANT
+
+    if any(g.is_active(at) for g in matching):
+        return True, BASIS_PATIENT_PROXY, None
+
+    return False, None, REASON_PROXY_GRANT_INACTIVE
+
+
+def proxy_mutation_allowed(*, actor_role, mutation):
+    """Who may change a proxy grant — EPS A3 (#879), ratified:
+
+        both parties may REDUCE access; only the patient may INCREASE it
+
+    ``actor_role`` is ``'patient'`` or ``'proxy'``; ``mutation`` is
+    ``'create'``, ``'widen'`` or ``'revoke'``.
+
+    A relative terminating their own access is A3's fourth clause and is
+    deliberately allowed — somebody who no longer wishes to hold access
+    to another person's record must be able to put it down without
+    asking the patient to act.
+    """
+    if mutation == "revoke":
+        return actor_role in ("patient", "proxy")
+    if mutation in ("create", "widen"):
+        return actor_role == "patient"
+    return False

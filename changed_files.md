@@ -1439,3 +1439,28 @@ address. The same judgement #792 applied to a contact's surname.
 | the contact mirror drops the period | 1 |
 | postcode drawn independently of the city | 1 |
 | allow a start BEFORE birth | 1 — *after the tautology was fixed; 0 before* |
+
+## 2026-11-02 — EPS C3 (#889): patient-granted next-of-kin privilege
+- gateway/app/models/patient_proxy_grant.py (new) — the grant, beside
+  patient_consents and not inside it. Validity interval with BOTH ends
+  (EPS C1); revocable by either party (A3); no DB UNIQUE over the pair,
+  because that would make revocation terminal for ever (#891).
+- gateway/app/services/care_access_policy.py — BASIS_PATIENT_PROXY,
+  evaluate_proxy_access(), proxy_mutation_allowed(), PROXY_SAFE_METHODS,
+  PROXY_RESERVED_ACTIONS. A new AXIS, not a new zone; the care zone rule is
+  untouched and asserted so.
+- gateway/app/services/auth_service.py — require_patient_or_proxy (admits a
+  granted relative, refuses every non-safe method centrally) and
+  require_proxy_self (one narrow door for A3 clause 4). Audit of the access
+  DECISION, committed because a GET commits nothing.
+- gateway/app/api/patient_proxy_routes.py (new) — the patient's grant surface
+  plus the proxy's revoke-own route.
+- gateway/app/api/patient_blocks_routes.py — GET "" wired to the new decorator.
+- gateway/app/api/patient_consents_routes.py — GET "" wired likewise.
+- gateway/app/models/__init__.py — PatientProxyGrant registered.
+- gateway/app/__init__.py — patient_proxy_bp registered.
+- gateway/migrations/add_patient_proxy_grants.sql (new) — idempotent; NOT yet
+  applied to production.
+- gateway/tests/test_eps_patient_proxy_889.py (new) — 67 checks.
+- plans/eps_state_reform.md §3.5 — the "eleven readers" premise corrected in
+  both directions.

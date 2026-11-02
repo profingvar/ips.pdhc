@@ -45,7 +45,9 @@ from app.models.patient_block import (
 )
 from app.models.patient_index import PatientIndex
 from app.services.audit_service import log_event
-from app.services.auth_service import require_patient
+from app.services.auth_service import (
+    require_patient, require_patient_or_proxy,
+)
 from app.services.block_webhook import safe_dispatch as _emit_block_webhook
 
 
@@ -138,7 +140,7 @@ def _parse_iso(s):
 # ---------------------------------------------------------------------------
 
 @bp.route("", methods=["GET"])
-@require_patient
+@require_patient_or_proxy  # EPS C3 #889: a granted proxy may read
 def list_own_blocks():
     patient = _patient_or_404(g.patient_guid)
     if patient is None:

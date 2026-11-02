@@ -3,6 +3,7 @@
 import hashlib
 from datetime import datetime, timezone
 from functools import wraps
+from uuid import UUID
 
 import httpx
 from flask import request, g, jsonify, current_app
@@ -339,3 +340,302 @@ def _service_account_user(api_key: ApiKey) -> User:
         is_superuser=False,
     )
     return user
+
+
+# =====================================================================
+# Proxy (next-of-kin) admission to the patient surface — EPS C3, #889.
+# =====================================================================
+
+# The subject patient a proxy claims to be acting for. A relative may
+# hold grants from more than one patient (a parent of two children), so
+# the subject cannot be derived from the identity alone.
+PROXY_SUBJECT_HEADER = "X-Acting-For-Patient"
+
+# Dev-mode headers, mirroring X-Dev-Patient-Guid above. Production never
+# sets AUTH_DISABLED.
+DEV_PROXY_HEADER = "X-Dev-Proxy-User-Guid"
+
+
+def _proxy_grants_for(proxy_user_guid):
+    """Every grant naming this proxy, in ANY state.
+
+    Deliberately unfiltered: ``evaluate_proxy_access`` needs the revoked
+    and not-yet-valid rows in order to tell "never granted" from "no
+    longer granted" for the audit.
+    """
+    from app.models.patient_proxy_grant import PatientProxyGrant
+    return (
+        PatientProxyGrant.query
+        .filter(PatientProxyGrant.proxy_user_guid == proxy_user_guid)
+        .all()
+    )
+
+
+def _audit_proxy_decision(*, proxy_user_guid, patient_guid, allowed, reason):
+    """Record the access DECISION — which happened whether or not the
+    route then succeeds. Logging "a read occurred" from a decorator
+    would be a claim about something that has not run yet.
+
+    This COMMITS. Every other audit helper in this repo does
+    ``add`` + ``flush`` and lets the route's own commit carry the row,
+    but a proxy read is a GET and a GET commits nothing, so a flushed
+    row would be rolled back at teardown — visible in a test fixture
+    that shares the session, gone in production. That asymmetry has
+    bitten this platform before.
+    """
+    from app.models.base import db
+    from app.models.audit_log import AuditLog
+    try:
+        entry = AuditLog(
+            # ACTOR is the relative; SUBJECT is the patient. Keeping
+            # them apart is what makes a proxy read distinguishable
+            # from the patient's own — the Lag (2022:913)
+            # chain-of-custody requirement cited in sso's blob builder.
+            actor_guid=UUID(str(proxy_user_guid)) if proxy_user_guid else None,
+            actor_type="proxy",
+            actor_label=f"proxy:{proxy_user_guid}",
+            patient_guid=UUID(str(patient_guid)) if patient_guid else None,
+            event_type=(
+                "proxy_access_granted" if allowed else "proxy_access_refused"
+            ),
+            resource_type="PatientProxyGrant",
+            request_path=request.path,
+            request_method=request.method,
+            ip_address=request.remote_addr,
+            session_id=(
+                g.access_blob.get("session_id")
+                if isinstance(getattr(g, "access_blob", None), dict)
+                else None
+            ),
+            detail={"mechanism": "patient_proxy", "reason": reason},
+        )
+        db.session.add(entry)
+        db.session.commit()
+    except Exception:
+        # An audit failure must not convert a correct refusal into a
+        # 500, nor a correct grant into one. Roll back so the session is
+        # usable for the route that follows.
+        try:
+            from app.models.base import db as _db
+            _db.session.rollback()
+        except Exception:
+            pass
+
+
+def require_patient_or_proxy(f):
+    """Patient-portal surface, also admitting a patient-granted proxy.
+
+    A patient is admitted exactly as :func:`require_patient` admits one —
+    this decorator is a superset and changes nothing for them.
+
+    A proxy (sso ``user_type == 'relative'``, #890) is admitted only when
+    ALL of the following hold, decided by
+    ``care_access_policy.evaluate_proxy_access``:
+
+      - the request method is safe (GET/HEAD/OPTIONS). A proxy is
+        read-only, and this is enforced HERE rather than per route,
+        because per-route is how one gets missed. Ten of the seventeen
+        routes behind the patient identity are POST, and they are the
+        spärr and consent controls — a proxy able to POST could lift a
+        spärr and then read what it was hiding.
+      - an active ``PatientProxyGrant`` names this proxy for the subject
+        patient, with *now* inside its validity interval.
+
+    The subject patient comes from the ``X-Acting-For-Patient`` header,
+    or is defaulted when the proxy holds exactly ONE active grant —
+    mirroring sso's own "sole affiliation" rule, which defaults
+    ``active_affiliation_guid`` when there is no ambiguity.
+
+    On success ``g.patient_guid`` is the SUBJECT, so every existing
+    patient-portal route works unchanged, while ``g.proxy_user_guid``
+    and ``g.actor_type`` keep the acting identity available for audit.
+    For a patient, ``g.proxy_user_guid`` is None and ``g.actor_type`` is
+    ``'patient'``.
+
+    Both proxy denial codes map to ONE response. Telling a caller "there
+    was a grant but it is revoked" would confirm that this patient once
+    named this person; the precise code goes to the audit only.
+    """
+    from app.services.care_access_policy import (
+        evaluate_proxy_access, REASON_PROXY_WRITE_REFUSED,
+    )
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        def _admit_patient(blob, patient_guid):
+            g.access_blob = blob
+            g.patient_guid = patient_guid
+            g.proxy_user_guid = None
+            g.actor_type = "patient"
+            g.current_user = None
+            return f(*args, **kwargs)
+
+        def _admit_proxy(blob, proxy_user_guid):
+            subject = request.headers.get(PROXY_SUBJECT_HEADER)
+            grants = _proxy_grants_for(proxy_user_guid)
+
+            if not subject:
+                active = [gr for gr in grants if gr.is_active()]
+                if len(active) == 1:
+                    subject = str(active[0].patient_guid)
+                elif len(active) > 1:
+                    return _auth_error(
+                        f"{PROXY_SUBJECT_HEADER} is required when acting for "
+                        "more than one patient", 400,
+                    )
+
+            allowed, basis, reason = evaluate_proxy_access(
+                patient_guid=subject,
+                proxy_user_guid=proxy_user_guid,
+                grants=grants,
+                method=request.method,
+            )
+            _audit_proxy_decision(
+                proxy_user_guid=proxy_user_guid,
+                patient_guid=subject,
+                allowed=allowed,
+                reason=reason,
+            )
+            if not allowed:
+                if reason == REASON_PROXY_WRITE_REFUSED:
+                    return _auth_error(
+                        "A next-of-kin proxy is read-only on this surface",
+                        403,
+                    )
+                return _auth_error(
+                    "No active next-of-kin grant for this patient", 403
+                )
+
+            g.access_blob = blob
+            g.patient_guid = subject
+            g.proxy_user_guid = proxy_user_guid
+            g.actor_type = "proxy"
+            g.access_basis = basis
+            g.current_user = None
+            return f(*args, **kwargs)
+
+        if current_app.config.get("AUTH_DISABLED"):
+            dev_proxy = request.headers.get(DEV_PROXY_HEADER)
+            if dev_proxy:
+                return _admit_proxy(
+                    {
+                        "user_type": "relative",
+                        "user_guid": dev_proxy,
+                        "session_id": request.headers.get(
+                            "X-Operator-Session-Id"
+                        ),
+                    },
+                    dev_proxy,
+                )
+            dev_guid = request.headers.get("X-Dev-Patient-Guid")
+            if not dev_guid:
+                return _auth_error(
+                    f"X-Dev-Patient-Guid or {DEV_PROXY_HEADER} required in "
+                    "AUTH_DISABLED dev mode"
+                )
+            return _admit_patient(
+                {
+                    "user_type": "patient",
+                    "patient_guid": dev_guid,
+                    "session_id": request.headers.get(
+                        "X-Operator-Session-Id"
+                    ),
+                },
+                dev_guid,
+            )
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header:
+            return _auth_error("Missing Authorization header")
+        if not auth_header.startswith("Bearer "):
+            return _auth_error("Patient-portal endpoints require a Bearer token")
+
+        blob = resolve_sso_user(auth_header[7:])
+        if not blob:
+            return _auth_error("Invalid or expired token")
+        mcp = _must_change_password_response(blob)
+        if mcp is not None:
+            return mcp
+
+        user_type = blob.get("user_type")
+
+        if user_type == "patient":
+            patient_guid = blob.get("patient_guid")
+            if not patient_guid:
+                return _auth_error("SSO blob is missing patient_guid", 403)
+            return _admit_patient(blob, patient_guid)
+
+        if user_type == "relative":
+            proxy_user_guid = blob.get("user_guid")
+            if not proxy_user_guid:
+                # #890: the relative blob carries identity only. Without
+                # user_guid there is nothing to match a grant against,
+                # and guessing would be the fail-open direction.
+                return _auth_error("SSO blob is missing user_guid", 403)
+            return _admit_proxy(blob, proxy_user_guid)
+
+        return _auth_error(
+            "This endpoint is reserved for patient-portal callers", 403
+        )
+
+    return decorated
+
+
+def require_proxy_self(f):
+    """Admit a relative for acts on their OWN grant only — EPS A3 clause 4.
+
+    Deliberately NOT a relaxation of :func:`require_patient_or_proxy`.
+    That decorator refuses every non-safe method centrally because the
+    patient surface behind it is the spärr and consent controls; adding
+    a method exception there would reopen the hole it exists to close.
+    This is a separate door that opens onto exactly one room.
+
+    It sets ``g.proxy_user_guid`` and NOTHING else — in particular it
+    does not set ``g.patient_guid``, so a route behind this decorator
+    cannot accidentally read the patient surface. The route must scope
+    its own lookup to ``g.proxy_user_guid``.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if current_app.config.get("AUTH_DISABLED"):
+            dev_proxy = request.headers.get(DEV_PROXY_HEADER)
+            if not dev_proxy:
+                return _auth_error(
+                    f"{DEV_PROXY_HEADER} required in AUTH_DISABLED dev mode"
+                )
+            g.access_blob = {"user_type": "relative", "user_guid": dev_proxy}
+            g.proxy_user_guid = dev_proxy
+            g.actor_type = "proxy"
+            g.patient_guid = None
+            g.current_user = None
+            return f(*args, **kwargs)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header:
+            return _auth_error("Missing Authorization header")
+        if not auth_header.startswith("Bearer "):
+            return _auth_error("Patient-portal endpoints require a Bearer token")
+
+        blob = resolve_sso_user(auth_header[7:])
+        if not blob:
+            return _auth_error("Invalid or expired token")
+        mcp = _must_change_password_response(blob)
+        if mcp is not None:
+            return mcp
+
+        if blob.get("user_type") != "relative":
+            return _auth_error(
+                "This endpoint is reserved for next-of-kin callers", 403
+            )
+        proxy_user_guid = blob.get("user_guid")
+        if not proxy_user_guid:
+            return _auth_error("SSO blob is missing user_guid", 403)
+
+        g.access_blob = blob
+        g.proxy_user_guid = proxy_user_guid
+        g.actor_type = "proxy"
+        g.patient_guid = None
+        g.current_user = None
+        return f(*args, **kwargs)
+
+    return decorated

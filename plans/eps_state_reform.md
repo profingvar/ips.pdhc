@@ -433,6 +433,42 @@ is:
 
 Item 3 is the cost. Items 1 and 2 are ordinary work.
 
+> **MEASURED AND CORRECTED 2026-11-02, while delivering #889.** The premise
+> above — that item 3 is the cost because `care_access_policy` is read by
+> eleven services — was wrong in BOTH directions.
+>
+> **Cheaper than stated.** A patient reading their own record does not go
+> through `care_access_policy` at all. That module answers "may this CARE
+> identity read data authored by that care identity?" and every argument is a
+> care identity; the patient surface is gated by
+> `auth_service.require_patient`, which never calls it. Inside ips,
+> `evaluate_care_access` has exactly **two** call sites, both in
+> `care_access_routes.py`. So a relative reading *as* the patient needed **no
+> new zone and no new branch in the zone rule**, and the eleven consumers were
+> untouched. #889's proxy decision is a separate function with its own basis
+> (`patient_proxy`), added to the same module so its single-source-of-truth
+> docstring stays true.
+>
+> **More expensive than stated, and this is the finding.** `require_patient`
+> does not gate a data surface. It gates the patient's **self-determination
+> controls**. Of the seventeen routes behind the patient identity, **ten are
+> POST**, and they are create-block, **lift-block**, extend-block,
+> create-consent and revoke-consent — each in both the JSON and the HTML
+> surface.
+>
+> So a relative admitted through that decorator without a method gate could
+> **lift the patient's spärr and then read what the spärr had been hiding**.
+> That is an escalation chain, not an over-broad read, and it is the third time
+> this platform has met the shape: #729 and #760 both found an identity added
+> so it could READ that could also WRITE. EPS A3 forbids it directly — only the
+> patient may INCREASE access, and lifting a spärr increases access.
+>
+> Hence the refusal of non-safe methods lives in ONE decorator rather than per
+> route, plus a categorically reserved-action list so a future scope widening
+> cannot silently un-refuse it. The single write a relative may perform
+> anywhere in ips is ending their own grant (A3 clause 4), behind its own
+> narrow decorator that never sets `g.patient_guid`.
+
 ### 3.6 Eleven consuming services, and the additive rule
 
 The existing plan says nine. Measured today it is **eleven**: request, contract,
