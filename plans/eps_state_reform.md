@@ -74,6 +74,35 @@ EU exchange in scope.
 The capability is EPS. The service is a patient registry. Those are different
 nouns, and the current name is closer to the second than `eps.pdhc` would be.
 
+### GATE before #905 wires alert.pdhc — run the #908 migration first
+
+Recorded here rather than only in #908's response, because #908 is CLOSED and
+its remaining action is timed to a DIFFERENT ticket whose body cannot be
+edited. A reminder that lives only in a closed ticket is the dangling
+reference CLAUDE.md §2 warns about.
+
+**The gate:** before #905 pushes real implant data into ips, run
+
+```
+flask migrate-r5-device-elements                  # dry run, read the count
+flask migrate-r5-device-elements --apply --expect <that count>
+```
+
+Take a predeploy dump first (`~/backups/predeploy/ips.pdhc/`).
+
+**Why the timing.** #907 corrected the R5 element names in everything ips
+WRITES; rows written before 2026-11-02 still carry the old shapes, and #896's
+export deep-copies `resource_json`. While every Device row is synthetic that is
+cosmetic — #908's own recommendation is to leave it. Once alert.pdhc pushes
+documented implants, the same rows are clinical records, and editing stored
+clinical JSON is a different operation from tidying generated data.
+
+The migration is a pure function with 29 tests, dry-run by default, and
+`--expect` aborts on a count mismatch. The one thing to understand before
+running it: `Device.code` → `type` and `DeviceUsage.subject` → `patient` are
+RENAMES, not deletions. That coding is a section's EXPLICITLY_ABSENT signal and
+that reference is the patient.
+
 ### DECISION, 2026-11-02 (#893): the service is NOT renamed
 
 Taken, recorded here so it is a decision rather than a ticket nobody closed.
