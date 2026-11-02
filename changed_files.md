@@ -1477,3 +1477,18 @@ address. The same judgement #792 applied to a contact's surname.
   effective_phases, professional_role, organization_ids.
 - gateway/tests/test_admin_gate_902.py (new) — 48 checks, the meaningful ones
   with AUTH_DISABLED OFF.
+
+## 2026-11-02 — #903 (EPS B6b): the implant transport, receiving half
+- gateway/app/services/auth_service.py — require_scope() and `g.api_key`.
+  ApiKey.scopes existed since the model was written, was set at mint time and
+  copied on rotation, and was read NOWHERE: every API key reached every
+  @require_auth route. Enforcement is opt-in PER ROUTE, so no existing key
+  is locked out.
+- gateway/app/api/implant_routes.py (new) — POST /api/v1/implants/assertions,
+  scoped to implants:write. Idempotent on
+  (patient, code_system, code, national_term, asserted_at) via UUIDv5-derived
+  resource ids, so no receipts table and no second source of truth. A batch
+  reports per row rather than failing whole.
+- gateway/app/__init__.py — implant_bp registered.
+- gateway/tests/test_api_key_scopes_903.py (new) — 18 checks.
+- gateway/tests/test_implant_transport_903.py (new) — 32 checks.

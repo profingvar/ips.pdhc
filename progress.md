@@ -1642,3 +1642,81 @@ the point of an admin tool, now that only professionals and SUs reach it. Noted
 rather than left silent, which is what #902 asked for. Org scoping would also
 be unverifiable against the current population — all assigned ips patients sit
 in one organisation.
+
+## #903 — EPS B6b, the receiving half (2026-11-02)
+
+**1088 passing**, from 1038. Seven controls across two files, each failing on
+its own assertion.
+
+### Step 1 was a decision and the operator took it
+
+alert.pdhc runs nowhere — re-confirmed. The operator's decision: **build the
+receiver now, deploy later.** That is safe in a way a client would not be: a
+receiver names no URL and invents no default, so the xlate defect (#833) — a
+module-level base URL manufacturing a configured-looking service out of an
+unset variable, turning a permanent condition into a retryable one — cannot
+arise. The endpoint is inert until something calls it.
+
+### The real blocker for step 3 was a decorative column
+
+Step 3 asked for a key "scoped to the one route and nothing else". ips has no
+`KNOWN_SERVICES` and does not need one: `ApiKey.scopes` has existed since the
+model was written. It is SET at mint time (`api/auth_routes.py:31`) and COPIED
+on rotation (`:89`), and it was read **nowhere**.
+
+So every API key in ips reached every `@require_auth` route — the whole FHIR
+surface, patients, blocks, consents, state, export — whatever it was issued
+for. The #729 shape (a field that looks like a gate and gates nothing)
+producing the #760 consequence (a credential issued for one purpose reaching
+everything). A key minted by a logged-in user also carries that user's guid, so
+it inherits their privileges in full: a key minted by an SU is an SU key.
+
+`require_scope()` is **opt-in per route**, deliberately. Requiring every key to
+carry a scope would break every key already issued — the same lockout risk as
+#902's phase gate. A route that declares nothing behaves exactly as before, and
+that is asserted in both directions, because "additive" is a claim about the
+routes NOT changed and is otherwise untested.
+
+An SSO caller is refused on a scoped route even as an SU: a scoped route exists
+for a machine, and admitting a human identity is how a service surface quietly
+becomes a general one. An SU who needs to drive it by hand mints a key.
+
+### Idempotence without a second source of truth
+
+The natural key is (patient, code_system, code, national_term, asserted_at).
+`(code_system, code)` alone is **not** a key — twelve codes in this selection
+bind two or three national terms, the same fact that put the term in
+`CodeableConcept.text` in #886.
+
+Rather than a receipts table, the resource ids are UUIDv5-derived from that key.
+`alert_implants.to_fhir` already takes `device_id`/`usage_id` precisely so "the
+caller controls identity", so idempotence is a lookup on
+`FhirResource.resource_id` and there is nothing to drift. The namespace UUID
+must never change: doing so would make every pushed assertion look new.
+
+### Three of my own test weaknesses, recorded
+
+- A test **skipped in isolation** and only "passed" because another test had
+  registered its probe route first. A test that passes by not running is worse
+  than no test.
+- Registering probe routes on the session-scoped app produced **13 errors**
+  when the whole suite ran — Flask refuses `route` after the first request.
+  Both were fixed by dispatching the decorated view inside a request context
+  instead, which also removed the ordering.
+- A test claimed the `isinstance` guard stops a string matching "by
+  substring". Wrong: iterating a string yields characters, so a string denied
+  either way, and the control that removed the guard failed nothing — which is
+  how the error was found. Parametrising it showed the guard does carry
+  behaviour, just not that one: without it a non-iterable value raises inside
+  the gate and the caller gets a 500 instead of a 403. The comment now says
+  what the control showed.
+
+### Handover when alert is deployed
+
+1. Mint an API key with `scopes: ["implants:write"]` and nothing else.
+2. Set it as alert's `IPS_API_KEY`, with `IPS_BASE_URL=https://ips.pdhc.se`
+   (the public subdomain, not a loopback — alert needs no subdomain of its own,
+   only outbound access).
+3. alert POSTs batches of up to 500 assertions to
+   `/api/v1/implants/assertions` and may retry freely; a re-push is counted as
+   a duplicate and creates nothing.

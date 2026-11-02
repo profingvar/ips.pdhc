@@ -122,6 +122,11 @@ def require_auth(f):
             api_key = validate_api_key(raw_key)
             if not api_key:
                 return _auth_error("Invalid or expired API key")
+            # #903: expose the KEY, not only the identity it resolves to,
+            # so a route can narrow itself to the scopes the key carries.
+            # Without this the `scopes` column is unreadable downstream,
+            # which is how it stayed decorative.
+            g.api_key = api_key
             if api_key.user:
                 g.current_user = api_key.user
             else:
@@ -639,3 +644,77 @@ def require_proxy_self(f):
         return f(*args, **kwargs)
 
     return decorated
+
+
+# =====================================================================
+# Scoped service access — #903.
+#
+# `ApiKey.scopes` has existed since the model was written. It is SET at
+# mint time (`api/auth_routes.py:31`) and COPIED on rotation (`:89`), and
+# measured 2026-11-02 it was read NOWHERE. A column that looks like a
+# gate and gates nothing is the #729 shape, and the consequence is the
+# #760 shape: every API key in ips reaches every `@require_auth` route —
+# the whole FHIR surface, patients, blocks, consents, state, export —
+# whatever it was issued for.
+#
+# Note also that a key minted by a logged-in user carries that user's
+# guid, so `api_key.user` resolves to them and the key inherits their
+# privileges in full. A key minted by an SU is an SU key.
+#
+# DELIBERATELY ADDITIVE. Enforcing "every key must carry a scope" would
+# break every key already issued, since they were minted with
+# `scopes=[]` and nothing ever required otherwise — the same lockout risk
+# as #902's phase gate. So enforcement is opt-in PER ROUTE: a route that
+# declares no scope behaves exactly as before, and a route that declares
+# one admits only a key carrying it. Existing routes are untouched; new
+# machine-to-machine routes can be narrow from their first day.
+# =====================================================================
+
+SCOPE_IMPLANTS_WRITE = "implants:write"
+
+
+def require_scope(*required):
+    """Narrow a route to API keys carrying at least one of ``required``.
+
+    Stacks UNDER :func:`require_auth` — that is, ``require_auth`` first,
+    then this — because it reads the key that one validated.
+
+    An SSO caller is refused even when they are an SU. A scoped route
+    exists for a machine, and an SU who needs to drive it by hand can
+    mint a key; admitting a human identity to a machine route is how a
+    service surface quietly becomes a general one. The refusal says
+    which scope is missing, because the caller is a program and a
+    program cannot read an apology.
+
+    The dev bypass (``AUTH_DISABLED``) passes, matching every other gate
+    in this module, so the test suite and local development are not
+    required to mint keys.
+    """
+    required_set = frozenset(required)
+
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if current_app.config.get("AUTH_DISABLED"):
+                return f(*args, **kwargs)
+
+            api_key = getattr(g, "api_key", None)
+            if api_key is None:
+                return _auth_error(
+                    "This endpoint requires a scoped API key "
+                    f"({', '.join(sorted(required_set))})", 403,
+                )
+
+            held = api_key.scopes or []
+            if not isinstance(held, (list, tuple, set, frozenset)):
+                # A malformed scopes value denies. A string would other-
+                # wise match by substring, which is the #804 shape.
+                held = []
+            if required_set.isdisjoint({str(x) for x in held}):
+                return _auth_error(
+                    "API key lacks the required scope "
+                    f"({', '.join(sorted(required_set))})", 403,
+                )
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
