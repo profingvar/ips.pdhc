@@ -675,3 +675,126 @@ from memory is the guessing this module refuses to do.
 
 **781 passed** (772 before). Controls: removing the two types -> 7 red;
 admitting the legacy spelling -> 2 red.
+
+---
+
+## 2026-11-02 — #891 (EPS C4): an assignment could begin but never end
+
+- `gateway/app/models/patient_index.py`
+- `gateway/app/api/clinic_routes.py`
+- `gateway/migrations/add_assignment_ended_at.sql` (new)
+- `gateway/tests/test_eps_assignment_ended_at_891.py` (new)
+
+**Two things had to change, not one.** The column alone would have made
+"ended" a TERMINAL state per pair: `UniqueConstraint(patient_guid,
+clinic_guid)` meant a closed row still occupied the pair, so a patient
+returning to a clinic they had left could not be re-assigned. Replaced with a
+PARTIAL unique index over open assignments — at most one active assignment per
+pair, any number of closed ones. For every row that exists today (all
+`ended_at IS NULL`) the rule is identical to the old constraint, so nothing
+stored is affected.
+
+`ended_at` is NOT a reuse of `expires_at`, which exists on four other models.
+Those are EXPIRIES — a planned future end set at creation. This is an end that
+HAPPENED. An expiry in the future means "still valid"; a non-NULL `ended_at`
+always means "over". A test pins that `expires_at` is absent from this model.
+
+**Ten read sites, and THREE are authorisation.** `blocks_routes` (spärr),
+`consents_routes` and `care_access_routes` all grant on "staff with an
+assignment to the patient". Flipping those to "an ACTIVE assignment" is a
+TIGHTENING — staff at a clinic the patient left would lose access — which is
+probably right and is still a security change that must not ride along with a
+column addition. So:
+
+  - one canonical rule, `PatientClinicAssignment.active_only(query)`, for the
+    same reason `care_access_policy` is the single source of the zone rule
+  - the ROSTER opts in (unambiguous: sim.pdhc builds cohorts from it, and a
+    stale assignment puts a patient in a cohort they left)
+  - the other nine are recorded in `CONSUMERS_OF_ASSIGNMENT` with the question
+    each poses, and two tests assert the three auth sites are still HELD
+
+`ips_generator`'s managing-organisation read is marked PROBABLY HISTORICAL: a
+document generated then should carry the clinic current THEN, which is
+bitemporal and belongs with #895.
+
+**The migration was proven against real Postgres** in a throwaway container,
+not merely written:
+
+| | result |
+|---|---|
+| the DO block finds the auto-generated constraint name | dropped `patient_clinic_assignments_patient_guid_clinic_guid_key` |
+| partial index created with the right predicate | `WHERE (ended_at IS NULL)` |
+| existing row survives | `ended_at` NULL |
+| re-run | clean no-op, *"already migrated"* |
+| closed row + new open row, same pair | **accepted** |
+| two OPEN rows, same pair | **refused** |
+
+The name is looked up rather than hardcoded, because hardcoding it would
+silently do nothing on a database named differently — and "silently did
+nothing" is indistinguishable from success in a migration.
+
+`sqlite_where` is given alongside `postgresql_where`: with only the latter,
+SQLite (the test database) builds a FULL unique index, so the behaviour under
+test would not have been the behaviour in production.
+
+**792 passed** (781 before). Controls: roster ignores `ended_at` -> 1 red;
+back to a full unique index -> 2 red.
+
+**NOT deployed.** `add_assignment_ended_at.sql` has to be run on `ips-db-1`.
+
+---
+
+## 2026-11-02 — #899(b): three authorisation paths now require an ACTIVE assignment
+
+- `gateway/app/api/blocks_routes.py` (spärr)
+- `gateway/app/api/consents_routes.py`
+- `gateway/app/api/care_access_routes.py`
+- `gateway/app/models/patient_index.py` (`CONSUMERS_OF_ASSIGNMENT`)
+- `gateway/tests/test_eps_assignment_auth_899.py` (new)
+- `gateway/tests/test_eps_assignment_ended_at_891.py` (the two HELD tests rewritten)
+
+All three answered *"does this staff member have a `PatientClinicAssignment` to
+this patient?"* without asking whether it was still active. After #891 gave
+assignments an end date, that meant staff at a clinic the patient had LEFT
+would keep spärr, consent and care access.
+
+**Done now because now it is free.** `ended_at` is NULL on all 296 production
+rows and nothing can set it (#900). So "has an assignment" and "has an ACTIVE
+assignment" return the same set, and the tightening changed no real answer on
+the day it shipped. The empirical form: the suite went 792 -> 790 passing plus
+exactly the two #891 tests that asserted these paths were untouched. **No other
+test outcome moved.** Done after the first assignment ends, the identical edit
+would be a behaviour change on a security path with real subjects.
+
+Narrowed through `active_only()` at each site rather than an inline
+`ended_at IS NULL`, so ten joins cannot drift into ten definitions of
+"assigned".
+
+`care_access_routes._assigned_clinic` returns None for an ended assignment,
+which the caller treats as a DENIAL — the same #807-shaped case as a patient
+with no care relationship at all, and the correct direction.
+
+**The two #891 tests were rewritten, not deleted.** They asserted these paths
+were HELD, which was true while #891 was the latest word; they are what made
+this flip impossible to do silently, which was their purpose. Four tests now
+pin the inventory instead: every site carries a decision, the count is 10,
+nothing is HELD any more, and the two remaining OPEN QUESTIONs are named.
+
+**802 passed** (792 before). Controls run PER SITE, because one narrowing
+passing is not three:
+
+| breakage | result |
+|---|---|
+| `blocks_routes` stops honouring `ended_at` | 1 red, the spärr test |
+| `consents_routes` | 1 red, the consents test |
+| `care_access_routes` | 1 red, the care-access test |
+
+The third control had to be redone by hand. The first attempt mangled the file
+with a regex de-indent, so pytest reported 8 ERRORs rather than one FAILURE —
+a control that dies on an ImportError never ran the test, and would have been
+scored as success by anyone reading only the exit code. The redo restores the
+OLD LOGIC inside the NEW STRUCTURE and checks the module imports before
+asserting anything.
+
+**#900 carries part (a)**: the write path. Until it exists, all of this guards
+a state that never occurs.

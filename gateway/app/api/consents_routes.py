@@ -57,12 +57,16 @@ def _can_act_on_patient(patient_guid) -> bool:
         return False
     from app.models.clinic import UserClinicAssignment
     from app.models.patient_index import PatientClinicAssignment
+    # ACTIVE assignments only (#899) -- see blocks_routes for the reasoning
+    # and why this was a no-op on the day it shipped.
     has = (
-        db.session.query(PatientClinicAssignment.guid)
-        .join(
-            UserClinicAssignment,
-            UserClinicAssignment.clinic_guid
-            == PatientClinicAssignment.clinic_guid,
+        PatientClinicAssignment.active_only(
+            db.session.query(PatientClinicAssignment.guid)
+            .join(
+                UserClinicAssignment,
+                UserClinicAssignment.clinic_guid
+                == PatientClinicAssignment.clinic_guid,
+            )
         )
         .filter(
             PatientClinicAssignment.patient_guid == patient_guid,

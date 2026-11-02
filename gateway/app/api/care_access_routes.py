@@ -263,9 +263,14 @@ def _assigned_clinic(patient_guid):
     from app.models.clinic import Clinic
     from app.models.patient_index import PatientClinicAssignment
 
-    row = (db.session.query(Clinic)
-           .join(PatientClinicAssignment,
-                 PatientClinicAssignment.clinic_guid == Clinic.guid)
+    # ACTIVE assignments only (#899). A patient whose only assignment has
+    # ended resolves to None here, which the caller treats as a DENIAL -- the
+    # correct direction, and the same #807-shaped case as having no assignment
+    # at all. No-op when it shipped: nothing could set `ended_at` yet.
+    row = (PatientClinicAssignment.active_only(
+               db.session.query(Clinic)
+               .join(PatientClinicAssignment,
+                     PatientClinicAssignment.clinic_guid == Clinic.guid))
            .filter(PatientClinicAssignment.patient_guid == patient_guid)
            .filter(Clinic.is_active.is_(True))
            .first())

@@ -99,8 +99,11 @@ def list_clinic_patients(guid):
 
     Returns the same PatientIndex.to_dict() shape as the rest of the
     application API, ordered by (family_name, given_name). The join
-    goes through PatientClinicAssignment; duplicates are impossible
-    thanks to the (patient_guid, clinic_guid) unique constraint.
+    goes through PatientClinicAssignment, narrowed to ACTIVE assignments
+    (#891). Duplicates are impossible thanks to the partial unique index
+    over open assignments, `uq_patient_clinic_active` — which replaced the
+    plain (patient_guid, clinic_guid) constraint so a patient returning to a
+    clinic they had left can be re-assigned.
     """
     # #805: `Clinic.guid` is a real UUID column, so a non-UUID value RAISES
     # at the driver and Flask returns 500 — before the 404 below can run. The
@@ -117,11 +120,18 @@ def list_clinic_patients(guid):
     if not clinic:
         return jsonify({"error": "Clinic not found"}), 404
 
+    # #891: ACTIVE assignments only. This roster is what sim.pdhc builds
+    # cohorts from, so a patient who has left the clinic appearing here puts
+    # them in a cohort they are no longer part of. Narrowed through
+    # `active_only()` rather than an inline `ended_at IS NULL` so that ten read
+    # sites cannot drift into ten definitions of "assigned".
     patients = (
-        db.session.query(PatientIndex)
-        .join(
-            PatientClinicAssignment,
-            PatientClinicAssignment.patient_guid == PatientIndex.guid,
+        PatientClinicAssignment.active_only(
+            db.session.query(PatientIndex)
+            .join(
+                PatientClinicAssignment,
+                PatientClinicAssignment.patient_guid == PatientIndex.guid,
+            )
         )
         .filter(PatientClinicAssignment.clinic_guid == clinic.guid)
         .filter(PatientIndex.is_active.is_(True))

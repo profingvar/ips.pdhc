@@ -1329,3 +1329,36 @@ guessed (`Device.patient`, `DeviceUsage.subject`, `Device.code` in the absent
 assertion).
 
 **781 passed** (772 before). Controls: 7 / 2 red on deliberate breakage.
+
+### #891 (EPS C4) — assignments can end, 2026-11-02
+
+`ended_at` on `patient_clinic_assignments`, plus the partial unique index that
+makes the history expressible: the old `(patient_guid, clinic_guid)` constraint
+made "ended" terminal per pair, so a returning patient could not be
+re-assigned.
+
+One canonical rule (`active_only()`). The roster opts in; the three
+AUTHORISATION sites (spärr, consents, care access) are deliberately HELD,
+because flipping them is a tightening that needs its own verification. All ten
+sites are inventoried in `CONSUMERS_OF_ASSIGNMENT` and two tests assert the
+auth ones stay held.
+
+Migration proven against real Postgres in a throwaway container: constraint
+name looked up and dropped, partial index correct, re-run a no-op, closed+open
+accepted, two open refused.
+
+**792 passed** (781 before). Controls: 1 / 2 red.
+**NOT deployed** — `add_assignment_ended_at.sql` must run on `ips-db-1`.
+
+### #899(b) — spärr, consent and care access require an ACTIVE assignment, 2026-11-02
+
+Narrowed through `active_only()`. Done while provably a no-op: `ended_at` is
+NULL on all 296 production rows and nothing can set it, so the suite moved only
+by the two #891 tests that asserted these paths were untouched — rewritten, not
+deleted, since they are what stopped the flip being silent.
+
+**802 passed** (792 before). Controls run per site: 1 red each. The third had
+to be redone by hand after a regex revert broke the module — 8 ERRORs, not a
+FAILURE, and a control that dies on an ImportError never ran.
+
+Part (a), the write path that can actually end an assignment, is **#900**.

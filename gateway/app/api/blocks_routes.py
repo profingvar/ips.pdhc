@@ -58,13 +58,26 @@ def _can_act_on_patient(patient_guid) -> bool:
     user = getattr(g, "current_user", None)
     if user is None:
         return False
-    # Staff with any clinic assignment to this patient.
+    # Staff with an ACTIVE clinic assignment to this patient (#899).
+    #
+    # Was "any assignment". Narrowed through the canonical rule rather than an
+    # inline `ended_at IS NULL`, because ten sites join this table and two
+    # definitions of "assigned" is how a patient is visible to one surface and
+    # invisible to another.
+    #
+    # A NO-OP when this shipped: `ended_at` was NULL on all 296 production
+    # rows, nothing could yet set it (#899 part a), so this returned the same
+    # set. That is the point of doing it before any assignment ends -- the
+    # tightening is reviewable in isolation instead of being a behaviour change
+    # on a spärr path with real subjects.
     from app.models.clinic import UserClinicAssignment
     has = (
-        db.session.query(PatientClinicAssignment.guid)
-        .join(
-            UserClinicAssignment,
-            UserClinicAssignment.clinic_guid == PatientClinicAssignment.clinic_guid,
+        PatientClinicAssignment.active_only(
+            db.session.query(PatientClinicAssignment.guid)
+            .join(
+                UserClinicAssignment,
+                UserClinicAssignment.clinic_guid == PatientClinicAssignment.clinic_guid,
+            )
         )
         .filter(
             PatientClinicAssignment.patient_guid == patient_guid,

@@ -126,10 +126,66 @@ class PatientIndex(db.Model):
         return [str(a.clinic_guid) for a in self.clinic_assignments]
 
 
+#: Every site that joins `patient_clinic_assignments`, and what honouring
+#: `ended_at` would MEAN there. #891 adds the column and the rule; it flips only
+#: the unambiguous consumer, because these ten sites do not ask the same
+#: question and three of them are authorisation.
+#:
+#: Flipping an authorisation path from "has an assignment" to "has an ACTIVE
+#: assignment" is a TIGHTENING: staff at a clinic the patient has left would
+#: lose access. That is almost certainly right, and it is still a security
+#: change that needs its own verification rather than riding along with a
+#: column addition.
+CONSUMERS_OF_ASSIGNMENT = {
+    # site                                      -> decision
+    "api/clinic_routes.py roster":              "ACTIVE ONLY (#891) — a patient who left must not appear in a cohort",
+    "api/blocks_routes.py staff authorisation": "ACTIVE ONLY (#899) — spärr. Flipped while it was provably a no-op",
+    "api/consents_routes.py staff authorisation": "ACTIVE ONLY (#899) — consent access",
+    "api/care_access_routes.py":                "ACTIVE ONLY (#899) — care access; None is a denial",
+    "api/patient_routes.py the patient's clinics": "OPEN QUESTION — is it 'where they are' or 'where they have been'?",
+    "api/patient_routes.py patient list filter": "OPEN QUESTION — an org-scoped list probably wants active only",
+    "services/ips_generator.py managing org":   "PROBABLY HISTORICAL — a document generated then should keep the clinic current THEN; that is bitemporal and belongs with #895",
+    "services/euips_batch.py preview/purge":    "ALL ROWS — bookkeeping about generated batches, not about current care",
+    "services/mock_generator.py write":         "writes only",
+    "admin.py write":                           "writes only",
+}
+
+
 class PatientClinicAssignment(db.Model):
+    """Which clinic a patient belongs to, and SINCE WHEN — and now UNTIL when.
+
+    #891 (EPS C4). Before it, this table had `assigned_at` and no end, so a
+    patient who moved clinic was either still assigned to the old one or had no
+    record of ever having been: there was no third thing the schema could say.
+    That is not theoretical — `GET /api/v1/clinics/<guid>/patients` reads this
+    table and sim.pdhc builds cohorts from it, so a stale assignment puts a
+    patient in a cohort they left, and deleting the row loses that they were
+    ever there.
+
+    **The unique constraint had to change for the end date to mean anything.**
+    `UniqueConstraint(patient_guid, clinic_guid)` made "ended" a TERMINAL state
+    per pair: a patient returning to a clinic they had left could not be
+    re-assigned, because the historical row still occupied the pair. It is now
+    a PARTIAL unique index over active rows only — at most one open assignment
+    per (patient, clinic), and any number of closed ones. For every row that
+    exists today (all `ended_at IS NULL`) the rule is identical to the old
+    constraint, so nothing currently stored is affected.
+    """
+
     __tablename__ = "patient_clinic_assignments"
     __table_args__ = (
-        UniqueConstraint("patient_guid", "clinic_guid"),
+        # Replaces UniqueConstraint(patient_guid, clinic_guid) — see the class
+        # docstring. Both dialects are given the predicate explicitly: with
+        # only `postgresql_where`, SQLite (the test database) would build a
+        # FULL unique index and silently forbid the second row, so the
+        # behaviour under test would not be the behaviour in production.
+        Index(
+            "uq_patient_clinic_active",
+            "patient_guid", "clinic_guid",
+            unique=True,
+            postgresql_where=db.text("ended_at IS NULL"),
+            sqlite_where=db.text("ended_at IS NULL"),
+        ),
     )
 
     guid: Mapped[uuid.UUID] = mapped_column(
@@ -142,6 +198,39 @@ class PatientClinicAssignment(db.Model):
         GUID(), ForeignKey("clinics.guid", ondelete="CASCADE"), nullable=False
     )
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: When the assignment ENDED. NULL = still active, which is every existing
+    #: row, so this column changes nothing about what any consumer currently
+    #: sees until that consumer opts in via `active_only()`.
+    #:
+    #: NOT a reuse of `expires_at`, which exists on patient_block,
+    #: patient_consent, emergency_access and api_key. Those are EXPIRIES — a
+    #: planned future end, set when the row is created. This is an end that
+    #: HAPPENED, set when it happens, and the two are not interchangeable: an
+    #: expiry in the future means "still valid", while a non-NULL `ended_at`
+    #: always means "over".
+    #:
+    #: This is also one axis, not two. #895 (EPS C1) adds validity time beside
+    #: record time for state generally; `ended_at` here is the validity END of
+    #: one fact and `assigned_at` its validity START. There is deliberately no
+    #: `recorded_at` yet — adding it belongs with the projection in C1 rather
+    #: than piecemeal here, and `created_at` is not it.
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
 
     patient = relationship("PatientIndex", back_populates="clinic_assignments")
     clinic = relationship("Clinic")
+
+    @classmethod
+    def active_only(cls, query):
+        """Narrow `query` to assignments that have not ended.
+
+        THE SINGLE SOURCE OF THAT RULE, for the same reason
+        `care_access_policy` is the single source of the zone rule: ten read
+        sites join this table, three of them on authorisation paths, and two
+        consumers applying different definitions of "assigned" is how a
+        patient is visible to one surface and invisible to another.
+
+        Consumers opt in. See `CONSUMERS_OF_ASSIGNMENT` in this module for the
+        inventory and why each site has not simply been flipped.
+        """
+        return query.filter(cls.ended_at.is_(None))
