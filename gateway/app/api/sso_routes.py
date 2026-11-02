@@ -79,6 +79,16 @@ def callback():
         "user_type": access_blob.get("user_type"),
         "is_su_admin": access_blob.get("is_su_admin", False),
         "display_name": access_blob.get("email", "User"),
+        # #902: the admin gate needs these, and the blob already carries
+        # them. Storing them here is what lets the decision be made from
+        # the session without a second SSO round trip per request.
+        # Both, because `effective_phases` is on sso's legacy kill-switch
+        # list (#409) and `session_phases` is the reform-canonical field.
+        # The gate prefers the latter; see admin_access_policy._phases.
+        "session_phases": access_blob.get("session_phases") or [],
+        "effective_phases": access_blob.get("effective_phases") or [],
+        "professional_role": access_blob.get("professional_role"),
+        "organization_ids": access_blob.get("organization_ids") or [],
     }
 
     logger.info("SSO login: %s", access_blob.get("email"))

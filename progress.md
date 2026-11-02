@@ -1565,3 +1565,80 @@ patient may increase access; lifting a spärr increases access).
   refused". The refusal is asserted at ips's own boundary, in both the dev and
   the production auth path. The other consumers cannot be tested from this
   repo, and they are untouched because no zone changed.
+
+## #902 — the admin surface gate (2026-11-02)
+
+**1038 passing**, from 990. Four controls, each failing on its own assertion.
+
+### The uncertainty the ticket was filed with is resolved: it WAS exposure
+
+#902 deliberately stopped short of calling this a finding, because whether a
+session-only gate is exposure depended on sso, which had not been measured.
+Measured now, in code on both sides:
+
+- `/api/auth/me/service` (`sso.pdhc/app/src/routes/auth.py:123`) authenticates
+  the USER and authenticates the SERVICE, then builds the blob with **no check
+  that this user may use this service**.
+- sso has **no per-user service allowlist**. `allowed_services` lives on
+  `Organisation`, for the machine/partner path only.
+- ips's callback stored the returned blob on any 200 — and read `user_type`
+  and `is_su_admin` into the session, which the gate then ignored.
+
+So any authenticated platform user who completed ips's SSO login — **a patient
+included** — had all 23 admin routes. Ten write; `/admin/mock-data/purge`
+deletes patients, clinical resources and clinic assignments.
+
+### Why it hid
+
+The full suite passed **identically** before and after the gate was written:
+990 both times. Not one test exercised it, because every test runs under
+`AUTH_DISABLED`, where the gate returns immediately. A security gate with no
+test is indistinguishable from no gate — so every meaningful check in
+`test_admin_gate_902.py` runs with `AUTH_DISABLED` **off**.
+
+### The deliberate split
+
+CLAUDE.md §11's rule ships in two halves, because enforcing all of it blind
+could lock legitimate users out of their own tool and who logs in is not
+knowable from this repo:
+
+1. **Unconditional:** not a professional and not an SU → refused. This cannot
+   lock out a legitimate administrator, because no legitimate administrator of
+   a patient registry is a patient.
+2. **Shadow-logged:** the `"analysis"` phase requirement is evaluated and its
+   would-be refusals logged at WARNING **naming the user**, but not enforced
+   until `IPS_ADMIN_REQUIRE_ANALYSIS_PHASE` is set. Same shape as the
+   platform's own `SSO_EMIT_LEGACY_BLOB_FIELDS` soak.
+
+**The one decision left for the operator:** flip that flag once the shadow log
+is quiet.
+
+### Two bugs caught during the work
+
+- **A redirect loop.** Sending a refused user to the SSO login page would log
+  them in again and refuse them again, for ever. A missing session redirects; a
+  refusal is a 403.
+- **My gate read the wrong phase field.** It read only `effective_phases`,
+  which is on sso's `LEGACY_BLOB_FIELDS` kill-switch list (#409) and staged to
+  stop being emitted. dashboard, rosetta and cdr all read
+  `session_phases or effective_phases` (#415/#416/#417). Left alone, this gate
+  would have seen an empty phase list the day #409's flag flips and refused
+  every professional on the platform. Caught by comparing against the three
+  siblings, not by a test — and now tested, with the ordering asserted rather
+  than a union.
+
+### The substring exemption
+
+The old gate read `if "download" in request.endpoint: return None` — four doc
+downloads today, and **any** future endpoint whose name contains "download".
+Now an explicit set. Tested behaviourally by driving the gate with a crafted
+endpoint name, because asserting the set's contents proves only that the set is
+narrow, not that the gate consults it.
+
+### Step 4, recorded as a decision rather than an omission
+
+`/admin/patients` stays **unscoped**: an admin tool that lists every patient is
+the point of an admin tool, now that only professionals and SUs reach it. Noted
+rather than left silent, which is what #902 asked for. Org scoping would also
+be unverifiable against the current population — all assigned ips patients sit
+in one organisation.

@@ -8,7 +8,7 @@ from datetime import datetime, timezone, date
 import httpx
 from flask import (
     Blueprint, render_template, request, abort, make_response,
-    session, redirect, url_for, current_app, flash,
+    session, redirect, url_for, current_app, flash, g,
 )
 from sqlalchemy import text, func, or_
 from werkzeug.security import generate_password_hash
@@ -29,6 +29,7 @@ from app.models.clinic import Clinic
 from app.services.ips_generator import generate_ips_bundle
 from app.services.fhir_service import create_resource
 from app.services.audit_service import log_event
+from app.services import admin_access_policy
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +42,61 @@ bp = Blueprint(
 
 
 @bp.before_request
-def _require_session():
-    """Redirect to SSO login if no active session (skipped when AUTH_DISABLED)."""
+def _require_admin():
+    """The single gate on all 23 admin routes — #902.
+
+    Was a session check and nothing else: no ``user_type``, no
+    ``is_su_admin``, no phase, no scoping. Measured 2026-11-02, sso does
+    not gate this upstream either (``/api/auth/me/service`` authenticates
+    the user and the service and checks nothing about whether that user
+    may use that service), so any authenticated platform user — a patient
+    included — reached all 23 routes, ten of which write and one of which
+    deletes patients.
+
+    The decision now lives in ``admin_access_policy``, in one place. See
+    that module for why the analysis-phase half ships shadow-logged
+    rather than enforced.
+
+    Two response shapes, and the difference matters: a MISSING session
+    redirects to SSO login, because logging in is the remedy. A REFUSAL
+    returns 403, because sending a refused user to the login page would
+    loop them through SSO and refuse them again.
+    """
     if current_app.config.get("AUTH_DISABLED"):
+        g.admin_user = session.get("sso_user") or None
         return None
-    # Allow docs downloads without login
-    if request.endpoint and "download" in request.endpoint:
+
+    # An explicit set, not a substring match on the endpoint name (#804).
+    if request.endpoint in admin_access_policy.PUBLIC_ADMIN_ENDPOINTS:
         return None
-    if not session.get("sso_user"):
+
+    sso_user = session.get("sso_user")
+    if not sso_user:
         session["sso_next"] = request.url
         return redirect(url_for("sso.login"))
+
+    enforce = bool(current_app.config.get(admin_access_policy.PHASE_FLAG))
+    allowed, reason, shadow = admin_access_policy.admin_access_decision(
+        sso_user, enforce_phase=enforce,
+    )
+
+    if shadow:
+        admin_access_policy.log_shadow_denial(
+            sso_user, request.endpoint, shadow)
+
+    if not allowed:
+        logger.warning(
+            "ips admin refused (%s): endpoint=%s user_guid=%s user_type=%s",
+            reason, request.endpoint, sso_user.get("user_guid"),
+            sso_user.get("user_type"),
+        )
+        abort(403, "This surface is reserved for care professionals")
+
+    # #902 step 3: load an identity on this surface, so a scope rule has
+    # something to read. Previously nothing was loaded at all — no
+    # g.current_user, no resolved blob — which is why #896's export had
+    # to be moved to the API blueprint to find a user to filter on.
+    g.admin_user = sso_user
     return None
 
 

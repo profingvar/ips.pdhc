@@ -1464,3 +1464,16 @@ address. The same judgement #792 applied to a contact's surname.
 - gateway/tests/test_eps_patient_proxy_889.py (new) — 67 checks.
 - plans/eps_state_reform.md §3.5 — the "eleven readers" premise corrected in
   both directions.
+
+## 2026-11-02 — #902: the admin surface gate
+- gateway/app/services/admin_access_policy.py (new) — ONE place, as the ticket
+  asks. Professional/SU enforced unconditionally; the analysis phase
+  shadow-logged behind IPS_ADMIN_REQUIRE_ANALYSIS_PHASE. PUBLIC_ADMIN_ENDPOINTS
+  replaces a substring match on the endpoint name. _phases() prefers
+  session_phases over the legacy effective_phases (#409).
+- gateway/app/admin.py — _require_session became _require_admin: consults the
+  policy, 403 on a refusal (never a redirect loop), loads g.admin_user.
+- gateway/app/api/sso_routes.py — session now carries session_phases,
+  effective_phases, professional_role, organization_ids.
+- gateway/tests/test_admin_gate_902.py (new) — 48 checks, the meaningful ones
+  with AUTH_DISABLED OFF.
