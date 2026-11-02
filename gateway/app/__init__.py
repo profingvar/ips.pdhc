@@ -195,6 +195,75 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.services import euips_report
         _click.echo(euips_report.format_report(euips_report.report()))
 
+    @app.cli.command("migrate-r5-device-elements")
+    @click.option("--apply", "do_apply", is_flag=True, default=False,
+                  help="Write the changes. Omit for a dry run.")
+    @click.option("--expect", type=int, default=None,
+                  help="Abort unless exactly this many rows would change.")
+    def _migrate_r5_device_elements_cli(do_apply, expect):  # noqa: D401
+        """Bring stored Device/DeviceUsage rows to the R5 element names (#908).
+
+        DRY RUN BY DEFAULT. It prints what it would change and exits; only
+        `--apply` writes. That is the right default for a command that edits
+        stored clinical resources, and it makes `--expect` usable: run it
+        dry, read the count, then run it with `--expect <that count>` so a
+        table that changed underneath you aborts instead of being edited
+        blind (#829 -- an in-place edit script that reports success having
+        matched nothing).
+
+        TAKE A DUMP FIRST. `~/backups/predeploy/ips.pdhc/`. This edits data,
+        and #908 recommends leaving it alone entirely while the Device rows
+        are synthetic -- run it before real implant data arrives (#905), not
+        because it is urgent.
+
+        What it does, and the one thing it refuses to do:
+          - deletes `Device.patient` (R5 has no such element; the row's
+            patient_guid is the linkage and is never touched here)
+          - renames `Device.code` -> `type` and `DeviceUsage.subject` ->
+            `patient`, which are RENAMES: that coding is a section's
+            EXPLICITLY_ABSENT signal, and that reference is the patient.
+          - where both names are present, keeps the R5 one. A stale
+            `subject` never overwrites a valid `patient`.
+        """
+        import click as _click
+        from app.models.fhir_resource import FhirResource
+        from app.services import r5_device_migration as mig
+
+        rows = (db.session.query(FhirResource)
+                .filter(FhirResource.resource_type.in_(mig.HANDLED_TYPES))
+                .all())
+        summary = mig.plan(rows)
+        _click.echo(f"examined {summary['examined']} row(s); "
+                    f"{summary['affected']} would change")
+        for change, n in sorted(summary["changes"].items()):
+            _click.echo(f"  {change}: {n}")
+
+        if expect is not None and summary["affected"] != expect:
+            raise SystemExit(
+                f"ABORT: --expect {expect} but {summary['affected']} rows "
+                "would change. The table changed since the dry run, or the "
+                "expectation was wrong. Nothing was written.")
+
+        if not do_apply:
+            _click.echo("dry run -- nothing written. Re-run with --apply "
+                        f"--expect {summary['affected']} to write.")
+            return
+
+        written = 0
+        for r in rows:
+            new_json, changes = mig.migrate_resource_json(
+                r.resource_type, r.resource_json)
+            if changes:
+                r.resource_json = new_json
+                written += 1
+        if written != summary["affected"]:
+            db.session.rollback()
+            raise SystemExit(
+                f"ABORT: planned {summary['affected']} but wrote {written}. "
+                "Rolled back.")
+        db.session.commit()
+        _click.echo(f"wrote {written} row(s).")
+
     @app.cli.command("rebuild-patient-state")
     @click.option("--patient", "patient_guid", default=None,
                   help="One patient guid. Omit to rebuild every patient.")

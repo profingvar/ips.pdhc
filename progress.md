@@ -1972,3 +1972,51 @@ there, and production was not probed. #908 carries the counting query, the three
 options and the recommendation: leave it while the rows are synthetic, migrate
 before #905 wires real implant data. It also records that the `subject` ->
 `patient` case is a RENAME, not a deletion, and must not drop the reference.
+
+## #908 — the migration exists and is tested; the data is untouched (2026-11-02)
+
+**1210 passing**, from 1181. Four controls, each failing on its own assertion.
+
+### What changed about the approach
+
+#908 drafted this as JSONB statements. They were correct and **Postgres-only**,
+which meant the transformation could not be exercised by a suite that runs on
+SQLite — and the change that worries me most is a RENAME, where a wrong
+operator silently drops a patient reference.
+
+So it is a pure function over the JSON with the CLI walking rows over it: one
+implementation, both databases, a test per case. It also made `plan()` possible,
+which is what gives the command a real dry run rather than a promise of one.
+
+### The two things that could go wrong, and both now fail loudly
+
+- **Dropping `Device.code` instead of renaming it.** On an absent assertion
+  that coding IS the section's EXPLICITLY_ABSENT signal; deleting it turns "no
+  known devices" into "nothing recorded". Invisible afterwards, because both
+  states are plausible. Control 1 made it a deletion and the **end-to-end**
+  test — the one that re-runs the section matcher on the migrated row — failed.
+  That test is the reason this is safe rather than hopeful.
+- **A stale `subject` overwriting a valid `patient`.** That files one patient's
+  resource under whoever the stale field names. Control 2 reversed the
+  precedence and the test failed.
+
+### The command is dry-run by default
+
+`flask migrate-r5-device-elements` prints what it would change and exits.
+`--apply` writes. `--expect N` aborts unless exactly N rows would change, so
+the operator runs it dry, reads the count, and re-runs with that count — a
+table that changed underneath them aborts rather than being edited blind
+(#829). The apply path also compares what it wrote against what it planned and
+rolls back on a mismatch.
+
+Guarded against overreach too: `HANDLED_TYPES` is Device and DeviceUsage only.
+Observation and Procedure legitimately HAVE `subject`, and touching them would
+be the worst available mistake — control 4 added them and the test failed.
+
+### NOTHING WAS RUN
+
+The dev DB holds **zero** Device and DeviceUsage rows, so `--apply` locally is
+a no-op, and production was not probed. #908's own recommendation stands: leave
+the data alone while the Device rows are synthetic, and run this before real
+implant data arrives (#905). Take a predeploy dump first —
+`~/backups/predeploy/ips.pdhc/`.

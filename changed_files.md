@@ -1563,3 +1563,14 @@ address. The same judgement #792 applied to a contact's surname.
 - gateway/tests/test_r5_device_elements_907.py (new) — 17 checks, built around
   the R5 element lists rather than three per-element assertions.
 - Filed #908: stored rows still carry the old shapes (operator-gated data).
+
+## 2026-11-02 — #908: a tested migration for the pre-#907 stored shapes
+- gateway/app/services/r5_device_migration.py (new) — a PURE function over
+  the JSON, not JSONB SQL: the same code runs on SQLite and Postgres, so the
+  rename that could lose a patient reference has a test. Plus plan() for a
+  dry run.
+- gateway/app/__init__.py — `flask migrate-r5-device-elements`, DRY RUN BY
+  DEFAULT, with `--apply` and `--expect N` (aborts on a count mismatch).
+- gateway/tests/test_r5_device_migration_908.py (new) — 29 checks.
+- NO DATA CHANGED. The dev DB holds zero Device rows; production was not
+  probed and is the operator's to run, timed before #905.
