@@ -1252,3 +1252,73 @@ cares that access was removed, not only that a timestamp was written.
 patient leaves the clinic roster, and the state projection's
 `clinic_assignment` fact closes. **That is the first time #899(b)'s narrowing
 has had any effect.**
+
+---
+
+## 2026-11-02 — #886 (EPS B6): alert.pdhc's implant selection as FHIR
+
+- `gateway/app/services/alert_implants.py` (new)
+- `gateway/tests/test_eps_alert_implants_886.py` (new, 18 tests)
+
+**No HTTP client, deliberately — and that is a measurement, not a shortcut.**
+alert.pdhc runs nowhere: no container locally, none on miserver, no
+`/usr/local/www/alert.pdhc`, zero mentions in CLAUDE.md's service table. It is
+buildable and not deployed. A client against it would reproduce the xlate
+defect (#833): a default base URL manufactures a configured-looking service out
+of an unset variable, so "nobody wired this up" becomes indistinguishable from
+"it blipped". The transport is **#903**.
+
+The direction is already implied by configuration: alert carries
+`IPS_BASE_URL` and `IPS_API_KEY` and never calls them (#892 found them as
+config nothing reads), so the intended wire is alert PUSHING here.
+
+### The national term is load-bearing, and the code cannot carry it
+
+From alert's own `registration.py`: *"Twelve codes bind two or three … `Z95.0`
+in `Förekomst av implantat` covers ICD, pacemaker AND pacemaker electrode … a
+record holding only the code cannot say what the clinician picked."*
+
+So a mapping that fills `Device.type.coding` and drops `national_term` loses
+WHICH device was selected — a clinical loss, not a formatting one. It goes in
+`Device.type.text`, because FHIR defines `CodeableConcept.text` as the
+representation *as seen and selected by the user*, which is exactly what a
+national term is. A test asserts two assertions sharing `Z95.0` stay
+distinguishable.
+
+### `negation` is the ABSENT case, not a Device with a flag
+
+`negation` means it has been ESTABLISHED the patient does not have it. That maps
+to the section's own `no-known-devices` absent code — and the strongest test
+asserts `status_for_resources` then reads **EXPLICITLY_ABSENT**, which under
+EPS's 1..1 is the difference between a filled mandatory section and a
+conformance failure. A Device carrying a flag would make every consumer see an
+implant that is not there.
+
+### `asserted_at`, never `recorded_at`
+
+alert keeps the two apart for the same reason #895 does. A `DeviceUsage` timing
+is a clinical fact about the patient; the record time would date every implant
+to the day it was imported.
+
+### Simulated stays distinguishable, on every path
+
+`provenance` (`documented` | `simulated`, enforced by a check constraint in
+alert) survives into `meta.tag` — including on the negated path, which has
+fewer resources and is where a marker is most easily dropped. This is the
+MDR-relevant surface `euips_sections`'s alerts note already warns about.
+
+The Socialstyrelsen specification is cited, never reproduced: the selection is
+named and codes are read from alert's own rows.
+
+**906 passed** (888 before). Controls, each with an import check first:
+
+| breakage | red |
+|---|---|
+| drop the national term | 2 |
+| use `recorded_at` for the timing | 1 |
+| emit a Device for a NEGATED assertion | 2 |
+| drop the provenance marker | 2 |
+
+Also checked and found harmless: `provenance="computed"` appears in alert's
+code and would violate its own check constraint — it is in a TEST, asserting
+the constraint refuses it.

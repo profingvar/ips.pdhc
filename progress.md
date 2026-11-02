@@ -1461,3 +1461,18 @@ being changed.
 **888 passed** (867 before). Controls: 6 / 2 / 2 / 1 red. `TestItMakes899Live`
 asserts consent access goes True -> False across an end — the first time that
 narrowing has had any effect.
+
+### #886 (EPS B6) — alert implants as FHIR, 2026-11-02
+
+`services/alert_implants.py`: a pure mapping from an alert implant assertion to
+Device + DeviceUsage. No HTTP client, because alert.pdhc is deployed NOWHERE —
+measured — and a client against it would be the xlate defect (#833). Transport
+is **#903**.
+
+The national term goes in `CodeableConcept.text`, because twelve codes in that
+selection bind two or three terms and the code alone cannot say what the
+clinician picked. `negation` maps to the section's absent code, so a mandatory
+1..1 section reads EXPLICITLY_ABSENT rather than MISSING. `asserted_at`, never
+`recorded_at`. Provenance survives on every path, including the negated one.
+
+**906 passed** (888 before). Controls: 2 / 1 / 2 / 2 red.
