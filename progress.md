@@ -1425,3 +1425,21 @@ row per patient, and withheld patients are not audited. R5 only, tagged
 `not-eps-conformant` in the document. 413 by name past the cap of 100.
 
 **851 passed** (829 before). Controls: 4 / 1 / 1 / 2 red.
+
+### #901 (EPS C1b) — the projection wired up, 2026-11-02
+
+Trigger on `_sync_patient_index` (every Patient write) plus the three
+assignment write sites; never raises into the write path. Four more sources
+projected, and the per-source table is three findings rather than three
+choices — `emergency_access` is the only source with genuinely distinct axes,
+the two boolean opt-outs have NEITHER, and a block lift is its own fact.
+
+`GET /api/v1/patients/<guid>/state?as_at=&as_known_on=`, scoped through the
+export's filter rather than a third copy of the rule. 404 out of scope, not 403.
+
+A real bug found by probing: guid columns return UUID objects and `json.dumps`
+refuses them, so the insert died inside the flush naming the JSON encoder. All
+projectors now coerce, and the test asserts the property not the fields.
+
+**867 passed** (851 before). Controls: 3 / 1 / 4 / 6 / 1 red.
+Dev Postgres is behind on `add_reform_patient_flags.sql` — noticed, not fixed.

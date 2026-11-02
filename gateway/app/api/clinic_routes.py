@@ -359,6 +359,11 @@ def create_clinic_patient(guid):
         patient_guid=pi.guid,
         clinic_guid=clinic.guid,
     ))
+    # #901a: the assignment is a state fact, so the projection is
+    # re-derived here too. `_sync_patient_index` covers Patient
+    # writes; it does not see an assignment added afterwards.
+    from app.services.patient_state import rebuild_for_patient
+    rebuild_for_patient(pi.guid)
     log_event("clinic_patient_create", resource_guid=pi.guid)
     db.session.commit()
     return jsonify(pi.to_dict()), 201

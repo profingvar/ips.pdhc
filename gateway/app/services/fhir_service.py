@@ -255,3 +255,35 @@ def _sync_patient_index(fhir_res: FhirResource) -> None:
         fhir_res.patient_guid = pi.guid
 
     db.session.flush()
+    _refresh_patient_state(fhir_res.patient_guid)
+
+
+def _refresh_patient_state(patient_guid) -> None:
+    """Re-derive the bitemporal state projection for one patient (#901a).
+
+    Called from `_sync_patient_index`, which already runs on every Patient
+    CREATE and UPDATE — so the projection stays exact without a second trigger
+    on the FHIR write path.
+
+    SYNCHRONOUS on purpose. A periodic rebuild would make the projection
+    eventually-consistent, and "state as at D as known on E" is then answerable
+    only approximately, which defeats the point of having two axes. The
+    `flask rebuild-patient-state` command stays as a REPAIR tool rather than
+    the mechanism.
+
+    Never raises into the write path. A projection is derived data: if
+    rebuilding it fails, the authoritative row must still be written and the
+    projection is repairable by command. Failing a clinical write because a
+    read optimisation could not be refreshed would be the wrong trade, so the
+    error is logged loudly instead.
+    """
+    if patient_guid is None:
+        return
+    try:
+        from app.services import patient_state
+        patient_state.rebuild_for_patient(patient_guid)
+    except Exception:                                  # pragma: no cover
+        current_app.logger.exception(
+            "patient_state projection refresh FAILED for %s — the write "
+            "stands; run `flask rebuild-patient-state --patient %s`",
+            patient_guid, patient_guid)

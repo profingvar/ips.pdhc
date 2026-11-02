@@ -308,6 +308,76 @@ def search_patients():
     return jsonify({"patient_guids": guids, "count": len(guids)})
 
 
+@bp.route("/<guid>/state", methods=["GET"])
+@require_auth
+def patient_state_read(guid):
+    """The patient's state as at a date, as it was known on another (#901c).
+
+        ?as_at=2026-04-01          when was this TRUE of the patient
+        ?as_known_on=2026-08-01    what did WE hold at that moment
+
+    Both default to now, which gives current state as currently held — the
+    ordinary question. Pass both to answer the one a single axis cannot: *what
+    did the register say in April about where the patient lived in March?*
+
+    Scoped through `patient_export.exportable`, NOT a third copy of the rule.
+    The scope question here is identical to the export's ("may this reader see
+    this patient"), and `care_access_policy`'s own docstring is the reason:
+    "no two consumers may enforce different zone rules". There are already two
+    implementations of this predicate — the per-patient gate in
+    `blocks_routes` and the set filter in `patient_export` — and a test
+    asserts they agree. A third would be one too many.
+
+    A patient out of scope returns **404, not 403**: a 403 confirms the guid
+    exists, which is the same reasoning as the export withholding silently and
+    onboard's flat 404 on a bad invite token.
+    """
+    from app.services import patient_export as px
+    from app.services import patient_state as pstate
+
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed patient guid"}), 400
+
+    def _when(name):
+        raw = (request.args.get(name) or "").strip()
+        if not raw:
+            return None, None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")), None
+        except ValueError:
+            return None, f"{name} is not a date: {raw!r}"
+
+    as_at, err1 = _when("as_at")
+    as_known_on, err2 = _when("as_known_on")
+    if err1 or err2:
+        return jsonify({"error": err1 or err2}), 400
+
+    try:
+        allowed, _ = px.exportable([guid])
+    except Exception:
+        allowed = []
+    if guid not in allowed:
+        return jsonify({"error": "patient not found"}), 404
+
+    facts = pstate.state_at(guid, as_at=as_at, as_known_on=as_known_on)
+    return jsonify({
+        "patient_guid": guid,
+        # Echoed so a caller can see which question was answered. Omitting
+        # them would make a default-to-now answer indistinguishable from an
+        # explicit one.
+        "as_at": as_at.isoformat() if as_at else None,
+        "as_known_on": as_known_on.isoformat() if as_known_on else None,
+        "facts": [f.to_dict() for f in facts],
+        "count": len(facts),
+        # The projection is DERIVED. Said in the response so a caller who gets
+        # an empty answer knows whether to suspect the data or the rebuild.
+        "projection": {
+            "derived": True,
+            "repair_command": "flask rebuild-patient-state --patient <guid>",
+        },
+    })
+
+
 @bp.route("/export", methods=["POST"])
 @require_auth
 def export_patients():

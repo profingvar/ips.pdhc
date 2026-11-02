@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 
 from app.models.base import db
 from app.models.fhir_resource import FhirResource
-from app.models.patient_index import PatientClinicAssignment
+from app.models.patient_index import PatientClinicAssignment, PatientIndex
 from app.models.patient_state import FACT_TYPES, PatientStateFact
 
 
@@ -119,7 +119,7 @@ def rebuild_for_patient(patient_guid) -> int:
         nxt = versions[i + 1] if i + 1 < len(versions) else None
         for fact_type, value, vf, vt in _facts_from_patient(v.resource_json or {}):
             rows.append(PatientStateFact(
-                patient_guid=patient_guid, fact_type=fact_type, value=value,
+                patient_guid=patient_guid, fact_type=fact_type, value=_j(value),
                 valid_from=vf, valid_to=vt,
                 recorded_at=v.created_at,
                 recorded_until=nxt.created_at if nxt else None,
@@ -133,7 +133,7 @@ def rebuild_for_patient(patient_guid) -> int:
               .all()):
         rows.append(PatientStateFact(
             patient_guid=patient_guid, fact_type="clinic_assignment",
-            value={"clinic_guid": str(a.clinic_guid)},
+            value=_j({"clinic_guid": a.clinic_guid}),
             valid_from=a.assigned_at, valid_to=a.ended_at,
             # One timestamp in the source, so the axes coincide here. A
             # limitation of the source, stated rather than hidden.
@@ -141,9 +141,175 @@ def rebuild_for_patient(patient_guid) -> int:
             source_table="patient_clinic_assignments", source_guid=a.guid,
             source_version=None))
 
+    # ----- the four remaining state bearers (#901b) -----------------------
+    rows += _facts_from_consents(patient_guid)
+    rows += _facts_from_blocks(patient_guid)
+    rows += _facts_from_emergency(patient_guid)
+    pi = db.session.get(PatientIndex, patient_guid)
+    if pi is not None:
+        rows += _facts_from_index(pi)
+
     for r in rows:
         db.session.add(r)
     return len(rows)
+
+
+#: How each of the four remaining state bearers lands on the two axes
+#: (#901b). Written as a table because the answer is DIFFERENT for each, and
+#: the differences are findings about those columns rather than choices made
+#: here:
+#:
+#:     source              valid_from    valid_to                  recorded_at  axes distinct?
+#:     patient_consents    granted_at    revoked_at or expires_at  granted_at   no
+#:     patient_blocks      created_at    lifted_at or expires_at   created_at   no
+#:     emergency_access    attested_at   expires_at                created_at   YES
+#:     patient_index bools NULL          NULL                      --           NEITHER
+#:     archived_at         archived_at   NULL                      archived_at  no
+#:
+#: **`emergency_access` is the only source besides nothing with genuinely
+#: distinguishable axes**: `attested_at` is when the clinician attested the
+#: need and `created_at` is when the row was written. Two columns, two
+#: meanings, already there before this projection existed.
+#:
+#: **The two boolean opt-out flags have NEITHER axis.** `ehds_opt_out` and
+#: `quality_registry_opt_out` are bare booleans with no timestamp anywhere, so
+#: the projection cannot say when the patient opted out or when we learned it.
+#: They are projected with NULL/NULL and that is the honest answer — inventing
+#: a validity start from a row's `updated_at` is the same mistake refused for
+#: addresses. It is also a finding about those columns: an opt-out whose date
+#: is unrecorded cannot be audited, and consent withdrawal is exactly the kind
+#: of fact someone will later need the date of.
+#:
+#: A FUTURE `expires_at` is a validity END that has not happened yet, so
+#: `valid_to` in the future reads correctly as "still valid" through
+#: `state_at`'s `valid_to > as_at`. No special case needed; stated because the
+#: ticket flagged it as a trap.
+
+
+def _j(x):
+    """A value safe for the JSONB column.
+
+    Guid columns on these tables come back as UUID OBJECTS, not strings —
+    measured, and it is not a SQLite artefact: `json.dumps` refuses a UUID on
+    either backend, and the insert then fails inside the flush with a traceback
+    that names the encoder rather than the column. Every projector routes
+    embedded values through here so the next one cannot reintroduce it, and a
+    test asserts every projected `value` is serialisable rather than checking
+    four specific fields.
+    """
+    import uuid as _uuid
+    if isinstance(x, _uuid.UUID):
+        return str(x)
+    if isinstance(x, (list, tuple)):
+        return [_j(i) for i in x]
+    if isinstance(x, dict):
+        return {k: _j(v) for k, v in x.items()}
+    return x
+
+
+def _facts_from_consents(patient_guid):
+    from app.models.patient_consent import PatientConsent
+    out = []
+    for c in (db.session.query(PatientConsent)
+              .filter(PatientConsent.patient_guid == str(patient_guid))
+              .order_by(PatientConsent.granted_at.asc()).all()):
+        out.append(PatientStateFact(
+            patient_guid=patient_guid, fact_type="consent",
+            value=_j({"value": c.grantee_caregiver_guid,
+                      "granted_via": c.granted_via,
+                      "concepts": c.consented_concept_guids}),
+            valid_from=c.granted_at,
+            # Revocation wins over expiry: a consent revoked before it expired
+            # stopped being true when it was revoked.
+            valid_to=c.revoked_at or c.expires_at,
+            recorded_at=c.granted_at, recorded_until=None,
+            source_table="patient_consents", source_guid=c.guid,
+            source_version=None))
+    return out
+
+
+def _facts_from_blocks(patient_guid):
+    from app.models.patient_block import PatientBlock
+    out = []
+    for b in (db.session.query(PatientBlock)
+              .filter(PatientBlock.patient_guid == str(patient_guid))
+              .order_by(PatientBlock.created_at.asc()).all()):
+        out.append(PatientStateFact(
+            patient_guid=patient_guid, fact_type="block",
+            value=_j({"value": b.source_scope_id,
+                      "scope_type": b.source_scope_type}),
+            valid_from=b.created_at,
+            valid_to=b.lifted_at or b.expires_at,
+            recorded_at=b.created_at, recorded_until=None,
+            source_table="patient_blocks", source_guid=b.guid,
+            source_version=None))
+        # A LIFT is its own fact with its own interval, not an attribute of the
+        # block: it begins when the block was lifted and may expire on its own.
+        # Folding it into the block row would make "was this block lifted on
+        # date D" unanswerable.
+        if b.lifted_at is not None:
+            out.append(PatientStateFact(
+                patient_guid=patient_guid, fact_type="block_lift",
+                value=_j({"value": b.lift_kind,
+                          "scope_type": b.source_scope_type,
+                          "scope_id": b.source_scope_id}),
+                valid_from=b.lifted_at, valid_to=b.lift_expires_at,
+                recorded_at=b.lifted_at, recorded_until=None,
+                source_table="patient_blocks", source_guid=b.guid,
+                source_version=None))
+    return out
+
+
+def _facts_from_emergency(patient_guid):
+    from app.models.emergency_access import EmergencyAccess
+    out = []
+    for e in (db.session.query(EmergencyAccess)
+              .filter(EmergencyAccess.patient_guid == str(patient_guid))
+              .order_by(EmergencyAccess.created_at.asc()).all()):
+        out.append(PatientStateFact(
+            patient_guid=patient_guid, fact_type="emergency_access",
+            value=_j({"value": e.reader_care_unit_guid,
+                      "reason": e.reason}),
+            # The ONE source with two real, distinct timestamps: attested is
+            # when the need was attested, created is when we wrote it down.
+            valid_from=e.attested_at, valid_to=e.expires_at,
+            recorded_at=e.created_at, recorded_until=None,
+            source_table="emergency_access", source_guid=e.guid,
+            source_version=None))
+    return out
+
+
+def _facts_from_index(patient_index):
+    """The three `patient_index` state columns.
+
+    Two are bare booleans with NO timestamp, so both axes are NULL. See the
+    table above for why that is reported rather than filled in.
+    """
+    out = []
+    for col, ft in (("ehds_opt_out", "ehds_opt_out"),
+                    ("quality_registry_opt_out", "quality_registry_opt_out")):
+        if getattr(patient_index, col, False):
+            out.append(PatientStateFact(
+                patient_guid=patient_index.guid, fact_type=ft,
+                value={"value": True, "date_unrecorded": True},
+                valid_from=None, valid_to=None,
+                # The row has no timestamp for this fact at all, so the record
+                # axis is as unknown as the validity axis. `recorded_at` is
+                # NOT NULL in the schema, so the row's own creation is used and
+                # the value says the date is unrecorded rather than implying
+                # the flag was set then.
+                recorded_at=patient_index.created_at, recorded_until=None,
+                source_table="patient_index", source_guid=patient_index.guid,
+                source_version=None))
+    if getattr(patient_index, "archived_at", None):
+        out.append(PatientStateFact(
+            patient_guid=patient_index.guid, fact_type="archived",
+            value={"value": True},
+            valid_from=patient_index.archived_at, valid_to=None,
+            recorded_at=patient_index.archived_at, recorded_until=None,
+            source_table="patient_index", source_guid=patient_index.guid,
+            source_version=None))
+    return out
 
 
 def state_at(patient_guid, *, as_at: datetime | None = None,

@@ -1068,3 +1068,107 @@ the service must be called inside a request context (the gate reads
 names ARE in the CSV because `name.family` is a state fact — so the scope test
 now asserts the allowed patient's data IS present as well as the withheld one's
 absent, which is the stronger claim.
+
+---
+
+## 2026-11-02 — #901 (EPS C1b): the state projection wired up
+
+- `gateway/app/services/patient_state.py` (four more sources, `_j()`)
+- `gateway/app/models/patient_state.py` (vocabulary 9 -> 16)
+- `gateway/app/services/fhir_service.py` (`_refresh_patient_state`)
+- `gateway/app/admin.py`, `app/api/clinic_routes.py`,
+  `app/services/mock_generator.py` (refresh at the assignment write sites)
+- `gateway/app/api/patient_routes.py` (`GET /api/v1/patients/<guid>/state`)
+- `gateway/tests/test_eps_state_wired_901.py` (new, 16 tests)
+
+### (a) The trigger rides on a hook that already existed
+
+`_sync_patient_index` runs on every Patient CREATE and UPDATE, so the
+projection refresh goes there rather than needing a second hook on the FHIR
+write path. Synchronous on purpose: a periodic rebuild makes the projection
+eventually-consistent, and "state as at D as known on E" is then answerable
+only approximately, which defeats having two axes.
+
+**It never raises into the write path.** A projection is derived data; failing
+a clinical write because a read optimisation could not be refreshed is the
+wrong trade. The error is logged with the repair command and the write stands.
+A test monkeypatches the rebuild to explode and asserts the Patient survives.
+
+The three assignment write sites refresh too, because the Patient hook cannot
+see an assignment added afterwards. **A fourth write site would have to as
+well** — that is a real drift risk, accepted deliberately over a flush-time
+event listener, and a missed site leaves the projection STALE for that patient
+rather than wrong, repairable by `flask rebuild-patient-state`.
+
+One bug of my own on the way: the inserted call in `admin.py` referenced
+`patient.guid` where only `pi` is in scope — a `NameError` that `py_compile`
+cannot see. Found by reading the inserted context rather than trusting the
+script that inserted it.
+
+### (b) Four sources, and each lands DIFFERENTLY on the two axes
+
+    source              valid_from    valid_to                  axes distinct?
+    patient_consents    granted_at    revoked_at or expires_at  no
+    patient_blocks      created_at    lifted_at or expires_at   no
+    emergency_access    attested_at   expires_at                YES
+    patient_index bools NULL          NULL                      NEITHER
+    archived_at         archived_at   NULL                      no
+
+Three findings in that table rather than three choices:
+
+  - **`emergency_access` is the only source with genuinely distinct axes.**
+    `attested_at` is when the need was attested; `created_at` is when the row
+    was written. Two columns, two meanings, already there before this
+    projection existed — so it is the fact type that proves the model is not
+    merely carrying one timestamp twice. Pinned by a test asserting the two
+    differ.
+  - **The two boolean opt-outs have NEITHER axis.** `ehds_opt_out` and
+    `quality_registry_opt_out` are bare booleans with no timestamp anywhere,
+    so the projection cannot say when the patient opted out or when we learned
+    it. NULL/NULL with `date_unrecorded: true` in the value, rather than
+    inventing a start from the row's creation. An opt-out whose date is
+    unrecorded cannot be audited, and consent withdrawal is exactly the kind
+    of fact someone later needs the date of.
+  - **A block LIFT is its own fact**, not an attribute of the block: folding it
+    in would make "was this block lifted on date D" unanswerable.
+
+Revocation wins over expiry for a consent — revoked before it expired means it
+stopped being true when revoked.
+
+### A real bug, found by probing rather than reading
+
+Guid columns on these tables come back as **UUID objects**, and `json.dumps`
+refuses a UUID — so the insert failed inside the flush with a traceback naming
+the JSON encoder rather than the column. Not a SQLite artefact; it would fail
+on Postgres too. Every projector now routes values through `_j()`, and the test
+asserts **every** projected value is serialisable rather than checking four
+specific fields, so the next projector is covered.
+
+### (c) The read route reuses the scope rule, it does not copy it
+
+`GET /api/v1/patients/<guid>/state?as_at=&as_known_on=`, scoped through
+`patient_export.exportable` — the same question the export asks. There were
+already two implementations of that predicate (the per-patient gate in
+`blocks_routes`, the set filter in `patient_export`) with a test asserting they
+agree; a third would be one too many.
+
+Out of scope returns **404, not 403**: a 403 confirms the guid exists. The
+response echoes `as_at` and `as_known_on` so a default-to-now answer is
+distinguishable from an explicit one, and says `projection.derived: true` with
+the repair command, so a caller who gets an empty answer knows whether to
+suspect the data or the rebuild.
+
+**867 passed** (851 before). Controls, each with an import check first:
+
+| breakage | red |
+|---|---|
+| no trigger on Patient write | 3 |
+| a failing refresh raises into the write | 1 |
+| drop the four new sources | 4 |
+| remove the JSON coercion | 6 |
+| out-of-scope returns 403 | 1 |
+
+**Noticed on the way:** the LOCAL dev Postgres has no `ehds_opt_out` column —
+it is behind on `add_reform_patient_flags.sql` (#404). Nothing was written to
+it; the probe's transaction aborted. Worth running before anyone tests the
+opt-out projection against dev.

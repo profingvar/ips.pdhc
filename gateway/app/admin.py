@@ -288,6 +288,11 @@ def create_patient():
                 patient_guid=pi.guid,
                 clinic_guid=clinic.guid,
             ))
+            # #901a: the assignment is a state fact, so the projection is
+            # re-derived here too. `_sync_patient_index` covers Patient
+            # writes; it does not see an assignment added afterwards.
+            from app.services.patient_state import rebuild_for_patient
+            rebuild_for_patient(pi.guid)
 
     db.session.commit()
     flash(f"Patient {family}, {given} created.", "success")

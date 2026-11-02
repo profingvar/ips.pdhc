@@ -68,6 +68,16 @@ FACT_TYPES: tuple[str, ...] = (
     "telecom",
     "contact",
     "clinic_assignment",
+    # #901(b): the four remaining state bearers. Each was one-ended in its own
+    # table and each lands differently on the two axes — see
+    # `services/patient_state` for the per-source mapping and what it reveals.
+    "consent",
+    "block",
+    "block_lift",
+    "emergency_access",
+    "ehds_opt_out",
+    "quality_registry_opt_out",
+    "archived",
 )
 
 
