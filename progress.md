@@ -2092,3 +2092,71 @@ nothing), so changing that name broke nothing. Health after: 200,
 What a green health check does NOT prove is whether the deployed code matches
 this checkout — it has been ahead of its release directory before. Diff before
 deploying code, separately from these migrations.
+
+## The ips code deploy is LIVE (2026-11-02T17:13Z)
+
+Runbook: `plans/ips_code_deploy_runbook.md`. Rollback artifact:
+`~/backups/predeploy/ips.pdhc/gateway_2026-11-02T17-11-32Z.tgz` — 27.6 MB,
+3722 entries, verified to contain `app/__init__.py`, the Dockerfile and `.env`.
+Its directory chain is `drwx------` all the way up, which is what protects the
+credential inside it (#835: the directory is the control, not the file mode).
+
+### What landed
+
+34 files — 24 changed, 10 new — shipped as a tar payload verified to contain
+**no `.env`** and **no `docker-compose.yml`** before it left the Mac, then
+extracted over `/usr/local/www/pdhcips/gateway`. Afterwards **77 of 77 files
+hash identically** to local, nothing missing, and `.env` (May 10) and
+`docker-compose.yml` (Oct 19) kept their old timestamps.
+
+Container `2f351b46cff4` -> `de86d6aa88d0`, image `df9f552bc970` ->
+`6129f219035c`. All ten new modules confirmed present INSIDE the container,
+not merely in the directory — the container has been both ahead of and behind
+that directory before.
+
+### The two risks, measured rather than assumed
+
+- **Dependency drift.** `--build` is also a dependency upgrade (#785), and on
+  sso it moved bcrypt 4 to 5 under the same command. Here all 13 requirements
+  are pinned with `==`, and the versions AFTER the rebuild are identical:
+  Flask 3.1.0, SQLAlchemy 2.0.48, psycopg 3.2.13, gunicorn 23.0.0,
+  alembic 1.14.1.
+- **`docker compose` vs `docker-compose`.** Probed: the v2 plugin is **absent**
+  on this box; only `docker-compose` 5.1.4 exists. The runbook's first draft
+  said `docker compose` and would have failed. Corrected in the file.
+
+### Behaviour that changed, confirmed live
+
+- **The #902 admin gate is active.** An unauthenticated `GET /admin/` returns
+  302 to SSO login, and `admin_access_policy` is referenced six times in the
+  deployed `admin.py`. The `"analysis"` phase half remains shadow-logged —
+  `IPS_ADMIN_REQUIRE_ANALYSIS_PHASE` is unset, so it refuses nobody and writes
+  a WARNING naming who it would.
+- **Four new routes registered** (118 total): the proxy-grant surface, the
+  implant transport, the patient-state read and the export.
+
+### The projection is built
+
+`flask rebuild-patient-state` -> **324 patients, 2226 fact rows.**
+
+Verified in the database rather than taken from the command's own report:
+
+| fact type | rows |
+|---|---|
+| contact | 333 |
+| name.given / name.family | 324 each |
+| address.city / address.country / telecom | 314 each |
+| **clinic_assignment** | **296** |
+| archived | 7 |
+
+`clinic_assignment` matching the assignment table's 296 rows exactly is the
+cross-check that the projection read the real source.
+
+**And the bitemporality is visibly working.** `recorded_at` is set on all 2226
+rows; `valid_from` on only **303**, leaving **1923 NULL**. That is the design,
+not a gap: NULL validity means "we do not know when this became true", which
+is a different claim from "it became true when we recorded it". Filling those
+1923 from `recorded_at` would have been the single-axis mistake the whole
+reform exists to avoid. 0 rows closed, as expected on a first build.
+
+Assignments intact afterwards: 296 rows, 0 ended.

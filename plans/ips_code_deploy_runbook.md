@@ -1,4 +1,8 @@
-# ips.pdhc code deploy — prepared 2026-11-02
+# ips.pdhc code deploy — prepared AND EXECUTED 2026-11-02
+
+> **DEPLOYED 2026-11-02T17:13Z and verified.** Rollback artifact:
+> `~/backups/predeploy/ips.pdhc/gateway_2026-11-02T17-11-32Z.tgz`
+> (27.6 MB, 3722 entries). What happened is in `progress.md`.
 
 The three EPS migrations are live; the code that uses them is not. This is
 what deploying it needs, with every risk measured rather than assumed.
@@ -66,8 +70,13 @@ would start the OLD image and the copy would have no effect
 (`infra_docker_copy_dot_needs_build_flag`).
 
 ```bash
-cd /usr/local/www/pdhcips/gateway && docker compose up -d --build app
+cd /usr/local/www/pdhcips/gateway && docker-compose up -d --build app
 ```
+
+**`docker-compose`, with the hyphen.** Probed on the box 2026-11-02:
+`docker compose` (the v2 plugin) is **absent** and only `docker-compose` 5.1.4
+exists. The hyphenless form in the first draft of this runbook would have
+failed — CLAUDE.md §8 point 3 says to probe and fall back, and this is why.
 
 ### 4. Verify the code actually landed
 
@@ -122,8 +131,8 @@ Read this before step 3, not after.
 
 ```bash
 cd /usr/local/www/pdhcips && rm -rf gateway && \
-  tar xzf ~/backups/predeploy/ips.pdhc/gateway_<stamp>.tgz && \
-  cd gateway && docker compose up -d --build app
+  tar xzf ~/backups/predeploy/ips.pdhc/gateway_2026-11-02T17-11-32Z.tgz && \
+  cd gateway && docker-compose up -d --build app
 ```
 
 The database migrations are NOT rolled back by this, and do not need to be:
