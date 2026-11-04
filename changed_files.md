@@ -1648,6 +1648,57 @@ MUTATION-TESTED: reverting `actor_type` to the presence check, reverting
 their own tests — and the real-route test catches the first TWO, so it is
 load-bearing rather than decorative.
 
-Suite: 1220 passed, 1 skipped (the skip is #873's own subject). NOT DEPLOYED
-YET — two source files, no migration; `actor_type` is already `String(32)`
-with no constraint, so `service` needs none.
+Suite: 1220 passed, 1 skipped (the skip is #873's own subject).
+
+### DEPLOYED 2026-11-04, and verified by a real push
+
+Gated first: baseline (HEAD~1), server disk and container agreed on both
+files — 0 drift. `requirements.txt` is 13/13 pinned, so the `--build` was not
+also a dependency upgrade (#785). Dump verified with `pg_restore -l` (103 TOC
+entries, 36 tables) and a per-file rollback pulled from the container into
+`~/backups/predeploy/ips.pdhc/files.2026-11-04T14-4134Z/`.
+
+    image 6129f219035c -> 13773c5c644e   (--build --no-deps app, project ips)
+
+Verified: both files hash-identical in the new image; `/api/v1/health` 200
+database connected; state preserved exactly at 324 patients / 4780 resources /
+13 api_keys / 35 audit rows; sibling smoke 10/10; alert's `deploy/smoke_ips.py`
+12/12.
+
+THE BEHAVIOURAL CHECK, measured both ways:
+
+    actor_type   before   after
+    user           25       25     (untouched)
+    system         10       10     (untouched)
+    service         –        2     (new)
+
+    implant_assertions_push rows:
+      user     actor_guid NULL   6   11:43–11:59   (before the fix)
+      service  actor_guid set    2   14:42         (after)
+
+And the one that shows the fix is useful rather than cosmetic: the new
+`actor_guid` JOINS to a real `api_keys` row — label `alert.pdhc`, scopes
+`["implants:write"]`. An incident responder can now go from a log line to the
+credential and its scope in one join. Before, `actor_guid` was NULL and there
+was nothing to join on. The key's prefix is NOT recorded here: this repo is
+PUBLIC and a prefix is part of a live credential. It lives in the `api_keys`
+row and in each push's own `detail.api_key_prefix`, which is where a reader
+with access should look.
+
+(Redacted before pushing, and worth recording WHY it had to be: the same
+prefix was removed from this file this morning for the same reason, and I
+wrote it back in a few hours later. What caught it was running the pre-push
+sweep, not remembering — which is the argument for the sweep.)
+
+THE SIX OLD ROWS ARE LEFT ALONE, deliberately. An audit log records what the
+system actually recorded; rewriting it to say something it did not say is
+worse than the mislabel, and those rows remain attributable through
+`actor_label` and `detail.api_key_prefix`. The split by timestamp is itself
+the record of when the fix landed.
+
+Noted while deploying, unrelated: `ips_db` has NO `alembic_version` table, and
+no table matching `%version%` or `%alembic%` at all. ips has
+`gateway/migrations/`, so either its migrations are tracked elsewhere or they
+have never been applied through alembic in this database. Not touched here —
+this deploy carried no migration — but it means `flask db current` cannot be
+used to tell what schema this database is at.
