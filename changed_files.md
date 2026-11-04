@@ -1597,3 +1597,57 @@ address. The same judgement #792 applied to a contact's surname.
   which matches the migration's own split (30 already had `type`, 64 were
   renamed from `code`, all 94 lost `patient`). ips /api/v1/health 200,
   sibling smoke 10/10.
+
+## #921 — a machine is no longer audited as a person (2026-11-04)
+
+Found by the first real implant push, which audited alert.pdhc's scoped key as
+`actor_type='user'` with `actor_guid=NULL`.
+
+`_service_account_user` builds a TRANSIENT `User` for a key-only caller, which
+is the right shape for AUTHORISATION — `is_superuser=False`, no privileges.
+But `log_event` classified the actor by PRESENCE (`"user" if actor else
+"system"`), and a service account is not None. Two consequences, both fixed:
+
+  - machine traffic could not be told from a person's, in the one place
+    Rule 24's full operation log exists to answer that;
+  - the transient User is never persisted so it has no guid, and the row read
+    `actor_type='user'` with `actor_guid=NULL` — a combination that should not
+    be reachable for a real user.
+
+- gateway/app/services/audit_service.py — `actor_type='service'` for a
+  key-only caller, and `actor_guid` now carries the `api_keys` guid. The
+  column has an index and NO foreign key, so that is safe, and the api_keys
+  row is what an incident responder would actually look up. The role name is
+  IMPORTED from auth_service rather than re-spelled; a literal in two modules
+  is a literal that drifts. Imported inside the function because nothing else
+  couples these two modules.
+- gateway/app/services/auth_service.py — the role is now
+  `SERVICE_ACCOUNT_ROLE`, named where it is SET.
+
+THE VOCABULARY IS NOW IN ONE PLACE, which is the part worth keeping.
+`AuditLog.actor_type` is `String(32)`, nullable, with no CHECK and no enum.
+FOUR values were in use as bare literals across FIVE files — `patient` ×10,
+`proxy` ×5, `user` and `system` — with nothing listing them, which is how a
+fifth kind, a machine, came to have no value at all. `ACTOR_TYPES` now lists
+all five so the sixth is added deliberately. The `patient` and `proxy` call
+sites still use literals: bringing them in is a refactor #921 did not ask for,
+and the comment on `ACTOR_TYPES` records that the divergence was seen.
+
+- gateway/tests/test_audit_actor_type_921.py — NEW, 10 tests. ONE goes
+  through the real route, and that needed `AUTH_DISABLED` flipped off for
+  that test alone: the testing config sets it True, so `require_auth` returns
+  before it ever sets `g.api_key`, and a test that left it on would assert on
+  a context the production path never builds. It mints a scoped key, pushes
+  one assertion for an unknown patient — rejected, so nothing is created, and
+  the push is audited either way — and reads the audit row back.
+  The rest exercise `log_event` directly with `g` set exactly as
+  `require_auth` sets it, and say so rather than implying more coverage.
+
+MUTATION-TESTED: reverting `actor_type` to the presence check, reverting
+`actor_guid` to `actor.guid`, and re-spelling the role as a literal each fail
+their own tests — and the real-route test catches the first TWO, so it is
+load-bearing rather than decorative.
+
+Suite: 1220 passed, 1 skipped (the skip is #873's own subject). NOT DEPLOYED
+YET — two source files, no migration; `actor_type` is already `String(32)`
+with no constraint, so `service` needs none.

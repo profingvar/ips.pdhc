@@ -335,12 +335,18 @@ def _synthetic_dev_user() -> User:
     return user
 
 
+#: The role a key-only caller is given. Named because `audit_service` has to
+#: recognise it in order to label the row `actor_type='service'` (#921), and
+#: a literal in two modules is a literal that drifts.
+SERVICE_ACCOUNT_ROLE = "service_account"
+
+
 def _service_account_user(api_key: ApiKey) -> User:
     """Create a transient user representation for key-only auth."""
     user = User(
         username=f"apikey:{api_key.prefix}",
         display_name=api_key.label or f"API Key {api_key.prefix}",
-        role="service_account",
+        role=SERVICE_ACCOUNT_ROLE,
         is_active=True,
         is_superuser=False,
     )
