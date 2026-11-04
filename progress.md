@@ -2160,3 +2160,134 @@ is a different claim from "it became true when we recorded it". Filling those
 reform exists to avoid. 0 rows closed, as expected on a first build.
 
 Assignments intact afterwards: 296 rows, 0 ended.
+
+---
+
+## 2026-11-04 — #908's migration RUN, a scoped-key minter, and the eps rename
+
+### #908 applied in production
+
+`flask migrate-r5-device-elements --apply --expect 94`, after a verified dump
+to `~/backups/predeploy/ips.pdhc/ips_db.2026-11-04T11-0343Z.pgdump`
+(1 084 333 bytes, mode 600, 103 TOC entries — verified with `pg_restore -l`,
+which reads the table of contents rather than trusting a `tail` for a
+completion marker).
+
+    wrote 94 row(s)
+    fresh dry run:  examined 94, 0 would change
+    in the data:    0 `patient`, 0 `code`, 94 `type`
+    euips-report:   devices present 30 | absent 64
+    /api/v1/health 200, sibling smoke 10/10
+
+The report's 30/64 is the verification that matters: it matches the
+migration's own split exactly (30 rows already had `type`, 64 were renamed
+from `code`, all 94 lost `patient`), so the application reads every row and
+classifies it as the row shape predicts. Rows looking right in the database
+would not have shown that.
+
+**Why it was run now rather than left.** #908's own docstring says "run it
+before real implant data arrives (#905)". #905 wires alert.pdhc as a producer
+and `implant_routes` writes the SAME resource types, so leaving the old rows
+would have given one `resource_type` two element conventions in one table.
+That is the condition the migration exists to prevent, not a tidy-up.
+
+### `gateway/scripts/mint_service_key.py` — NEW
+
+A machine key should not inherit a human. `POST /api/v1/auth/keys` sets
+`user_guid = g.current_user.guid`, so — as `auth_service`'s own #903 note
+says — a key minted by an SU is an SU key, and the scope narrows the ROUTE,
+not the identity. `ApiKey.user_guid` is nullable and `require_auth` already
+handles null by building a transient `service_account` with
+`is_superuser=False`; the HTTP route simply cannot reach that state.
+
+`--scope` is MANDATORY, and that is the point: an identity-less key with
+`scopes=[]` reaches every `@require_auth` route while LOOKING narrow because
+it has no user. That is the #760 shape arrived at from the opposite
+direction. An unrecognised scope is refused too, collected from the module's
+own `SCOPE_*` constants so a new one needs no edit here — a typo would
+otherwise mint a key that cannot do its job and surface much later as a 403
+reading like a credential problem.
+
+The script verifies the key it minted through `validate_api_key` with a
+REFUSED control, and prints the plaintext once. First use: label
+`alert.pdhc`, scope `implants:write`. The prefix is in the `api_keys` row
+and in each `implant_assertions_push` audit entry; it is not repeated here,
+because this repo is PUBLIC and a prefix is part of a live credential.
+
+**Note it is a `docker cp` artifact in `ips-app-1:/app/scripts/` and will
+vanish on the next `--build`.** The repo copy is the source of truth; do not
+trust the container's. This is CLAUDE.md §7's documented trap, the one that
+cost rosetta its sibling smoke during #830.
+
+### Two defects the first real implant push found
+
+Both while 32 tests here and 280 in alert stayed green.
+
+- **#920** `alert_implants._PROVENANCE_SYSTEM` writes
+  `https://alert.pdhc/provenance` — a host with no TLD — while alert's own
+  `inflow/gate.py` reads `urn:pdhc:provenance`. Two identifier spaces, so a
+  resource this service produced carries a provenance tag the producer's own
+  gate would not recognise. Round-trip only.
+- **#921** an identity-less service key is audited as `actor_type='user'`
+  with a NULL `actor_guid`. `log_event` classifies the actor by presence
+  (`"user" if actor else "system"`) and a service account is not None, so
+  machine traffic cannot be separated from human — the first question anyone
+  asks of an audit trail, and the one Rule 24's log exists to answer.
+
+### NEXT PHASE: ips.pdhc BECOMES eps.pdhc
+
+Operator decision, 2026-11-04. The service is renamed to `eps.pdhc` in the
+next phase, following the EPS work (#876 epic, #905). Recorded here rather
+than only on the board because a rename touches every repo that names this
+one, and the board has no edit.
+
+**Measured scope, 2026-11-04 — 845 occurrences across 16 top-level
+directories.** Not an estimate:
+
+    IPS_BASE_URL   124 files      ips.pdhc       189      cdr.pdhc      46
+    ips.pdhc.se     81 files      request.pdhc    77      cdr_6.pdhc    36
+    IPS_API_KEY     75 files      analyse.pdhc    77      icd11.pdhc    26
+    ips-app-1       26 files      pdhc            69      css_instrux   22
+    ips-db-1        26 files      dashboard.pdhc  68      tools         20
+    ips_pgdata       7 files      contract.pdhc   63      sim.pdhc      20
+                                  results         61      gateway.pdhc  18
+                                                          rosetta.pdhc  17
+                                                          sso.pdhc       8
+
+So the cost is NOT in this repo — 189 of 845. It is in the eight sibling
+services that hold `IPS_BASE_URL` and `IPS_API_KEY` in their own `.env`
+files and clients, and in the website.
+
+**THE PRECEDENT, and it is a bad one.** The gateway -> planp rename of March
+2026 changed the Docker volume namespace, and a `cp` in the wrong direction
+between the old and new volumes destroyed a production database
+irrecoverably. The scar is still visible: plan.pdhc's database is called
+`pdhc_gateway` to this day — read from the running container 2026-11-04,
+eight months later. A rename leaves the data layer behind unless it is
+planned to.
+
+Things that must be decided BEFORE anything is renamed, each of which bit
+somebody once already:
+
+  1. **Does the data move at all?** `ips_pgdata`, `ips-db-1`, `ips_db`,
+     `ips_user`. Keeping them is ugly and safe; moving them is the March
+     2026 failure mode. Plan's `pdhc_gateway` is the evidence that keeping
+     them is survivable for years.
+  2. **The subdomain and its TLS certificate.** A new `eps.pdhc.se` vhost
+     and cert, with `ips.pdhc.se` kept answering until every caller moved.
+     Both live at once, or callers break one at a time.
+  3. **The SSO client pair is two-sided.** sso.pdhc carries an `_IPS` pair;
+     an `_EPS` one must be registered there FIRST, by the operator, since
+     sso is outside Claude's envelope (CLAUDE.md §15).
+  4. **Eight services' `.env` files**, each needing `EPS_BASE_URL` /
+     `EPS_API_KEY` while the old names still work. Accept both, repoint,
+     then remove — the #830 pattern, one service per run, each verified by
+     its own `deploy/smoke_siblings.py` before and after.
+  5. **CLAUDE.md §3** and the website's service list.
+  6. **Code comments citing #-numbers are left alone** (CLAUDE.md §2): they
+     record when a decision was taken, not what the service is called now.
+
+Do not start this with a `sed`. The `KNOWN_SERVICES` table in CLAUDE.md was
+wrong twice because a hand survey globbed a filename, and the #816 split
+showed a blind replace breaks correct references that happen to share a
+string.

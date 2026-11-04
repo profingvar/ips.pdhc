@@ -1574,3 +1574,26 @@ address. The same judgement #792 applied to a contact's surname.
 - gateway/tests/test_r5_device_migration_908.py (new) — 29 checks.
 - NO DATA CHANGED. The dev DB holds zero Device rows; production was not
   probed and is the operator's to run, timed before #905.
+
+- gateway/scripts/mint_service_key.py — NEW (#905 step 2). Mints a SCOPED,
+  identity-less API key (`user_guid=NULL` -> `_service_account_user`,
+  `is_superuser=False`), which the HTTP mint route cannot produce because it
+  stamps `g.current_user.guid`. `--scope` is mandatory: an identity-less key
+  with `scopes=[]` reaches every `@require_auth` route while LOOKING narrow,
+  which is the #760 shape from the other direction. Verifies the minted key
+  through `validate_api_key` with a refused control, and shows the plaintext
+  once.
+
+- CORRECTION to the "NO DATA CHANGED" note above, 2026-11-04. It said
+  production "is the operator's to run, timed before #905". That timing
+  arrived: #905 wires alert.pdhc as a producer, and the assertions route
+  writes the SAME resource types (Device/DeviceUsage), so leaving the old
+  rows would have given one resource_type two element conventions. RUN in
+  production 2026-11-04: `flask migrate-r5-device-elements --apply
+  --expect 94`, after a verified dump to
+  ~/backups/predeploy/ips.pdhc/ips_db.2026-11-04T11-0343Z.pgdump.
+  wrote 94 rows; a fresh dry run reports 0; in the data 0 `patient`,
+  0 `code`, 94 `type`. euips-report reads them as 30 present / 64 absent,
+  which matches the migration's own split (30 already had `type`, 64 were
+  renamed from `code`, all 94 lost `patient`). ips /api/v1/health 200,
+  sibling smoke 10/10.

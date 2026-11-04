@@ -1,0 +1,93 @@
+ips.pdhc - current focus
+========================
+
+Created 2026-11-04. This file was MISSING, which is a Rule 2 gap in the repo
+contract: readme.md + progress.md + newtask.txt together are the resume
+contract, and a session picking this repo up cold had only the first two.
+
+progress.md is the authority when they disagree (CLAUDE.md §16); this file is
+the short answer.
+
+
+NEXT PHASE: THIS SERVICE BECOMES eps.pdhc
+------------------------------------------
+Operator decision, 2026-11-04, following the EPS work (#876 epic, #905).
+
+Measured scope: 845 occurrences across 16 top-level directories. Only 189 of
+them are in THIS repo - the cost is in the eight sibling services that carry
+IPS_BASE_URL and IPS_API_KEY in their own .env files and clients, plus the
+website.
+
+READ progress.md's "NEXT PHASE" section before touching anything. It carries
+the measurement, the six decisions that come before any rename, and the
+precedent: the gateway -> planp rename of March 2026 changed the Docker
+volume namespace and a cp in the wrong direction destroyed a production
+database irrecoverably. Plan's database is still called `pdhc_gateway` eight
+months later.
+
+The short version of the decisions:
+  1. Does the data move at all? (ips_pgdata, ips-db-1, ips_db, ips_user.)
+     Keeping them is ugly and safe. Plan proves ugly-and-safe survives years.
+  2. New eps.pdhc.se vhost + TLS cert, with ips.pdhc.se kept answering until
+     every caller has moved. Both live at once, or callers break one by one.
+  3. sso.pdhc needs an _EPS client pair registered FIRST, by the operator -
+     sso is outside Claude's envelope (CLAUDE.md §15).
+  4. Eight .env files accept BOTH names, repoint one service per run, each
+     verified by its own deploy/smoke_siblings.py before and after, then
+     remove the old name.
+  5. CLAUDE.md §3 and the website's service list.
+  6. Leave #-numbers in comments alone. They record when a decision was
+     taken (CLAUDE.md §2).
+
+Do NOT start with a sed. The #816 split showed a blind replace breaks correct
+references that merely share a string, and CLAUDE.md's KNOWN_SERVICES table
+was wrong twice because a hand survey globbed a filename instead of searching
+for the symbol.
+
+
+DONE 2026-11-04
+----------------
+- #908's `flask migrate-r5-device-elements --apply --expect 94` RUN in
+  production after a verified dump. 94 rows to R5 element names; a fresh dry
+  run reports 0; euips-report reads them as 30 present / 64 absent, matching
+  the migration's own split exactly. Health 200, sibling smoke 10/10.
+  It was run now because #905 wires alert.pdhc as a producer writing the SAME
+  resource types, so leaving the old rows would have put two element
+  conventions in one resource_type.
+- `gateway/scripts/mint_service_key.py` NEW: mints a scoped, identity-less
+  API key (user_guid=NULL -> transient service_account, is_superuser=False),
+  which the HTTP mint route cannot produce. --scope is mandatory, because an
+  identity-less key with scopes=[] reaches every @require_auth route while
+  looking narrow. First use: alert.pdhc, scope implants:write. The key's
+  prefix is recorded where it belongs - in the api_keys row and in every
+  implant_assertions_push audit entry - and deliberately not here, because
+  this repo is PUBLIC and a prefix is still part of a live credential.
+  NOTE it is a docker cp artifact in ips-app-1:/app/scripts/ and vanishes on
+  the next --build. The repo copy is the source of truth.
+- The implant transport is proven end to end, alert -> ips. Device +
+  DeviceUsage created, a re-push answered as a duplicate creating nothing.
+
+
+OPEN, FOUND BY THE FIRST REAL PUSH
+-----------------------------------
+Both surfaced while 32 tests here and 280 in alert stayed green, which is the
+platform's own lesson about integration smokes reproduced exactly.
+
+- #920 the provenance tag is written as https://alert.pdhc/provenance (a host
+  with no TLD) and read by alert's own gate as urn:pdhc:provenance. Two
+  identifier spaces, so a round trip sees no provenance at all. Fix is
+  alert's call: it owns the vocabulary, and ips should adopt its URI.
+- #921 an identity-less service key is audited as actor_type='user' with a
+  NULL actor_guid, so machine traffic cannot be told from human traffic.
+  Three lines in audit_service.log_event.
+
+Also open and older: #876 (EPS epic, closes after #905), #873 (icd11), #869
+and #874 (cdr, both orbiting the ICD-10/ICD-11 code-system identity question
+together with plan's #875 - four tickets in three services about one root).
+
+
+WAITING ON THE OPERATOR, NOT ON CODE
+-------------------------------------
+#905 step 1 is alert.pdhc's deploy, and its real blocker is in sso: an _ALERT
+client pair must be registered there before alert's inflow door can
+authenticate anyone. Nothing in this repo is waiting on that.
