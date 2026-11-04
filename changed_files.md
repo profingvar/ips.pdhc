@@ -1702,3 +1702,66 @@ no table matching `%version%` or `%alembic%` at all. ips has
 have never been applied through alembic in this database. Not touched here —
 this deploy carried no migration — but it means `flask db current` cannot be
 used to tell what schema this database is at.
+
+## #920 — the provenance tag is written in the space alert READS (2026-11-04)
+
+This module wrote `https://alert.pdhc/provenance`: a host with no TLD, which
+resolves nowhere, and a DIFFERENT identifier space from the one alert's own
+`inflow/gate.py` reads. So a Device produced here from an alert assertion
+carried a tag alert's gate could not see — `provenance_of` matches `system` by
+EQUALITY, would have found no provenance, and would have refused the candidate
+as `no_provenance`.
+
+Silent in the useful direction and loud in the useless one: the push worked,
+the tag was written, the FHIR looked right, and only a round trip ever
+noticed. The round trip is now a test in BOTH repos.
+
+THE VALUE WAS NEVER OURS TO CHOOSE, and measuring settled it three ways:
+
+  - alert's FROZEN Rule 30 states the MDR boundary in terms of
+    `urn:pdhc:provenance#computed` and says it "is not configurable". Rule 1
+    forbids editing top_rules.md, so the value is settled there.
+  - its design doc uses that space throughout.
+  - and THIS DATABASE already agreed overwhelmingly, measured in production:
+
+        urn:pdhc:provenance            Flag         43
+        urn:pdhc:provenance            Observation 104
+        https://alert.pdhc/provenance  Device        1
+        https://alert.pdhc/provenance  DeviceUsage   1
+
+    147 resources were already on the right space. The implant transport was
+    the only thing on the wrong one, IN THE SAME TABLE — which is the
+    condition #908 existed to prevent, one field over.
+
+The `#fragment` form in alert's docs is shorthand for a PAIR: FHIR's Coding
+carries `system` and `code` separately, and `gate.provenance_of` reads
+`t["system"]` then returns `t["code"]`. So the two shapes already agreed and
+only the string did not — the fix is one line.
+
+- gateway/app/services/alert_implants.py — `_PROVENANCE_SYSTEM` is now
+  `urn:pdhc:provenance`, with the reasoning and the ownership recorded at the
+  constant rather than in a commit message.
+- gateway/tests/test_provenance_system_920.py — NEW, 11 tests. Pins the URI,
+  asserts the tag on BOTH paths (present and negated) for BOTH provenances —
+  because a regression on the negated path would hide a SIMULATED assertion
+  inside an "established absent" record, which is the MDR-relevant confusion
+  — and reimplements alert's `provenance_of` from its source so a divergence
+  fails here too. Copying a function into a test is normally wrong; it is
+  right when there is no import between the repos and the alternative is that
+  neither side checks.
+
+alert carries the twin: `app/tests/test_ips_contract_boundary_905.py` gained
+`TestTheProvenanceSystemAgrees`, which runs alert's REAL gate rather than a
+copy.
+
+MUTATION-TESTED across both repos, and the limitation is recorded rather than
+glossed: reverting the URI here fails SIX tests here and NONE in alert,
+because alert cannot see this code. A cross-repo mirror detects a move by
+failing the suite of whichever side moved. That is what the pattern can give
+without an import, and it is what `ASSERTION_CONTRACT` already relies on.
+
+Suites: ips 1231 passed / 1 skipped; alert 286 passed.
+
+NOT DEPLOYED YET. One source file, no migration — but the TWO stored
+resources still carry the old system, and leaving them is the two-conventions
+state above. That is a data fix to run with the deploy, not after it.

@@ -85,7 +85,28 @@ ASSERTION_CONTRACT = (
 #: documented one. The value is alert's own, not re-spelled here.
 SIMULATED = "simulated"
 
-_PROVENANCE_SYSTEM = "https://alert.pdhc/provenance"
+#: The provenance tag's system. ALERT OWNS THIS VALUE, and it is settled by
+#: alert's own FROZEN Rule 30, which states the MDR boundary in terms of
+#: `urn:pdhc:provenance#computed` and says it "is not configurable". Its
+#: design doc uses `urn:pdhc:provenance#documented/#simulated/#computed`
+#: throughout.
+#:
+#: This module used to write `https://alert.pdhc/provenance` (#920) — a host
+#: with no TLD, which resolves nowhere, and a DIFFERENT identifier space from
+#: the one alert's own `inflow/gate.py` reads. So a Device this module
+#: produced from an alert assertion carried a tag alert's gate would not
+#: recognise: `provenance_of` matches `system` by equality and would have seen
+#: no provenance at all, refusing the candidate as `no_provenance`.
+#:
+#: The failure was silent in the useful direction and loud in the useless one
+#: — the push worked, the tag was written, the FHIR looked right, and only a
+#: round trip ever noticed. The round trip is now a test, in both repos.
+#:
+#: The `#fragment` form in alert's documentation is shorthand for this PAIR:
+#: FHIR's Coding carries `system` and `code` separately, and `gate.provenance_of`
+#: reads `t["system"] == PROVENANCE_SYSTEM` then returns `t["code"]`. So the
+#: shapes already agreed; only the string did not.
+_PROVENANCE_SYSTEM = "urn:pdhc:provenance"
 
 
 def is_implant(assertion: dict) -> bool:
