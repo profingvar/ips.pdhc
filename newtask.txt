@@ -9,6 +9,50 @@ progress.md is the authority when they disagree (CLAUDE.md §16); this file is
 the short answer.
 
 
+#928 last_updated — DONE AND DEPLOYED (2026-11-04). Ticket closed.
+------------------------------------------------------------------
+1242 tests pass (was 1231). No migration: `onupdate` is ORM-level.
+
+`last_updated` had `default=utcnow` and no `onupdate`, so it was a CREATION
+timestamp wearing a modification timestamp's name — while carrying an index
+that invites the "what changed recently" query it could not answer. Two live
+queries take that invitation (`fhir_service.search_resources:137`,
+`admin.patient_detail:359`) and returned creation order; they now return
+modification order, which is a deliberate behaviour change with a test.
+
+THE MEASUREMENT THE TICKET DID NOT HAVE: 2355 of 4780 rows had
+`last_updated != created_at`, every difference under 1 ms, and every one with
+`last_updated` EARLIER. A modification can only be LATER, so that was proof of
+two independent clock reads in one INSERT. A `before_insert` listener now
+shares one read, so a difference finally MEANS a modification.
+
+version_id is deliberately NOT bumped in place. `update_resource` is
+append-only (new row at version+1, old one `superseded`) and measured 4780
+rows / all active / 0 superseded — the path has NEVER run. A row claiming v2
+with no v1 would assert a history that does not exist. #934 carries the real
+question: should a backfill create a version?
+
+Nothing serves `meta.lastUpdated` from this column (all 11 `meta` builders do
+`tag`/`profile` only), so this is an internal fix and not a conformance one —
+which is the gating question #928 asked.
+
+DEPLOYED AND VERIFIED by a write that was ROLLED BACK: insert gives identical
+timestamps to the microsecond, an update moves `last_updated` and not
+`created_at`, `version_id` stays 1, and the row count is 4780 before and after.
+Structural checks in the container confirm `onupdate` is on `last_updated` and
+NOT on `created_at`. /api/v1/health 200, smoke 10/10.
+
+The 2355 pre-existing rows with `last_updated` EARLIER are untouched: history is
+not repaired, by design.
+
+#927 REMAINS OPEN, and #928 corrects part of its reasoning: it used
+`last_updated` unchanged as evidence, and with no `onupdate` that column could
+never have moved — so it eliminated nothing. A lead was chased and killed: both
+#927 resource ids are UUIDv5 (deterministic, `implant_routes._derived_ids`), so
+a re-push reproduces the same keys — but `implant_routes.py:174` returns a
+duplicate and writes NOTHING. Recorded so nobody spends that hour again.
+
+
 NEXT PHASE: THIS SERVICE BECOMES eps.pdhc
 ------------------------------------------
 Operator decision, 2026-11-04, following the EPS work (#876 epic, #905).

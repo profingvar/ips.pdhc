@@ -2291,3 +2291,81 @@ Do not start this with a `sed`. The `KNOWN_SERVICES` table in CLAUDE.md was
 wrong twice because a hand survey globbed a filename, and the #816 split
 showed a blind replace breaks correct references that happen to share a
 string.
+
+## #928 — DEPLOYED 2026-11-04. `last_updated` means its name, and a difference means something.
+
+`onupdate=utcnow` on `last_updated`, `created_at` declared before it, and a
+`before_insert` listener so both share ONE clock read. No migration —
+`onupdate` is ORM-level.
+
+### The measurement the ticket did not have
+
+It observed two rows with `created_at == last_updated`. Across all 4780:
+
+| | |
+|---|---|
+| rows where `last_updated != created_at` | **2355 (49%)** |
+| largest difference | **14 µs** |
+| `last_updated` EARLIER than `created_at` | **2355** |
+| `last_updated` LATER | **0** |
+
+A modification can only ever be LATER, so every difference running the other way
+is proof of two independent `utcnow()` calls in one INSERT, evaluated in
+declaration order. The column was not merely misnamed: on half the table it was
+a creation timestamp EARLIER than creation, and anyone reading
+`last_updated != created_at` as evidence of a change would have been wrong 2355
+times — which is the shape of reasoning #927 rested on.
+
+### Verified in production by a write that was ROLLED BACK
+
+```
+insert: created_at == last_updated   OK   both 2026-11-04 20:46:58.047789+00:00
+update: last_updated MOVED           OK
+update: created_at did NOT move      OK   (the control — onupdate on the right column)
+update: last_updated is LATER        OK
+update: version_id UNCHANGED         OK   (deliberate, #934)
+rows 4780 before and 4780 after      OK   nothing persisted
+```
+
+Structural checks in the deployed container: `last_updated.onupdate` is set,
+`created_at.onupdate` is NOT, and the `before_insert` listener is registered.
+`/api/v1/health` 200, container `(healthy)`, sibling smoke 10/10, 1242 tests.
+
+### The ticket's suggested fix was wrong on one half
+
+It proposed bumping `version_id` in the two in-place writers.
+`fhir_service.update_resource` is **append-only** — new row at `version_id + 1`,
+old one `status='superseded'` — and measured 4780 rows, all `active`, **0
+superseded**, 0 duplicated `(resource_type, resource_id)`. The path has never
+run. So a row claiming v2 with no v1 would assert a history that does not exist,
+which is worse than the silence it replaced. A time is a claim this schema can
+keep. #934 carries the real question — should a backfill create a version? —
+because the answer "yes" doubles the rows a backfill touches.
+
+### What this corrects in #927, and the lead that died
+
+#927 used `last_updated` unchanged as part of its elimination. That part was
+**void**: with no `onupdate`, any app-level assignment left the column
+untouched, so its unchanged value eliminated nothing.
+
+A lead was chased and killed. Both #927 resource ids are UUID **version 5**,
+derived by `implant_routes._derived_ids` via `uuid5(ID_NAMESPACE, key|device)`,
+so a re-push reproduces the same primary keys — which would make an idempotent
+upsert indistinguishable from a mystery write. But `implant_routes.py:174` does
+`if _existing(device_id) is not None: duplicates += 1; continue`. A re-push
+writes NOTHING. #927 stays open; this is recorded so nobody spends the same hour.
+
+### The gating question the ticket asked, answered
+
+**Nothing serves `meta.lastUpdated` from this column.** All 11 `meta`
+constructions under `gateway/app/` build `tag` and `profile` only — control: 63
+`resourceType` references, so the search was real. So this is an internal
+correctness fix, not a FHIR conformance defect.
+
+### Pre-deploy, because ips has a recorded bind hazard
+
+`/app` is baked (no mounts), so this was a `--build`. Checked first: 74 of 74
+`app/*.py` byte-identical host-to-container, 13 of 13 requirements pinned
+(#785), and the #858 hazard already closed — repo and deployed Dockerfile both
+`--bind 0.0.0.0:9040`, with `127.0.0.1:9040:9040` on the host mapping as the
+control that keeps it off the LAN.

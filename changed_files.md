@@ -1814,3 +1814,82 @@ broken data.
 modification timestamp's name — and an index inviting the query it cannot
 answer. Its unchanged value therefore proves nothing about later writes, and
 only `version_id` remains informative.
+
+## 2026-11-04 — #928: last_updated now means its name, and a difference means something
+
+- gateway/app/models/fhir_resource.py — EDIT. `onupdate=utcnow` on
+  `last_updated`; `created_at` declared BEFORE it; a `before_insert` listener so
+  both share ONE clock read.
+- gateway/tests/test_last_updated_928.py — NEW. 11 tests.
+
+**The ticket's framing was right and its numbers were not there yet.** It
+observed two rows with `created_at == last_updated`. Measured across all 4780
+production rows:
+
+| | |
+|---|---|
+| rows where `last_updated != created_at` | **2355 (49%)** |
+| largest difference | **14 µs** |
+| `last_updated` EARLIER than `created_at` | **2355** |
+| `last_updated` LATER | **0** |
+
+A modification can only ever be LATER. Every difference running the other way
+is proof these were two independent `utcnow()` calls in one INSERT, evaluated in
+declaration order — and `last_updated` was declared first. So the column was not
+merely a creation timestamp with the wrong name: on half the table it was a
+creation timestamp EARLIER than creation, and anyone reading
+`last_updated != created_at` as evidence of a change would have been wrong 2355
+times.
+
+**Two live queries take the index's invitation**, as the ticket predicted:
+`fhir_service.search_resources:137` and `admin.patient_detail:359` both
+`order_by(last_updated.desc())`. They returned creation order. They now return
+modification order, which is a deliberate behaviour change and has a test.
+
+### The ticket's suggested fix was wrong on one half, and the measurement is why
+
+It proposed bumping `version_id` in the two in-place writers. **`update_resource`
+is append-only** — it INSERTS a new row at `version_id + 1` and marks the old one
+`status='superseded'` — and measured the same day:
+
+    4780 rows, all `active`, 0 superseded, 0 duplicated (resource_type, resource_id)
+
+So `max(version_id) = 1` everywhere is not a broken bump. **The path has never
+run.** Every content change this table has ever seen happened through the two
+in-place writers (`app/__init__.py:257`, `euips_header_backfill.py:178`).
+
+Bumping `version_id` in place would therefore be worse than the silence it
+replaced: in this model v2 means v1 survives as superseded, and a row claiming
+v2 with no v1 asserts a history that does not exist. A time is a claim this
+schema can keep, so `onupdate` is the whole signal. #934 carries the real
+question — should a backfill create a version? — because it doubles the rows a
+backfill touches and that is an operator decision.
+
+### What this corrects in #927, which cannot be edited
+
+#927 used `last_updated` unchanged as part of its elimination. **That part was
+void**: with no `onupdate`, ANY app-level assignment left the column untouched,
+so its unchanged value eliminated nothing. Only `version_id` still being 1
+remained informative — and even that only rules out `update_resource`, which has
+never run for anything.
+
+**A lead was chased and killed.** Both #927 resource ids are UUID **version 5**
+(`a7dd71da-…-517c-…`, `54639c9d-…-5502-…`), derived by
+`implant_routes._derived_ids` via `uuid5(ID_NAMESPACE, key + "|device")`. So a
+re-push reproduces the same primary keys, which would make an idempotent upsert
+indistinguishable from a mystery write. But `implant_routes.py:174` does
+`if _existing(device_id) is not None: duplicates += 1; continue` — a re-push
+writes NOTHING. The lead is dead and #927 stays open; recorded so the next
+person does not spend the same hour on it.
+
+### Also measured, and it is the gating question the ticket asked
+
+**Nothing serves `meta.lastUpdated` from this column.** All 11 `meta`
+constructions under `gateway/app/` build `tag` and `profile` only (control: 63
+`resourceType` references, so the search was real). So this is an internal
+correctness fix and not a FHIR conformance defect — which is the answer the
+ticket said would decide that.
+
+1242 tests pass (was 1231). No migration: `onupdate` is ORM-level. Five
+mutations — drop `onupdate`, drop the listener, reproduce the EARLIER bug, put
+`onupdate` on `created_at`, bump `version_id` in place — fail 3, 3, 4, 1 and 1.
