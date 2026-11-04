@@ -1762,6 +1762,55 @@ without an import, and it is what `ASSERTION_CONTRACT` already relies on.
 
 Suites: ips 1231 passed / 1 skipped; alert 286 passed.
 
-NOT DEPLOYED YET. One source file, no migration — but the TWO stored
-resources still carry the old system, and leaving them is the two-conventions
-state above. That is a data fix to run with the deploy, not after it.
+### DEPLOYED 2026-11-04
+
+Gated first: baseline (HEAD~1), server disk and container agreed — 0 drift.
+Dump verified (103 TOC entries) and a per-file rollback pulled from the
+container into `~/backups/predeploy/ips.pdhc/files.2026-11-04T14-5236Z/`.
+
+    image 13773c5c644e -> 0e0c0909399f
+    in the new image: d2c3c7d25c0b8c1f (matches)
+    /api/v1/health 200; sibling smoke 10/10
+
+THE ROUND TRIP IS VERIFIED AGAINST THE REAL STORED ROWS, not only in the
+suite: alert's own `gate.provenance_of`, run against what is actually in
+`fhir_resources`, reads `simulated` from both — 2 of 2. Before #920 it read
+None from them, which is a refusal (`no_provenance`).
+
+    urn:pdhc:provenance   Device 1, DeviceUsage 1, Flag 43, Observation 104
+    old value             0 rows
+
+### AND SOMETHING I CANNOT EXPLAIN — #927
+
+The data fix I prepared turned out to be unnecessary, for a reason worth
+recording rather than enjoying. The two rows were ALREADY on the correct
+system when the fix ran, so its `WHERE` matched 0 rows and its guard aborted
+the whole block. Nothing was written by me.
+
+But both dumps say otherwise. The 14:41:34 and 14:52:36 snapshots each
+contain 2 rows on `https://alert.pdhc/provenance`, and two reads at ~14:53
+and ~14:55 showed the same. Minutes later: 0. And `version_id` is still 1
+with `last_updated` still 11:59:16.
+
+Ruled out, each by measurement: an HTTP write (no `audit_log` row after
+14:42:51), a background job (no scheduler anywhere in `gateway/app/`), the
+container start (`Entrypoint` null, `Cmd` gunicorn alone — `/app/start.sh` is
+the HOST's script, copied in and never run), the normal write path (it bumps
+`version_id`), my own SQL (aborted, 0 rows, rolled back, and
+`ON_ERROR_STOP=1` meant the following SELECTs never ran), a restore (every
+`pg_restore` used `-l` or `-f`), and a duplicate table or schema (one table,
+one database, normal `search_path`).
+
+Only two code paths write `resource_json` without bumping `version_id` —
+`flask migrate-r5-device-elements` and `flask euips-header-backfill` — and
+neither was run in that window.
+
+Filed as #927, open. The resulting value is the correct one and the round trip
+is verified, so this is a ticket about an unaccounted write and not about
+broken data.
+
+#928 came out of it and CORRECTS part of #927's own reasoning:
+`last_updated` has NO `onupdate`, so it is a creation timestamp with a
+modification timestamp's name — and an index inviting the query it cannot
+answer. Its unchanged value therefore proves nothing about later writes, and
+only `version_id` remains informative.
