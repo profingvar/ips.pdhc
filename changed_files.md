@@ -1893,3 +1893,47 @@ ticket said would decide that.
 1242 tests pass (was 1231). No migration: `onupdate` is ORM-level. Five
 mutations — drop `onupdate`, drop the listener, reproduce the EARLIER bug, put
 `onupdate` on `created_at`, bump `version_id` in place — fail 3, 3, 4, 1 and 1.
+
+## #980 — GET /api/v1/patients/<guid>/euips-summary: the live summary (2026-11-11)
+
+### gateway/app/services/euips_summary.py (new), gateway/app/api/patient_routes.py
+
+The patient dashboard needed the euIPS summary's CONTENT, read live — the
+operator declined the frozen snapshot because older snapshots predate #793.
+
+NOT A NEW COMPOSER. #980 was filed believing one had to be written, since
+`required_sections_for()` is a generator. Measured: the generator writes
+every section into `fhir_resources` through `create_resource`, and
+`euips_sections` already classifies them. So `compose()` reuses
+`section_matches` — which DISCRIMINATES; Condition is shared by three
+sections and Observation by seven — and collects the rows instead of counting
+them. The three states and the rule that real content beats a stale absent
+assertion are inherited from `status_for_resources`, and a test asserts the
+summary and `/euips-sections` never disagree for the same patient.
+
+Production holds the facts: 324 patients; AllergyIntolerance 272 rows across
+214 patients, MedicationStatement 404 across 214. 324 - 214 = 110, the same
+110 patients #793 measured with no content in any required section.
+
+SCOPED like `/state`, through `patient_export.exportable` (the one predicate,
+not a third copy). Out of scope gets the same 404 as a missing patient. Two
+deliberate differences from `/state`, because this returns clinical content:
+a FAILING scope check answers 503 rather than being folded into "not found"
+(which `/state` does — #827's shape, noted, not filed); and the read is
+AUDITED (`euips_summary_read`), as the snapshot bundle read is.
+
+Each entry carries `system` and `source: "ips"`, because the platform has two
+diagnosis registers in two code systems (#984): ips's problems are SNOMED CT,
+icd11's are ICD-11 MMS. Narrative is returned as plain text, never XHTML.
+Nothing is deduplicated: one production patient holds the same Condition
+twice (#984), and collapsing it would hide a data defect.
+
+`fhir_resources` has no authoring-clinic column, so spärr cannot be applied
+per resource here; scope is per patient.
+
+### gateway/tests/test_euips_summary_980.py
+
+Fourteen tests; seven mutations each failing on assertions. ips suite 1256
+passed. Verified before editing: patient_routes.py and euips_sections.py were
+byte-identical in git, /usr/local/www/pdhcips/gateway and ips-app-1. NOT
+deployed.

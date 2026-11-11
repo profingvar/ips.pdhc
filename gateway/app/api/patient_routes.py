@@ -744,6 +744,80 @@ def euips_section_status(guid):
     })
 
 
+@bp.route("/<guid>/euips-summary", methods=["GET"])
+@require_auth
+def euips_summary(guid):
+    """#980 — the live euIPS summary: each section's status AND its entries.
+
+    The sibling of `/euips-sections`, which returns status only. Composition
+    is `app/services/euips_summary.compose`, reusing `euips_sections`'s own
+    classification, so the two answers cannot disagree.
+
+    SCOPED like `/state`: through `patient_export.exportable`, the one
+    authoritative "may this reader see this patient", not a third copy of the
+    rule. Out of scope answers the SAME 404 as a missing patient, so the guid's
+    existence is not confirmed.
+
+    TWO DELIBERATE DIFFERENCES FROM `/state`, both because this returns
+    clinical CONTENT:
+
+    * If `exportable` FAILS, this answers 503, not 404. `/state` folds an
+      exception into `allowed = []` and so reports "not found" when the truth
+      is "could not check" — #827's shape.
+    * The read is AUDITED, as `/snapshots/<guid>/bundle` is. `/state` is not.
+
+    `fhir_resources` has no authoring-clinic column, so spärr cannot be
+    applied per resource here; scope is per patient, via `exportable`.
+    """
+    from app.services import patient_export as px
+    from app.services import euips_summary as summ
+    from app.services.audit_service import log_event
+
+    not_found = ({"error": "patient not found"}, 404)
+    if not is_uuid(guid):
+        return jsonify({"error": "malformed patient guid"}), 400
+    patient = _patient_by_either_id(guid)
+    if not patient:
+        return jsonify(not_found[0]), not_found[1]
+
+    try:
+        allowed, _ = px.exportable([str(patient.guid)])
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({
+            "error": "scope_undetermined",
+            "message": ("whether this reader may see the patient could not be "
+                        "established; refused rather than served unchecked"),
+            "detail": type(exc).__name__,
+        }), 503
+    if str(patient.guid) not in {str(a) for a in allowed}:
+        return jsonify(not_found[0]), not_found[1]
+
+    rows = (db.session.query(FhirResource)
+            .filter(FhirResource.patient_guid == patient.guid).all())
+    sections = summ.compose(rows)
+    status = {s["key"]: s["status"] for s in sections}
+
+    log_event("euips_summary_read", patient_guid=patient.guid,
+              detail={"entries": sum(len(s["entries"]) for s in sections),
+                      "sections_present": sum(1 for s in sections
+                                              if s["status"] == euips.PRESENT)})
+    db.session.commit()
+
+    return jsonify({
+        "patient_guid": str(patient.guid),
+        "source": "ips",
+        "sections": sections,
+        "eps_sections_declared_not_carried": [
+            {"loinc": s["loinc"], "title": s["title"],
+             "eps_unique": s["eps_unique"]}
+            for s in euips.EPS_TEXT_SECTIONS
+        ],
+        "conformance": euips.conformance(status),
+        "codes_verified": euips.CODES_VERIFIED,
+        "codes_verified_against": euips.CODES_VERIFIED_AGAINST,
+    })
+
+
 @bp.route("/<guid>/euips-header", methods=["GET"])
 @require_auth
 def euips_header_status(guid):
