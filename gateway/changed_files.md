@@ -36,3 +36,13 @@
 - 2026-10-09 gateway/tests/test_validate_identifier_endpoint.py (NEW)
 - 2026-10-09 gateway/app/api/clinic_routes.py — POST /api/v1/clinics/<guid>/generate-cohort (#815)
 - 2026-10-09 gateway/tests/test_generate_cohort_endpoint.py (NEW)
+
+## 2026-11-12 — #990: synthetic personnummer carry a WRONG check digit again (#405)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/personnummer.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/mock_generator.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/clinic_routes.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_personnummer_synthetic_990.py
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_mock_generator_789_790.py

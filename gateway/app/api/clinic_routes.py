@@ -324,7 +324,8 @@ def create_clinic_patient(guid):
             id_value = data["identifier_value"]
             if id_system == pnr.PERSONNUMMER_SYSTEM:
                 id_value = pnr.normalise(id_value) or id_value
-                problem = pnr.describe_invalid(
+                # #990: the platform policy (synthetic only), not bare validity.
+                problem = pnr.policy_problem(
                     id_value, birth=data.get("birth_date") or None)
                 if problem:
                     current_app.logger.warning(

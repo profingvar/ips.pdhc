@@ -305,7 +305,10 @@ def create_patient():
         # operator may be recording a real patient whose details are
         # imperfect, and refusing the save would lose the rest of the record.
         normalised = pnr.normalise(identifier) or identifier
-        problem = pnr.describe_invalid(normalised, birth=birth or None)
+        # #990: judged against the PLATFORM POLICY (synthetic only), so a
+        # synthetic number is accepted silently and a real-format one is the
+        # warning — the opposite of #789's check, which warned on synthetic.
+        problem = pnr.policy_problem(normalised, birth=birth or None)
         if problem:
             flash(f"Patient saved, but the personnummer looks wrong: {problem}",
                   "warning")

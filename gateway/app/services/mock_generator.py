@@ -207,7 +207,10 @@ def generate(clinic_guid, count=4, skip_clinical=False,
         # Luhn checksum rather than a free number — valid in 6 of 60 sampled
         # live rows, exactly chance. Worst case was a 2000s birth becoming
         # "19"+"20xx", an identifier contradicting its own birth_date.
-        personnummer = pnr.build(mp["birth"])
+        # #990: SYNTHETIC — a wrong check digit, so the number can never be a
+        # real person's (#405). #789's `build()` minted valid, real-world
+        # numbers here.
+        personnummer = pnr.build_synthetic(mp["birth"])
 
         # #792: city is now a variable because the Coverage insurer is the
         # patient's REGION, derived from where they live. Drawn independently

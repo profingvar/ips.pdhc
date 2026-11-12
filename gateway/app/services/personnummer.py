@@ -20,6 +20,25 @@ the admin create form and `POST /api/v1/clinics/<guid>/patients`. They each had
 their own handling, which is how the duplication in #784 (sso's CSV contract)
 and #786 (plan's canonical-lib default) started. One definition, three callers.
 
+SYNTHETIC NUMBERS CARRY A WRONG CHECK DIGIT — ON PURPOSE (#405, restored by #990).
+#789 made `build()` compute a CORRECT check digit and treated the old invalid
+ones as a defect. That turned every generated number into a well-formed,
+real-world personnummer: a real birth date, a random birth number, a correct
+digit. For an ordinary birth date most of the 1000 birth numbers are issued to
+real people, so the generator was minting numbers that can identify a living
+person and storing them next to fabricated clinical data (185 of 314 in
+production on 2026-11-12). A Skatteverket TEST number would be valid and safe,
+but those are a published list; a random serial is not one of them.
+
+So there are now two builders and one classification:
+  build()            a structurally VALID number — kept for validating input
+                     and for tests of the validator. NEVER for synthetic data.
+  build_synthetic()  well-formed, real date, agrees with the birth date, and a
+                     check digit that is guaranteed WRONG: it cannot be anyone.
+  classify()         "real_format" | "synthetic" | "malformed"
+and the platform policy, `SYNTHETIC_ONLY`, under which a real-format number on
+input is the thing to warn about — not a synthetic one.
+
 A personnummer is an IDENTIFIER and never a join key. `PatientIndex.guid` is
 the internal key across all nine consuming services (Rule 18).
 """
@@ -83,6 +102,80 @@ def build(birth: date | str, serial: int | None = None,
 
     nine = f"{yyyy[2:]}{mm}{dd}{serial:03d}"
     return f"{yyyy}{mm}{dd}-{serial:03d}{luhn_check_digit(nine)}"
+
+
+def build_synthetic(birth: date | str, serial: int | None = None,
+                    *, rng: random.Random | None = None) -> str:
+    """A SYNTHETIC `YYYYMMDD-NNNN`: well-formed, the birth date it claims, and
+    a check digit that is deliberately WRONG, so it can never be a real
+    person's number (#405, #990).
+
+    The wrong digit is the correct one plus 5 (mod 10) — never equal to it,
+    and deterministic, so a test can assert it.
+    """
+    valid = build(birth, serial, rng=rng)
+    correct = int(valid[-1])
+    return valid[:-1] + str((correct + 5) % 10)
+
+
+def classify(value: str | None) -> str:
+    """"real_format", "synthetic" or "malformed".
+
+    real_format  a well-formed number with a real date and a CORRECT check
+                 digit — it can be a real person's.
+    synthetic    well-formed, a real date, and a WRONG check digit (#405).
+    malformed    anything else (wrong shape, impossible date, empty).
+    """
+    n = normalise(value or "")
+    if n is None:
+        return "malformed"
+    m = _FULL.match(n)
+    if not m:
+        return "malformed"
+    yyyy, mm, dd, nnnn = m.groups()
+    try:
+        date(int(yyyy), int(mm), int(dd))
+    except ValueError:
+        return "malformed"
+    correct = luhn_check_digit(f"{yyyy[2:]}{mm}{dd}{nnnn[:3]}") == int(nnnn[3])
+    return "real_format" if correct else "synthetic"
+
+
+#: The platform holds SYNTHETIC data only. Under this policy a real-format
+#: number on input is warned about by name. Only the operator changes this,
+#: and only when the platform is cleared to hold real patients.
+SYNTHETIC_ONLY = "synthetic_only"
+
+
+def policy_problem(value: str | None, *, birth: date | str | None = None,
+                   policy: str = SYNTHETIC_ONLY) -> str | None:
+    """What is wrong with `value` UNDER THE PLATFORM POLICY, or None.
+
+    Under SYNTHETIC_ONLY: a real-format number is the problem (it may be a real
+    person's); a synthetic one is correct; a malformed one, or one whose date
+    contradicts the record, is reported as before.
+    """
+    kind = classify(value)
+    if kind == "malformed":
+        return describe_invalid(value or "", birth=birth)
+    if birth is not None:
+        # Compared directly: describe_invalid reports a wrong check digit
+        # FIRST, so for a synthetic number it never reaches the date.
+        b = birth
+        if isinstance(b, str):
+            bm = re.match(r"^(\d{4})-(\d{2})-(\d{2})", b.strip())
+            b = date(int(bm.group(1)), int(bm.group(2)), int(bm.group(3))) if bm else None
+        n = normalise(value)
+        yyyy, mm, dd = n[:4], n[4:6], n[6:8]
+        encoded = date(int(yyyy), int(mm), int(dd))
+        if b is not None and encoded != b:
+            return (f"{n} encodes a birth date of {encoded.isoformat()} but the "
+                    f"patient record says {b.isoformat()}")
+    if policy == SYNTHETIC_ONLY and kind == "real_format":
+        return (f"{normalise(value)} has a CORRECT check digit, so it may be a "
+                f"real person's personnummer. This platform holds synthetic "
+                f"data only (#405, #990): use a number with a wrong check digit.")
+    return None
 
 
 def normalise(value: str) -> str | None:

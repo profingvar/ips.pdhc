@@ -23,9 +23,10 @@ def _clinic(db, name="Test Vårdenhet"):
 
 
 class TestGeneratedIdentifiers:
-    def test_every_generated_personnummer_is_valid(self, client, db):
-        """Before #789 this produced 15-character values whose check digit was
-        valid about 10% of the time."""
+    def test_every_generated_personnummer_is_SYNTHETIC(self, client, db):
+        """#990: well-formed, agrees with the birth date, and a WRONG check
+        digit — so it can never be a real person's (#405). #789 made these
+        valid real-world numbers; this test asserted that until 2026-11-12."""
         c = _clinic(db)
         resp = client.post("/admin/mock-data",
                            data={"clinic_guid": str(c.guid), "count": "25"},
@@ -39,10 +40,11 @@ class TestGeneratedIdentifiers:
         for p in patients:
             if p.identifier_system != pnr.PERSONNUMMER_SYSTEM:
                 continue
-            why = pnr.describe_invalid(p.identifier_value, birth=p.birth_date)
-            if why:
-                bad.append((p.identifier_value, why))
-        assert bad == [], f"{len(bad)} invalid, e.g. {bad[:3]}"
+            kind = pnr.classify(p.identifier_value)
+            why = pnr.policy_problem(p.identifier_value, birth=p.birth_date)
+            if kind != "synthetic" or why:
+                bad.append((kind, why))
+        assert bad == [], f"{len(bad)} not synthetic, e.g. {bad[:3]}"
 
     def test_the_length_is_13_not_15(self, client, db):
         c = _clinic(db)
@@ -100,22 +102,36 @@ class TestTheAdminCreateForm:
         assert p is not None
         assert p.identifier_value == "19611015-9638"
 
-    def test_a_bad_personnummer_warns_but_still_saves(self, client, db):
-        """Deliberate: an operator may be recording a real patient whose
-        details are imperfect, and refusing the save would discard the rest of
-        the record. The warning is the product, not a rejection."""
+    def test_a_REAL_FORMAT_personnummer_warns_but_still_saves(self, client, db):
+        """#990: under the platform policy (synthetic only) the warning is for
+        a number with a CORRECT check digit — it may be a real person's. Still
+        saved: refusing would discard the rest of the record, and the warning
+        is the product. (Before #990 this test warned on a WRONG digit.)"""
         c = _clinic(db)
+        real = pnr.build("1961-10-15", 0)
         resp = client.post("/admin/patients/create",
                            data={"family_name": "Warned", "given_name": "Still",
                                  "birth_date": "1961-10-15",
-                                 "identifier": "19611015-0000",
+                                 "identifier": real,
                                  "clinic_guid": str(c.guid)},
                            follow_redirects=True)
         assert resp.status_code == 200
         body = resp.data.decode()
         assert "personnummer looks wrong" in body, body[:400]
+        assert "may be a real person" in body
         assert _db.session.query(PatientIndex).filter_by(
             family_name="Warned").first() is not None
+
+    def test_a_SYNTHETIC_personnummer_saves_without_a_warning(self, client, db):
+        c = _clinic(db)
+        resp = client.post("/admin/patients/create",
+                           data={"family_name": "Quiet", "given_name": "Synth",
+                                 "birth_date": "1961-10-15",
+                                 "identifier": pnr.build_synthetic("1961-10-15", 0),
+                                 "clinic_guid": str(c.guid)},
+                           follow_redirects=True)
+        assert resp.status_code == 200
+        assert "personnummer looks wrong" not in resp.data.decode()
 
     def test_junk_in_the_identifier_field_does_not_500(self, client, db):
         """The warning path runs describe_invalid on operator input, so it must

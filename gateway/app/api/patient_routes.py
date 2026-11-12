@@ -183,8 +183,14 @@ def validate_identifier():
             continue
         results.append({
             "value": value,
+            # `valid` keeps its #813 meaning: a structurally valid, real-format
+            # personnummer. A synthetic number is NOT valid by that test —
+            # which is the point of it — so callers must read `kind` and
+            # `policy_problem` too (#990).
             "valid": pnr.is_valid(value, birth=birth) if value else False,
             "problem": pnr.describe_invalid(value, birth=birth),
+            "kind": pnr.classify(value),
+            "policy_problem": pnr.policy_problem(value, birth=birth),
             "normalised": pnr.normalise(value) if value else None,
         })
     return jsonify({"results": results})

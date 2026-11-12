@@ -178,9 +178,15 @@ def create_app(config_name: str | None = None) -> Flask:
         else:
             _click.echo("  BROKEN Swedish personnummer: 0")
         _click.echo("")
-        _click.echo("Pre-existing rows are left as they are (#789: fix forward).")
+        kinds = Counter(pnr.classify(p.identifier_value) for p in rows
+                        if p.identifier_value and p.identifier_system == pnr.PERSONNUMMER_SYSTEM)
+        _click.echo("")
+        _click.echo("Under the platform policy (synthetic only, #405/#990):")
+        _click.echo(f"  synthetic (wrong check digit) : {kinds.get('synthetic', 0)}")
+        _click.echo(f"  REAL-FORMAT (may be a person) : {kinds.get('real_format', 0)}")
+        _click.echo(f"  malformed                     : {kinds.get('malformed', 0)}")
         _click.echo("Newly generated patients are built by "
-                    "app.services.personnummer.build and are valid.")
+                    "app.services.personnummer.build_synthetic (#990).")
 
     # #799 — `flask euips-report`, read-only.
     @app.cli.command("euips-report")
