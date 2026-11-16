@@ -1942,3 +1942,11 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py — add-resource: medication.concept, status "recorded"
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/euips_required.py — generated medications and no-known-medications: medication.concept, status "recorded"
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_medication_r5_1010.py (NEW)
+
+## #934 — content changes are NEW VERSIONS, never in place (2026-11-16)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/fhir_service.py — update_resource deep-copies its input (no shared nested JSON with the superseded row)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/euips_header_backfill.py — Patient patch via update_resource
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — migrate-r5-device-elements: active rows only, writes via update_resource; NEW migrate-r5-clinical-elements CLI
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/r5_clinical_migration.py (NEW) — MedicationStatement/Procedure to R5, pure function
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/implant_routes.py — _existing returns the CURRENT version
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_append_only_934.py (NEW, incl. AST guard), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_r5_clinical_migration_934.py (NEW), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_r5_device_migration_908.py (reads the current version)

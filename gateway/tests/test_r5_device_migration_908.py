@@ -271,12 +271,19 @@ class TestTheCli:
         assert res.exit_code == 0, res.output
         assert "wrote 2 row(s)" in res.output
         db.session.expire_all()
+        # #934: the migration writes a NEW VERSION; read the current one.
         dev = db.session.query(FhirResource).filter_by(
-            resource_type="Device").first()
+            resource_type="Device", status="active").one()
         use = db.session.query(FhirResource).filter_by(
-            resource_type="DeviceUsage").first()
+            resource_type="DeviceUsage", status="active").one()
         assert "patient" not in dev.resource_json
         assert use.resource_json["patient"] == {"reference": PATIENT_REF}
+        assert dev.version_id == 2 and use.version_id == 2
+        old = db.session.query(FhirResource).filter_by(
+            resource_type="Device", status="superseded").one()
+        assert old.version_id == 1
+        assert old.resource_json["patient"] == {"reference": PATIENT_REF}, \
+            "the pre-migration content survives as history"
 
     def test_the_row_patient_guid_is_NEVER_touched(self, client, db, seeded):
         """The linkage. A migration that orphaned rows while tidying their

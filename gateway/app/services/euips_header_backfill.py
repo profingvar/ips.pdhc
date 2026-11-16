@@ -36,7 +36,7 @@ from app.models.base import db
 from app.models.fhir_resource import FhirResource
 from app.models.patient_index import PatientIndex
 from app.services import euips_header as hdr
-from app.services.fhir_service import create_resource
+from app.services.fhir_service import create_resource, update_resource
 
 
 def _existing_types(patient_guid) -> set[str]:
@@ -173,9 +173,11 @@ def run(limit: int | None = None, dry_run: bool = True,
             patched_contact += 1
             changed = True
         if changed:
-            # Reassign rather than mutate: resource_json is a JSON column and
-            # an in-place mutation is not always seen as dirty by SQLAlchemy.
-            row.resource_json = body
+            # #934: a NEW VERSION, never an in-place write. The previous Patient
+            # survives as `superseded`, so "what did this record say before the
+            # backfill" stays answerable (what #927 needed and could not get),
+            # and patient_state's bitemporal history sees the change.
+            update_resource("Patient", row.resource_id, body)
 
     db.session.commit()
     p.update({"dry_run": False, "created": created,

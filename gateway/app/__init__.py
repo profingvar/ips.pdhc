@@ -201,6 +201,56 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.services import euips_report
         _click.echo(euips_report.format_report(euips_report.report()))
 
+    @app.cli.command("migrate-r5-clinical-elements")
+    @click.option("--apply", "do_apply", is_flag=True, default=False,
+                  help="Write the changes. Omit for a dry run.")
+    @click.option("--expect", type=int, default=None,
+                  help="Abort unless exactly this many rows would change.")
+    def _migrate_r5_clinical_elements_cli(do_apply, expect):  # noqa: D401
+        """Bring stored MedicationStatement/Procedure rows to R5 (#934).
+
+        DRY RUN BY DEFAULT; `--apply --expect <count from the dry run>` writes.
+        Every change is a NEW VERSION through update_resource: the R4 content
+        survives as `superseded`. TAKE A DUMP FIRST
+        (`~/backups/predeploy/ips.pdhc/`).
+        """
+        import click as _click
+        from app.models.fhir_resource import FhirResource
+        from app.services import r5_clinical_migration as mig
+        from app.services.fhir_service import update_resource
+
+        rows = (db.session.query(FhirResource)
+                .filter(FhirResource.resource_type.in_(mig.HANDLED_TYPES))
+                .filter(FhirResource.status == "active")
+                .all())
+        summary = mig.plan(rows)
+        _click.echo(f"examined {summary['examined']} row(s); "
+                    f"{summary['affected']} would change")
+        for change, n in sorted(summary["changes"].items()):
+            _click.echo(f"  {change}: {n}")
+        if expect is not None and summary["affected"] != expect:
+            raise SystemExit(
+                f"ABORT: --expect {expect} but {summary['affected']} rows "
+                "would change. Nothing was written.")
+        if not do_apply:
+            _click.echo("dry run -- nothing written. Re-run with --apply "
+                        f"--expect {summary['affected']} to write.")
+            return
+        written = 0
+        for r in rows:
+            new_json, changes = mig.migrate_resource_json(
+                r.resource_type, r.resource_json)
+            if changes:
+                update_resource(r.resource_type, r.resource_id, new_json)
+                written += 1
+        if written != summary["affected"]:
+            db.session.rollback()
+            raise SystemExit(
+                f"ABORT: planned {summary['affected']} but wrote {written}. "
+                "Rolled back.")
+        db.session.commit()
+        _click.echo(f"wrote {written} new version(s).")
+
     @app.cli.command("migrate-r5-device-elements")
     @click.option("--apply", "do_apply", is_flag=True, default=False,
                   help="Write the changes. Omit for a dry run.")
@@ -235,8 +285,10 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.models.fhir_resource import FhirResource
         from app.services import r5_device_migration as mig
 
+        # #934: only CURRENT versions are migrated; a superseded row is history.
         rows = (db.session.query(FhirResource)
                 .filter(FhirResource.resource_type.in_(mig.HANDLED_TYPES))
+                .filter(FhirResource.status == "active")
                 .all())
         summary = mig.plan(rows)
         _click.echo(f"examined {summary['examined']} row(s); "
@@ -255,12 +307,15 @@ def create_app(config_name: str | None = None) -> Flask:
                         f"--expect {summary['affected']} to write.")
             return
 
+        # #934: each change is a NEW VERSION via update_resource; the pre-
+        # migration content survives as `superseded`.
+        from app.services.fhir_service import update_resource
         written = 0
         for r in rows:
             new_json, changes = mig.migrate_resource_json(
                 r.resource_type, r.resource_json)
             if changes:
-                r.resource_json = new_json
+                update_resource(r.resource_type, r.resource_id, new_json)
                 written += 1
         if written != summary["affected"]:
             db.session.rollback()

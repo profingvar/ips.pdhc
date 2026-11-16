@@ -1,5 +1,6 @@
 """FHIR resource storage service."""
 
+import copy
 import uuid
 
 from flask import current_app
@@ -87,6 +88,9 @@ def update_resource(resource_type: str, resource_id: str, resource_json: dict) -
     if not current:
         return None
 
+    # #934: a deep copy, so the new version never shares nested JSON with the
+    # row it supersedes (callers often edit what they just read from it).
+    resource_json = copy.deepcopy(resource_json)
     resource_json["id"] = resource_id
     new_version = FhirResource(
         resource_type=resource_type,

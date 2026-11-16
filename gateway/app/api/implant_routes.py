@@ -105,8 +105,12 @@ def _derived_ids(a: dict) -> tuple[str, str]:
 
 
 def _existing(resource_id: str) -> FhirResource | None:
-    return db.session.query(FhirResource).filter_by(
-        resource_id=resource_id).first()
+    # #934: the CURRENT version. With append-only versioning a resource_id has
+    # several rows, and an unordered .first() could return a superseded one.
+    return (db.session.query(FhirResource)
+            .filter_by(resource_id=resource_id, status="active")
+            .order_by(FhirResource.version_id.desc())
+            .first())
 
 
 @bp.route("/assertions", methods=["POST"])

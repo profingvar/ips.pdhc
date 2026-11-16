@@ -491,3 +491,15 @@ after `log_event` on the first run, which is the same trap recorded this morning
 for #811.
 
 721 tests pass (12 new). Deployed; in-image hash verified, /api/v1/health 200.
+
+## #934 — append-only for real (2026-11-16)
+Operator decision: backfills and migrations create a NEW VERSION; nothing
+mutates resource_json in place. Measured first: table 6 MB, 4231 rows all v1, 0
+superseded; a version costs nothing. Both in-place writers now go through
+update_resource; an AST guard fails any `x.resource_json = ...` outside
+fhir_service. Reader traps fixed: implant_routes._existing (unordered .first()).
+Verified: the batch purge already removes every version (Patient rows carry
+patient_guid), patient_index follows the new version.
+New CLI `flask migrate-r5-clinical-elements` (dry run default, --apply --expect):
+322 MedicationStatement + 18 Procedure to R5 as v2, R4 content kept as v1.
+pytest: 1300 passed.
