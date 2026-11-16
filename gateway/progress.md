@@ -512,3 +512,5 @@ and only a unit text; two texts (mmHg, mL/min/1.73m2) are not UCUM. New CLI
 versions; an unmapped text aborts the whole run. Today's generators already
 write valid codes. pytest: 1311 passed.
 APPLIED in production 2026-11-16: pg_dump first (~/backups/predeploy/ips.pdhc/ips_db_pre870apply_*.dump), `--apply --expect 50` -> 50 new versions (4621 rows, 390 superseded). Re-dry 0, sections hash unchanged (694aca6c3c2d), 0 codeless UCUM quantities, all 12 distinct codes valid per termbank $lookup. Smoke 10/10.
+
+## #984/#985 (2026-11-16): operator decision — the CDR is the record for diagnoses (and observations); icd11 codes into the CDR; the ips EPS is a summary derived from the CDR (`derive-conditions-from-cdr`); the dashboard chips read the EPS. EPS Conditions were backfilled into their home CDR (`import-eps-conditions`); those with no home CDR stay, marked not CDR-backed.

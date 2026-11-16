@@ -144,6 +144,7 @@ def entry(row) -> dict:
         if display or code:
             break
     value, unit = _value(rj)
+    cdr = _cdr_ref(rj)
     return {
         "resource_type": row.resource_type,
         "resource_id": row.resource_id,
@@ -159,7 +160,25 @@ def entry(row) -> dict:
         "unit": unit,
         "narrative_text": narrative_text(rj),
         "source": "ips",
+        # #984: the CDR is the record and the EPS a summary of it. An entry
+        # says whether a CDR row backs it, and which CDR, so a reader can tell
+        # the derived from the not-yet-backed rather than trust both alike.
+        "cdr_backed": cdr is not None,
+        "cdr": cdr,
+        "onset": rj.get("onsetDateTime") or (rj.get("onsetPeriod") or {}).get("start"),
+        "abatement": rj.get("abatementDateTime") or (rj.get("abatementPeriod") or {}).get("start"),
     }
+
+
+_CDR_IDENTIFIER_PREFIX = "https://cdr.pdhc.se/fhir/"
+
+
+def _cdr_ref(rj: dict) -> dict | None:
+    """{"name", "guid"} of the CDR row behind this resource, or None."""
+    for i in rj.get("identifier") or []:
+        if isinstance(i, dict) and str(i.get("system") or "").startswith(_CDR_IDENTIFIER_PREFIX) and i.get("value"):
+            return {"name": (i.get("assigner") or {}).get("display"), "guid": i["value"]}
+    return None
 
 
 def compose(rows) -> list[dict]:

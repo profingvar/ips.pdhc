@@ -217,6 +217,50 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.services import r5_clinical_migration as mig
         _run_versioned_migration(mig, do_apply, expect)
 
+    @app.cli.command("derive-conditions-from-cdr")
+    @click.argument("path")
+    @click.option("--apply", "do_apply", is_flag=True, default=False,
+                  help="Write the changes. Omit for a dry run.")
+    @click.option("--expect", type=int, default=None,
+                  help="Abort unless exactly this many changes are planned.")
+    def _derive_conditions_from_cdr_cli(path, do_apply, expect):  # noqa: D401
+        """Make the EPS problems agree with the CDR, the record (#984).
+
+        PATH is a JSON export of CDR Condition rows
+        ({cdr, guid, patient_guid, raw_json}). DRY RUN BY DEFAULT; every
+        change is a NEW VERSION or a new resource; nothing is deleted.
+        """
+        import json as _json
+        import uuid as _uuid
+        from collections import Counter
+        from app.models.fhir_resource import FhirResource
+        from app.services import cdr_condition_derivation as der
+        from app.services.fhir_service import create_resource, update_resource
+        with open(path) as fh:
+            rows = _json.load(fh)
+        current = {r.resource_id: r.resource_json for r in
+                   db.session.query(FhirResource).filter_by(resource_type="Condition", status="active")}
+        changes = der.plan(rows, current)
+        n = Counter(a for a, *_ in changes)
+        click.echo(f"{len(rows)} CDR Condition(s); planned {dict(n)}")
+        if expect is not None and len(changes) != expect:
+            raise SystemExit(f"ABORT: --expect {expect} but {len(changes)} planned. Nothing was written.")
+        if not do_apply:
+            click.echo(f"dry run -- nothing written. Re-run with --apply --expect {len(changes)}.")
+            return
+        for action, rid, pg, js in changes:
+            if action == "link":
+                if update_resource("Condition", rid, js) is None:
+                    db.session.rollback()
+                    raise SystemExit(f"ABORT: {rid} vanished. Rolled back.")
+            else:
+                create_resource("Condition", js, patient_guid=_uuid.UUID(pg))
+        db.session.commit()
+        after = [r.resource_json for r in db.session.query(FhirResource)
+                 .filter_by(resource_type="Condition", status="active")]
+        click.echo(f"wrote {len(changes)}; EPS Conditions now {len(after)}, "
+                   f"CDR-backed {sum(der.is_cdr_backed(r) for r in after)}")
+
     @app.cli.command("backfill-ucum-codes")
     @click.option("--apply", "do_apply", is_flag=True, default=False,
                   help="Write the changes. Omit for a dry run.")
