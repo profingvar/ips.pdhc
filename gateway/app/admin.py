@@ -503,8 +503,11 @@ def add_resource(guid):
                         "code": "active"}]
         }
     elif res_type == "MedicationStatement":
-        resource_json["status"] = "active"
-        resource_json["medication"] = resource_json.pop("code")
+        # R5 (#1010): `medication` is a CodeableReference, so the coding sits
+        # under `concept`; and the status valueset is recorded |
+        # entered-in-error | draft -- "active" was R4.
+        resource_json["status"] = "recorded"
+        resource_json["medication"] = {"concept": resource_json.pop("code")}
         resource_json["subject"] = resource_json.get("subject")
     elif res_type == "AllergyIntolerance":
         resource_json["clinicalStatus"] = {

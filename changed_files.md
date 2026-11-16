@@ -1937,3 +1937,8 @@ Fourteen tests; seven mutations each failing on assertions. ips suite 1256
 passed. Verified before editing: patient_routes.py and euips_sections.py were
 byte-identical in git, /usr/local/www/pdhcips/gateway and ips-app-1. NOT
 deployed.
+
+## 2026-11-16 — #1010: MedicationStatement is written in R5
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py — add-resource: medication.concept, status "recorded"
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/euips_required.py — generated medications and no-known-medications: medication.concept, status "recorded"
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_medication_r5_1010.py (NEW)

@@ -178,11 +178,14 @@ def _medication(patient_ref: str, now: str, rng: random.Random) -> dict:
         "id": str(uuid.uuid4()),
         "text": _narrative(f"{display}, ongoing."),
         "subject": {"reference": patient_ref},
-        "status": "active",
-        # `medication`, which is what this codebase writes and what all 119
-        # pre-existing rows use. euips_sections._CODE_BEARING_FIELDS has to
-        # agree with this or an absent assertion here is undetectable.
-        "medication": _cc("http://www.whocc.no/atc", code, display),
+        # R5 (#1010): status from medication-statement-status (recorded |
+        # entered-in-error | draft; "active" was R4), and `medication` is a
+        # CodeableReference, so the coding sits under `concept`. The 322 rows
+        # written before 2026-11-16 keep the bare R4-ish shape and "active";
+        # every reader (euips_sections._codings, euips_summary._concept, cdr's
+        # fhir_paths, dashboard) reads both. Rewriting them is #934's question.
+        "status": "recorded",
+        "medication": {"concept": _cc("http://www.whocc.no/atc", code, display)},
         "dateAsserted": now,
     }
 
@@ -193,8 +196,10 @@ def _no_known_medications(patient_ref: str, now: str) -> dict:
         "id": str(uuid.uuid4()),
         "text": _narrative("No known medications."),
         "subject": {"reference": patient_ref},
-        "status": "unknown",
-        "medication": euips.absent_coding("medications"),
+        # "unknown" is not in R5's status valueset. The absence is carried by
+        # the CODE (absent_coding), not by status, so this is "recorded" (#1010).
+        "status": "recorded",
+        "medication": {"concept": euips.absent_coding("medications")},
         "dateAsserted": now,
     }
 
