@@ -2353,7 +2353,24 @@ derived by `implant_routes._derived_ids` via `uuid5(ID_NAMESPACE, key|device)`,
 so a re-push reproduces the same primary keys — which would make an idempotent
 upsert indistinguishable from a mystery write. But `implant_routes.py:174` does
 `if _existing(device_id) is not None: duplicates += 1; continue`. A re-push
-writes NOTHING. #927 stays open; this is recorded so nobody spends the same hour.
+writes NOTHING. This is recorded so nobody spends the same hour.
+
+### #927 RESOLVED 2026-11-16 — the write was the operator running the planned fix
+
+Not an unknown writer. The #920 data fix was denied to me by the permission
+classifier at 14:53:46, so I handed the operator two commands at 14:54:36. The
+operator ran them from the Mac at **15:02:43 (scp) and 15:02:55 (ssh, psql -f
+fix920.sql)** UTC; both lines are in the Mac's `~/.zsh_history` with those
+timestamps. My own run of the same file at 15:04:16 then found 0 matching rows
+and aborted, correctly. `jsonb_set` rewrites `resource_json` only, which is the
+whole "version_id 1, last_updated unchanged" shape.
+
+Why it looked unexplained: #927's timeline put the DO block at "~14:57", a
+reconstruction. The session transcript has every tool call, and shows no
+action of mine between 14:54:16 and 15:04:16 -- the gap the operator's run sits
+in. Two operators on one database, and the second did not ask whether the
+handed-over command had already run. The #829 row-count guard is what made the
+second run abort instead of silently passing.
 
 ### The gating question the ticket asked, answered
 

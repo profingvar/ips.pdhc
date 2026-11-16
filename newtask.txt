@@ -45,7 +45,16 @@ NOT on `created_at`. /api/v1/health 200, smoke 10/10.
 The 2355 pre-existing rows with `last_updated` EARLIER are untouched: history is
 not repaired, by design.
 
-#927 REMAINS OPEN, and #928 corrects part of its reasoning: it used
+#927 is RESOLVED (2026-11-16): the "unexplained" write was the planned #920
+data fix, run by the OPERATOR from the Mac at 15:02:55 UTC with the two commands
+handed over at 14:54:36 (Mac ~/.zsh_history, both lines, timestamps 15:02:43 and
+15:02:55). My own run of the same file at 15:04:16 found 0 rows because it was
+already done. jsonb_set touches resource_json only, hence version_id 1 and an
+unmoved last_updated. The ticket's "~14:57" was a reconstruction; the session
+transcript has the real times. Lesson: after handing a command over, ask whether
+it was run before running it yourself.
+
+Kept for the record -- #928 corrected part of #927's reasoning: it used
 `last_updated` unchanged as evidence, and with no `onupdate` that column could
 never have moved — so it eliminated nothing. A lead was chased and killed: both
 #927 resource ids are UUIDv5 (deterministic, `implant_routes._derived_ids`), so
