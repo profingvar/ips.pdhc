@@ -1950,3 +1950,8 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/r5_clinical_migration.py (NEW) — MedicationStatement/Procedure to R5, pure function
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/implant_routes.py — _existing returns the CURRENT version
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_append_only_934.py (NEW, incl. AST guard), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_r5_clinical_migration_934.py (NEW), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_r5_device_migration_908.py (reads the current version)
+
+## #870 (found in ips) — UCUM quantities without a code (2026-11-16)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/ucum_code_backfill.py (NEW) — unit text -> UCUM code, mapped not copied
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — NEW backfill-ucum-codes CLI; shared _run_versioned_migration (also used by migrate-r5-clinical-elements)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_ucum_code_backfill_870.py (NEW)

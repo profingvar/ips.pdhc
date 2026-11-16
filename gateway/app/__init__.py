@@ -214,42 +214,22 @@ def create_app(config_name: str | None = None) -> Flask:
         survives as `superseded`. TAKE A DUMP FIRST
         (`~/backups/predeploy/ips.pdhc/`).
         """
-        import click as _click
-        from app.models.fhir_resource import FhirResource
         from app.services import r5_clinical_migration as mig
-        from app.services.fhir_service import update_resource
+        _run_versioned_migration(mig, do_apply, expect)
 
-        rows = (db.session.query(FhirResource)
-                .filter(FhirResource.resource_type.in_(mig.HANDLED_TYPES))
-                .filter(FhirResource.status == "active")
-                .all())
-        summary = mig.plan(rows)
-        _click.echo(f"examined {summary['examined']} row(s); "
-                    f"{summary['affected']} would change")
-        for change, n in sorted(summary["changes"].items()):
-            _click.echo(f"  {change}: {n}")
-        if expect is not None and summary["affected"] != expect:
-            raise SystemExit(
-                f"ABORT: --expect {expect} but {summary['affected']} rows "
-                "would change. Nothing was written.")
-        if not do_apply:
-            _click.echo("dry run -- nothing written. Re-run with --apply "
-                        f"--expect {summary['affected']} to write.")
-            return
-        written = 0
-        for r in rows:
-            new_json, changes = mig.migrate_resource_json(
-                r.resource_type, r.resource_json)
-            if changes:
-                update_resource(r.resource_type, r.resource_id, new_json)
-                written += 1
-        if written != summary["affected"]:
-            db.session.rollback()
-            raise SystemExit(
-                f"ABORT: planned {summary['affected']} but wrote {written}. "
-                "Rolled back.")
-        db.session.commit()
-        _click.echo(f"wrote {written} new version(s).")
+    @app.cli.command("backfill-ucum-codes")
+    @click.option("--apply", "do_apply", is_flag=True, default=False,
+                  help="Write the changes. Omit for a dry run.")
+    @click.option("--expect", type=int, default=None,
+                  help="Abort unless exactly this many rows would change.")
+    def _backfill_ucum_codes_cli(do_apply, expect):  # noqa: D401
+        """Give UCUM-quantities without a code their UCUM code (#870).
+
+        DRY RUN BY DEFAULT; every change is a NEW VERSION. A unit text with no
+        mapping aborts the run before anything is written.
+        """
+        from app.services import ucum_code_backfill as mig
+        _run_versioned_migration(mig, do_apply, expect)
 
     @app.cli.command("migrate-r5-device-elements")
     @click.option("--apply", "do_apply", is_flag=True, default=False,
@@ -484,3 +464,49 @@ def create_app(config_name: str | None = None) -> Flask:
         )
 
     return app
+
+
+def _run_versioned_migration(mig, do_apply, expect):
+    """Shared body of the stored-resource migrations (#934, #870).
+
+    `mig` supplies HANDLED_TYPES, migrate_resource_json and plan. Active rows
+    only; every change is a NEW VERSION through update_resource; the write
+    count must equal the plan or the transaction is rolled back.
+    """
+    import click as _click
+    from app.models.fhir_resource import FhirResource
+    from app.services.fhir_service import update_resource
+
+    rows = (db.session.query(FhirResource)
+            .filter(FhirResource.resource_type.in_(mig.HANDLED_TYPES))
+            .filter(FhirResource.status == "active")
+            .all())
+    summary = mig.plan(rows)
+    _click.echo(f"examined {summary['examined']} row(s); "
+                f"{summary['affected']} would change")
+    for change, n in sorted(summary["changes"].items()):
+        _click.echo(f"  {change}: {n}")
+    left = mig.unmapped(rows) if hasattr(mig, "unmapped") else {}
+    if left:
+        raise SystemExit(f"ABORT: no mapping for unit text(s) {left}. Nothing was written.")
+    if expect is not None and summary["affected"] != expect:
+        raise SystemExit(
+            f"ABORT: --expect {expect} but {summary['affected']} rows "
+            "would change. Nothing was written.")
+    if not do_apply:
+        _click.echo("dry run -- nothing written. Re-run with --apply "
+                    f"--expect {summary['affected']} to write.")
+        return
+    written = 0
+    for r in rows:
+        new_json, changes = mig.migrate_resource_json(r.resource_type, r.resource_json)
+        if changes:
+            update_resource(r.resource_type, r.resource_id, new_json)
+            written += 1
+    if written != summary["affected"]:
+        db.session.rollback()
+        raise SystemExit(
+            f"ABORT: planned {summary['affected']} but wrote {written}. "
+            "Rolled back.")
+    db.session.commit()
+    _click.echo(f"wrote {written} new version(s).")

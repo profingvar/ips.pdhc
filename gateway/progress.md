@@ -504,3 +504,10 @@ New CLI `flask migrate-r5-clinical-elements` (dry run default, --apply --expect)
 322 MedicationStatement + 18 Procedure to R5 as v2, R4 content kept as v1.
 pytest: 1300 passed.
 APPLIED in production 2026-11-16: pg_dump first (~/backups/predeploy/ips.pdhc/ips_db_pre934apply_*.dump, 1.0 MB), then `--apply --expect 340` -> 340 new versions. Table 4231 -> 4571 rows (340 superseded), 0 resource_ids with >1 active row, re-dry 0. euIPS section status for all 302 patients IDENTICAL before/after (hash 694aca6c3c2d; medications 54 absent / 132 present / 116 missing unchanged). IPS bundle generated for a migrated patient: medication section populated, R5 shape. Smoke 10/10.
+
+## #870 — 50 UCUM quantities without a code (2026-11-16)
+The 2026-06-03 seed stored 50 Observation valueQuantities with system UCUM
+and only a unit text; two texts (mmHg, mL/min/1.73m2) are not UCUM. New CLI
+`flask backfill-ucum-codes` maps them (mm[Hg], mL/min/{1.73_m2}) as new
+versions; an unmapped text aborts the whole run. Today's generators already
+write valid codes. pytest: 1311 passed.
