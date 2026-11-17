@@ -2386,3 +2386,6 @@ correctness fix, not a FHIR conformance defect.
 (#785), and the #858 hazard already closed — repo and deployed Dockerfile both
 `--bind 0.0.0.0:9040`, with `127.0.0.1:9040:9040` on the host mapping as the
 control that keeps it off the LAN.
+
+## 2026-11-17 — #728 synthetic lab panel codes
+- euips_recommended: creatinine 2160-0 -> 14682-9 and glucose 2345-7 -> 14749-6 (molar codes for the molar units it sends). Deployed 22:29Z; dry run new PASS / old FAIL.
