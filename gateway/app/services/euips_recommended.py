@@ -106,8 +106,8 @@ _LAB_PANELS = [
         ("6690-2", "Leukocytes", "10*9/L", 3.5, 10.0),
     ]),
     ("24323-8", "Comprehensive metabolic panel", [
-        ("2160-0", "Creatinine", "umol/L", 50, 110),
-        ("2345-7", "Glucose", "mmol/L", 4.0, 7.0),
+        ("14682-9", "Creatinine", "umol/L", 50, 110),   # #728: molar code for a molar unit (2160-0 is mg/dL)
+        ("14749-6", "Glucose", "mmol/L", 4.0, 7.0),      # #728: molar code for a molar unit (2345-7 is mg/dL)
         ("1751-7", "Albumin", "g/L", 35, 50),
     ]),
     ("24357-6", "Urinalysis panel", [
