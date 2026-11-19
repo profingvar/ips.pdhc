@@ -677,6 +677,8 @@ def require_proxy_self(f):
 # =====================================================================
 
 SCOPE_IMPLANTS_WRITE = "implants:write"
+#: The CDRs' external read door fetching the de-identified IPS summary (2026-11-19).
+SCOPE_EXTERNAL_SUMMARY = "external:summary"
 
 
 def require_scope(*required):

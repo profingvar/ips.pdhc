@@ -19,7 +19,7 @@ from app.models.fhir_resource import FhirResource
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services import euips_header as euips_hdr
 from app.services import euips_sections as euips
-from app.services.auth_service import require_auth
+from app.services.auth_service import require_auth, require_scope, SCOPE_EXTERNAL_SUMMARY
 from app.services.consent_policy import evaluate_patient
 from app.services import personnummer as pnr
 from app.services.guids import is_uuid
@@ -909,3 +909,35 @@ def euips_header_status(guid):
         ),
     })
     return jsonify(status)
+
+
+@bp.route("/external-summary", methods=["POST"])
+@require_auth
+@require_scope(SCOPE_EXTERNAL_SUMMARY)
+def external_summary():
+    """De-identified IPS summary for an external read grant (2026-11-19).
+
+    Machine-only (scope `external:summary`, held by the CDRs' own ips keys):
+    the CDR has already checked the grant, its organisations and consent, and
+    asks only for patients it is about to serve. Body {"patient_guids": [...]}.
+    What comes back, and why nothing else does: app/services/external_summary.
+    """
+    from app.services import external_summary as ext
+    from app.services.audit_service import log_event
+
+    data = request.get_json(silent=True) or {}
+    guids = data.get("patient_guids")
+    if not isinstance(guids, list) or not guids:
+        return jsonify({"error": "patient_guids must be a non-empty list"}), 400
+    if len(guids) > ext.MAX_PATIENTS:
+        return jsonify({"error": f"at most {ext.MAX_PATIENTS} patients per call"}), 400
+    if not all(isinstance(x, str) and is_uuid(x) for x in guids):
+        return jsonify({"error": "every patient guid must be a uuid"}), 400
+    out = ext.summarise(guids)
+    try:
+        log_event("external_summary_read", detail={
+            "n_requested": len(guids), "n_returned": len(out),
+            "grant_guid": (data.get("grant_guid") or None)})
+    except Exception:  # noqa: BLE001 -- audit must not break the read
+        current_app.logger.exception("external_summary audit failed")
+    return jsonify({"patients": out})
