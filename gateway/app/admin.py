@@ -374,8 +374,19 @@ def patient_detail(guid):
         is_active=True
     ).order_by(PushDestination.name).all()
 
+    from app.models.clinic import Clinic
+    open_assignments = (PatientClinicAssignment.active_only(
+        db.session.query(PatientClinicAssignment, Clinic)
+        .join(Clinic, Clinic.guid == PatientClinicAssignment.clinic_guid)
+        .filter(PatientClinicAssignment.patient_guid == guid))
+        .order_by(PatientClinicAssignment.assigned_at).all())
+    all_clinics = (db.session.query(Clinic).filter(Clinic.is_active.is_(True))
+                   .order_by(Clinic.name).all())
+
     return render_template(
         "patient_detail.html",
+        open_assignments=open_assignments,
+        all_clinics=all_clinics,
         patient=patient,
         resources=resources,
         cards=cards,
@@ -464,6 +475,52 @@ def unarchive_patient(guid):
     flash(f"Restored {patient.family_name or ''}, "
           f"{patient.given_name or ''} to the list.", "success")
     return _back_to_patients()
+
+
+# ── Byt klinik (2026-11-19) ─────────────────────────────────
+#
+# One button that ENDS the patient's open assignment to one clinic and OPENS
+# one to another, in a single transaction. Both halves go through
+# patient_assignment (end/assign), so the audit rows, the may_change rule and
+# the patient_state rebuild are the same as the #900 API's. A refusal of
+# either half rolls back both: a patient is never left with no clinic, or
+# with two, because the second step failed.
+
+@bp.route("/patients/<uuid:guid>/move-clinic", methods=["POST"])
+def move_patient_clinic(guid):
+    """Move a patient from one clinic to another (ends old, opens new)."""
+    from app.models.clinic import Clinic
+    from app.services import patient_assignment as pa
+    patient = db.session.get(PatientIndex, guid)
+    if not patient:
+        abort(404)
+    back = redirect(url_for("admin.patient_detail", guid=guid))
+    try:
+        frm = uuid.UUID(request.form.get("from_clinic_guid", ""))
+        to = uuid.UUID(request.form.get("to_clinic_guid", ""))
+    except ValueError:
+        flash("Välj både nuvarande och ny klinik.", "error")
+        return back
+    if frm == to:
+        flash("Patienten är redan kopplad till den kliniken.", "error")
+        return back
+    target = db.session.get(Clinic, to)
+    if target is None or not target.is_active:
+        flash("Den nya kliniken finns inte eller är inaktiv.", "error")
+        return back
+    try:
+        pa.end(guid, frm)
+        pa.assign(guid, to)
+    except (pa.NotPermitted, pa.AlreadyAssigned, pa.NotAssigned,
+            pa.ImpossibleInterval) as e:
+        db.session.rollback()
+        flash(f"Kliniken byttes inte: {e}", "error")
+        return back
+    db.session.commit()
+    flash(f"Patienten är flyttad till {target.name}. Personal på den tidigare "
+          f"kliniken har inte längre spärr-, samtyckes- eller vårdåtkomst.",
+          "success")
+    return back
 
 
 @bp.route("/patients/<uuid:guid>/add-resource", methods=["POST"])

@@ -81,7 +81,7 @@
 <p>The list is exposed via <code>GET /api/v1/clinics/{guid}/patients</code>. It returns the active patients only, ordered by family name then given name, in the same JSON shape as the admin patient browser. See the API reference for the exact response shape and error codes.</p>
 
 <h3>How patients become assigned to a clinic</h3>
-<p>Assignment lives in the <code>patient_clinic_assignments</code> table. There is no public endpoint to create assignments — they are written by ingestion paths (FHIR Patient creation with an organisation in scope) or by direct DB tooling during onboarding. The unique constraint on <code>(patient_guid, clinic_guid)</code> prevents duplicates.</p>
+<p>Assignment lives in the <code>patient_clinic_assignments</code> table. They are written by ingestion paths (FHIR Patient creation with an organisation in scope), by the API (<code>POST /api/v1/patients/&lt;guid&gt;/assignments</code> to open, <code>…/assignments/&lt;clinic_guid&gt;/end</code> to end, #900), and by the <strong>Byt klinik</strong> button on the admin patient page, which ends the old assignment and opens the new one in one step. Ending keeps the row with an <code>ended_at</code>; history is never deleted. The unique constraint on <code>(patient_guid, clinic_guid)</code> prevents duplicates.</p>
 
 <h3>Common questions</h3>
 <ul style="margin-left:1.5rem; margin-bottom:0.75rem;">

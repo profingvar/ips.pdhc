@@ -1963,3 +1963,9 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/external_read_routes.py (NEW) — /external/v1/patients[/<guid>], target "ips"
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — registers the external read blueprint
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_external_summary.py (NEW), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_external_read_door.py (NEW)
+
+## 2026-11-19 — Byt klinik on the admin patient page
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py — POST /admin/patients/<guid>/move-clinic; patient_detail passes open assignments + clinics
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patient_detail.html — "Klinik" card with Byt klinik per open assignment
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html — assignment section no longer says there is no way to create one
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin_move_clinic.py (NEW)

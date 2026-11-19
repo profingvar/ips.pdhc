@@ -2396,3 +2396,9 @@ control that keeps it off the LAN.
 - Tests: test_external_summary.py 3, test_external_read_door.py 5 (exact-org, parent org excludes units, research needs consent to a grant project, de-identified, refusals). Suite 1325 passed, 1 skipped.
 - Data: the three CDR api_keys got `external:summary` (UPDATE 3, after pg_dump `~/backups/predeploy/pdhcips/pre_extread_20261119T132614Z.pgdump`).
 - Deployed as overlay image (rollback tag `ips-app:pre_extread`, files `*.pre_extread.<ts>` in the release dir). Verified: /external/v1 401 without key and 401 invalid_key with a junk key, locally and via ips.pdhc.se; CDR keys get 200 on external-summary, 401 without.
+
+## 2026-11-19 — Byt klinik
+- Operator request: patient 28a29239… moved Hackathon → Hackathon_klin1 by DB tooling (dump of patient_clinic_assignments/audit_log/patient_state_facts first, verified): old assignment ended (kept), new opened, two audit rows (actor_type system, label names the operator request), patient_state rebuilt (4 facts).
+- Admin patient page: "Klinik" card, one Byt klinik form per open assignment. Ends the old and opens the new through patient_assignment.end/assign in ONE transaction; any refusal rolls back both. Same may_change rule as the #900 API: SU admin, or staff at the clinic (the admin surface loads no g.current_user, so in practice SU admin).
+- Manual corrected (it said assignments could not be created by API).
+- Tests: +5 (test_admin_move_clinic.py). Suite 1330 passed, 1 skipped. Not yet deployed.
