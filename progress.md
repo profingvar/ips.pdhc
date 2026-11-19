@@ -2402,3 +2402,4 @@ control that keeps it off the LAN.
 - Admin patient page: "Klinik" card, one Byt klinik form per open assignment. Ends the old and opens the new through patient_assignment.end/assign in ONE transaction; any refusal rolls back both. Same may_change rule as the #900 API: SU admin, or staff at the clinic (the admin surface loads no g.current_user, so in practice SU admin).
 - Manual corrected (it said assignments could not be created by API).
 - Tests: +5 (test_admin_move_clinic.py). Suite 1330 passed, 1 skipped. Not yet deployed.
+- DEPLOYED 2026-11-19 (overlay image; rollback tag `ips-app:pre_moveclinic`, files `*.pre_moveclinic.<ts>`). Baseline 3/3, health 200, hashes ok, route registered, template renders; request/sso/plan health 200.
