@@ -1955,3 +1955,11 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/ucum_code_backfill.py (NEW) — unit text -> UCUM code, mapped not copied
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — NEW backfill-ucum-codes CLI; shared _run_versioned_migration (also used by migrate-r5-clinical-elements)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_ucum_code_backfill_870.py (NEW)
+
+## 2026-11-19 — external read access (read grants)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/external_summary.py (NEW) — de-identified summary: guid, sex, birth year, coded conditions/medications
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — POST /api/v1/patients/external-summary (scope external:summary)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py — SCOPE_EXTERNAL_SUMMARY
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/external_read_routes.py (NEW) — /external/v1/patients[/<guid>], target "ips"
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — registers the external read blueprint
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_external_summary.py (NEW), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_external_read_door.py (NEW)

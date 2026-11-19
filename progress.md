@@ -2389,3 +2389,10 @@ control that keeps it off the LAN.
 
 ## 2026-11-17 — #728 synthetic lab panel codes
 - euips_recommended: creatinine 2160-0 -> 14682-9 and glucose 2345-7 -> 14749-6 (molar codes for the molar units it sends). Deployed 22:29Z; dry run new PASS / old FAIL.
+
+## 2026-11-19 — external read access: summary endpoint + ips as a read-grant target
+- `POST /api/v1/patients/external-summary` (scope `external:summary`, held only by the three CDR keys): GUID, sex, birth YEAR, coded Condition / MedicationStatement / MedicationRequest. Fields are picked, not filtered; entered-in-error dropped. Commit 6d6ca86.
+- `GET /external/v1/patients[/<guid>]` (1a53429): a time-limited sso read grant naming target `ips`, validated with sso on every request (no cache). Scope = ACTIVE assignment to a clinic whose `organisation_guid` EXACTLY equals a grant organisation (operator decision: exact, like the CDRs), active patients only; consent via `consent_policy.evaluate_patient` with the grant's own purpose + research projects.
+- Tests: test_external_summary.py 3, test_external_read_door.py 5 (exact-org, parent org excludes units, research needs consent to a grant project, de-identified, refusals). Suite 1325 passed, 1 skipped.
+- Data: the three CDR api_keys got `external:summary` (UPDATE 3, after pg_dump `~/backups/predeploy/pdhcips/pre_extread_20261119T132614Z.pgdump`).
+- Deployed as overlay image (rollback tag `ips-app:pre_extread`, files `*.pre_extread.<ts>` in the release dir). Verified: /external/v1 401 without key and 401 invalid_key with a junk key, locally and via ips.pdhc.se; CDR keys get 200 on external-summary, 401 without.
