@@ -81,6 +81,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(copy_bp)
     app.register_blueprint(patient_portal_bp)
     app.register_blueprint(fhir_bp)
+    # 2026-11-19: external read door (time-limited sso read grants).
+    from app.api.external_read_routes import bp as external_read_bp
+    app.register_blueprint(external_read_bp)
 
     # SSO login/callback/logout
     from app.api.sso_routes import bp as sso_bp
