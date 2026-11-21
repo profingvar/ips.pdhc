@@ -42,7 +42,7 @@ assignment); the safeguard is the role gate.
 """
 from __future__ import annotations
 
-import os
+from app.services.env_names import env_value
 from datetime import timedelta
 from uuid import UUID
 
@@ -72,7 +72,7 @@ def _allowed_roles() -> set:
     (``is_superuser=True``) always pass regardless of this set."""
     raw = (
         current_app.config.get("IPS_INDISPENSABLE_LIFT_ROLES")
-        or os.environ.get("IPS_INDISPENSABLE_LIFT_ROLES")
+        or env_value("INDISPENSABLE_LIFT_ROLES")  # #1017: EPS_ then IPS_
         or "physician,admin"
     )
     return {r.strip() for r in raw.split(",") if r.strip()}

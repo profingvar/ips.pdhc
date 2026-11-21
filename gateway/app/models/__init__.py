@@ -19,6 +19,7 @@ from app.models.emergency_access import EmergencyAccess
 from app.models.patient_proxy_grant import (
     PatientProxyGrant, PROXY_SCOPES,
 )
+from app.models.host_usage import HostUsage  # #1017
 
 __all__ = [
     "db",
@@ -42,4 +43,5 @@ __all__ = [
     "EmergencyAccess",
     "PatientProxyGrant",
     "PROXY_SCOPES",
+    "HostUsage",
 ]

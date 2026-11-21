@@ -11,6 +11,7 @@ from flask import request, g, jsonify, current_app
 from app.models.base import db, utcnow
 from app.models.user import User
 from app.models.api_key import ApiKey
+from app.services.service_identity import sso_client_pair
 
 
 # Endpoints that don't require authentication
@@ -29,8 +30,8 @@ def hash_api_key(raw_key: str) -> str:
 def resolve_sso_user(token: str) -> dict | None:
     """Resolve a Bearer token via the SSO service. Returns user info or None."""
     base_url = current_app.config["OAUTH_BASE_URL"]
-    client_id = current_app.config.get("SSO_CLIENT_ID", "")
-    client_secret = current_app.config.get("SSO_CLIENT_SECRET", "")
+    # #1017: pair chosen by request host (app/services/service_identity.py).
+    client_id, client_secret = sso_client_pair()
 
     headers = {"Authorization": f"Bearer {token}"}
 

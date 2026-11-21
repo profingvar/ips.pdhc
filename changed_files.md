@@ -1969,3 +1969,18 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patient_detail.html — "Klinik" card with Byt klinik per open assignment
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html — assignment section no longer says there is no way to create one
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin_move_clinic.py (NEW)
+
+## 2026-11-21 — #1017 eps rename phase 2 (answers as eps.pdhc on both hosts; per-caller counter)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/service_identity.py (NEW) — SERVICE_NAME eps.pdhc, EPS_HOST, sso_client_pair() by request host
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/env_names.py (NEW) — env_value/env_flag: EPS_<NAME> first, IPS_<NAME> fallback, empty = unset
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/host_usage.py (NEW), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/host_usage.py (NEW) — host_usage table + after_request recorder
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_host_usage.sql (NEW) — idempotent CREATE TABLE IF NOT EXISTS (create_all also creates it)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — log format carries eps.pdhc; after_request counter; `flask host-usage` CLI
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/config.py — SSO_CLIENT_ID_EPS/SSO_CLIENT_SECRET_EPS; webhook vars via env_value; IPS_ADMIN_REQUIRE_ANALYSIS_PHASE now read from env
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/sso_routes.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/external_read_routes.py — SSO pair via sso_client_pair()
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin_block_lift.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/admin_blocks_routes.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/care_access_routes.py — role env via env_value
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/health.py — service "eps.pdhc", service_aliases ["ips-server","ips.pdhc"]
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/fhir/fhir_routes.py — default CapabilityStatement names eps.pdhc
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/{base,dashboard,docs_api,docs_base,docs_capability,docs_index,docs_manual,docs_technical,patient_detail,patients,push_monitor}.html — titles/brand/headings
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/.env.example — SSO_*_EPS pair and EPS_* names documented
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_eps_rename_1017.py (NEW); /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_health.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_api_endpoints.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin.py — expect the new name

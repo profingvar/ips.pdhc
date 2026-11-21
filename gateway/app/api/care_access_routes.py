@@ -17,7 +17,7 @@ Two operations on the composed zone rule (care_access_policy):
       access_basis=emergency, and surfaces to the patient (portal
       banner + audit trail). The grant is INSERT-only and expires.
 """
-import os
+from app.services.env_names import env_value
 from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, current_app, g, jsonify, request
@@ -43,9 +43,9 @@ def _allowed_roles() -> set:
     override with IPS_EMERGENCY_ACCESS_ROLES to split them later."""
     raw = (
         current_app.config.get("IPS_EMERGENCY_ACCESS_ROLES")
-        or os.environ.get("IPS_EMERGENCY_ACCESS_ROLES")
+        or env_value("EMERGENCY_ACCESS_ROLES")  # #1017: EPS_ then IPS_
         or current_app.config.get("IPS_INDISPENSABLE_LIFT_ROLES")
-        or os.environ.get("IPS_INDISPENSABLE_LIFT_ROLES")
+        or env_value("INDISPENSABLE_LIFT_ROLES")  # #1017: EPS_ then IPS_
         or "physician,admin"
     )
     return {r.strip() for r in raw.split(",") if r.strip()}

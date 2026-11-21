@@ -11,6 +11,7 @@ from app.models.patient_index import PatientIndex
 from app.models.ips_card import IpsCard
 from app.models.ips_snapshot import IpsSnapshot
 from app.models.audit_log import AuditLog
+from app.services.service_identity import LEGACY_SERVICE_NAMES, SERVICE_NAME
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
@@ -28,7 +29,11 @@ def health():
         "status": "ok" if db_status == "connected" else "degraded",
         "database": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "service": "ips-server",
+        # #1017: the service is eps.pdhc. Nothing on the platform matched
+        # on the old string (workspace grep 2026-11-21: only ips' own
+        # tests), but it is kept as an alias so an outside reader can.
+        "service": SERVICE_NAME,
+        "service_aliases": list(LEGACY_SERVICE_NAMES),
         "version": "0.1.0",
     })
     # Ticket #70 / CLAUDE.md §10: let www.pdhc.se/services.html read the JSON

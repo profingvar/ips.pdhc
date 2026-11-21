@@ -8,6 +8,8 @@ from flask import (
     Blueprint, redirect, request, session, url_for, current_app, abort,
 )
 
+from app.services.service_identity import sso_client_pair
+
 bp = Blueprint("sso", __name__)
 logger = logging.getLogger(__name__)
 
@@ -48,8 +50,9 @@ def callback():
 
     # Validate token with SSO service endpoint
     base_url = current_app.config["OAUTH_BASE_URL"]
-    client_id = current_app.config.get("SSO_CLIENT_ID", "")
-    client_secret = current_app.config.get("SSO_CLIENT_SECRET", "")
+    # #1017: the pair is chosen by the host this callback arrived on
+    # (eps.pdhc.se -> _EPS pair when configured, else the original pair).
+    client_id, client_secret = sso_client_pair()
 
     headers = {"Authorization": f"Bearer {token}"}
     if client_id and client_secret:

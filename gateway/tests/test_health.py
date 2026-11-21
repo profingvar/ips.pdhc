@@ -6,7 +6,7 @@ class TestHealthEndpoint:
         resp = client.get("/api/v1/health")
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["service"] == "ips-server"
+        assert data["service"] == "eps.pdhc"  # #1017
         assert "timestamp" in data
         assert "status" in data
 

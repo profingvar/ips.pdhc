@@ -33,7 +33,7 @@ needing to know how the notification copy works internally.
 """
 from __future__ import annotations
 
-import os
+from app.services.env_names import env_value
 from datetime import timedelta
 from uuid import UUID
 
@@ -64,7 +64,7 @@ DEFAULT_INDISPENSABLE_LIFT_SECONDS = 24 * 60 * 60
 def _allowed_lift_roles() -> set:
     raw = (
         current_app.config.get("IPS_INDISPENSABLE_LIFT_ROLES")
-        or os.environ.get("IPS_INDISPENSABLE_LIFT_ROLES")
+        or env_value("INDISPENSABLE_LIFT_ROLES")  # #1017: EPS_ then IPS_
         or "physician,admin"
     )
     return {r.strip() for r in raw.split(",") if r.strip()}

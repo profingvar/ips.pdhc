@@ -3,6 +3,8 @@
 import os
 from dotenv import load_dotenv
 
+from app.services.env_names import env_flag, env_value
+
 load_dotenv()
 
 
@@ -16,6 +18,11 @@ class Config:
     OAUTH_BASE_URL = os.environ.get("OAUTH_BASE_URL", "https://sso.pdhc.se")
     SSO_CLIENT_ID = os.environ.get("SSO_CLIENT_ID", "")
     SSO_CLIENT_SECRET = os.environ.get("SSO_CLIENT_SECRET", "")
+    # #1017: the pair sso.pdhc registers for the eps.pdhc.se callback. Used
+    # only for requests that arrive on eps.pdhc.se, and only when BOTH are
+    # set; otherwise the pair above (app/services/service_identity.py).
+    SSO_CLIENT_ID_EPS = os.environ.get("SSO_CLIENT_ID_EPS", "")
+    SSO_CLIENT_SECRET_EPS = os.environ.get("SSO_CLIENT_SECRET_EPS", "")
     # API_KEY_SECRET (#349 §4.3 / #392) — removed 2026-07-03.
     # Was reserved for Fernet-encrypting push-destination credentials
     # (readme.md §5.d, ticket #6), never implemented. Deleted to avoid
@@ -39,15 +46,25 @@ class Config:
     #   transitions still run; only the outbound notification is muted).
     # IPS_WEBHOOK_TARGETS: comma-separated subscriber URLs. Each receives
     #   the same signed payload.
-    IPS_WEBHOOK_SECRET = os.environ.get("IPS_WEBHOOK_SECRET", "")
+    #
+    # #1017: each of this service's own IPS_<NAME> variables is read as
+    # EPS_<NAME> first, IPS_<NAME> as fallback (app/services/env_names.py).
+    # The config KEYS keep their IPS_ names; only the env names gain an alias.
+    IPS_WEBHOOK_SECRET = env_value("WEBHOOK_SECRET", "")
     IPS_WEBHOOK_TARGETS = [
         u.strip()
-        for u in os.environ.get("IPS_WEBHOOK_TARGETS", "").split(",")
+        for u in env_value("WEBHOOK_TARGETS", "").split(",")
         if u.strip()
     ]
     IPS_WEBHOOK_TIMEOUT = float(
-        os.environ.get("IPS_WEBHOOK_TIMEOUT", "5"),
+        env_value("WEBHOOK_TIMEOUT", "5"),
     )
+
+    # #902's flag. Until #1017 NO code copied it from the environment into
+    # config, so setting IPS_ADMIN_REQUIRE_ANALYSIS_PHASE in .env did nothing
+    # (admin.py reads current_app.config). Now read from EPS_/IPS_ env as a
+    # strict boolean (1/true/yes/on); unset is False, exactly as before.
+    IPS_ADMIN_REQUIRE_ANALYSIS_PHASE = env_flag("ADMIN_REQUIRE_ANALYSIS_PHASE")
 
 
 class DevelopmentConfig(Config):

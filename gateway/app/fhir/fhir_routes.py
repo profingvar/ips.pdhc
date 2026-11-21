@@ -271,11 +271,14 @@ def _default_capability_statement() -> dict:
 
     return {
         "resourceType": "CapabilityStatement",
-        "id": "ips-pdhc",
-        "url": "https://ips.pdhc.se/fhir/metadata",
+        # #1017: the service is eps.pdhc. Only this generated default is
+        # renamed; a stored CapabilityStatement row (none in prod, measured
+        # 2026-11-21) would be served unchanged.
+        "id": "eps-pdhc",
+        "url": "https://eps.pdhc.se/fhir/metadata",
         "version": "1.0.0",
-        "name": "IpsPDHCCapabilityStatement",
-        "title": "ips.pdhc — PDHC patient registry (FHIR R5)",
+        "name": "EpsPDHCCapabilityStatement",
+        "title": "eps.pdhc — PDHC patient registry (FHIR R5)",
         "status": "active",
         # Ticket #349 §3.1 — see _CAPABILITYSTATEMENT_DATE definition
         # at top of module for the mtime rationale.
@@ -293,8 +296,8 @@ def _default_capability_statement() -> dict:
         # cpb-14: kind=instance requires implementation. Added in
         # #349 §3.3 as part of the R5 validator baseline.
         "implementation": {
-            "description": "ips.pdhc production instance",
-            "url": "https://ips.pdhc.se",
+            "description": "eps.pdhc production instance",
+            "url": "https://eps.pdhc.se",
         },
         "fhirVersion": "5.0.0",
         "format": ["json"],

@@ -81,7 +81,7 @@ class TestDashboard:
     def test_dashboard_returns_html(self, client, db):
         resp = client.get("/admin/")
         assert resp.status_code == 200
-        assert b"IPS Server Dashboard" in resp.data
+        assert b"eps.pdhc Dashboard" in resp.data
 
     def test_dashboard_includes_css(self, client, db):
         resp = client.get("/admin/")

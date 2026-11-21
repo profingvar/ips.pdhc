@@ -35,6 +35,7 @@ from app.models.patient_index import PatientClinicAssignment, PatientIndex
 from app.services import external_summary as ext
 from app.services.consent_policy import evaluate_patient
 from app.services.guids import is_uuid
+from app.services.service_identity import sso_client_pair
 
 bp = Blueprint("external_read", __name__, url_prefix="/external/v1")
 
@@ -54,8 +55,7 @@ def _gate():
     if not key.startswith("rg."):
         return _refuse(401, "unauthenticated", "Send a read key as 'Authorization: Bearer rg.…'")
     base = (current_app.config.get("OAUTH_BASE_URL") or "").rstrip("/")
-    cid = current_app.config.get("SSO_CLIENT_ID") or ""
-    sec = current_app.config.get("SSO_CLIENT_SECRET") or ""
+    cid, sec = sso_client_pair()  # #1017: by request host
     if not (base and cid and sec):
         return _refuse(503, "not_configured", "ips cannot check read keys (SSO not configured)")
     try:

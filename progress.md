@@ -2403,3 +2403,11 @@ control that keeps it off the LAN.
 - Manual corrected (it said assignments could not be created by API).
 - Tests: +5 (test_admin_move_clinic.py). Suite 1330 passed, 1 skipped. Not yet deployed.
 - DEPLOYED 2026-11-19 (overlay image; rollback tag `ips-app:pre_moveclinic`, files `*.pre_moveclinic.<ts>`). Baseline 3/3, health 200, hashes ok, route registered, template renders; request/sso/plan health 200.
+
+## 2026-11-21 — #1017 eps rename phase 2: answers as eps.pdhc on both hosts (NOT deployed)
+- SSO pair by request host (`app/services/service_identity.py`): eps.pdhc.se -> SSO_CLIENT_ID_EPS/SSO_CLIENT_SECRET_EPS when BOTH set, else SSO_CLIENT_ID/SSO_CLIENT_SECRET; any other host -> the original pair. Used by the browser callback, bearer validation and the external read gate. Callback stays `/callback`, built from the arrival host (ProxyFix x_host; nginx sends Host).
+- Name: health `service` = `eps.pdhc` with `service_aliases` [`ips-server`, `ips.pdhc`]; default CapabilityStatement id/name/title/implementation = eps (no stored row in prod, measured); UI titles/brand; log lines carry `eps.pdhc`. Workspace grep: nothing outside ips' own tests asserted `ips-server`.
+- Own env vars read EPS_ first, IPS_ fallback (`app/services/env_names.py`): WEBHOOK_SECRET, WEBHOOK_TARGETS, WEBHOOK_TIMEOUT, INDISPENSABLE_LIFT_ROLES, EMERGENCY_ACCESS_ROLES, ADMIN_REQUIRE_ANALYSIS_PHASE. FINDING: `IPS_ADMIN_REQUIRE_ANALYSIS_PHASE` was never copied from env into config before this, so setting it in .env did nothing; it is now read (strict boolean, unset = off, as before).
+- Counter: table `host_usage` (host, caller_kind, caller_id) -> count, first/last seen, for /api/, /fhir, /external/. Identity = api key guid+label, read-grant partner guid, bearer user_type, refused scheme, or UA product token; never a secret. `flask host-usage [--host ips.pdhc.se]`. Created by create_all on start; `migrations/add_host_usage.sql` is the explicit form.
+- Tests: +30 (test_eps_rename_1017.py); 4 existing name asserts updated. Suite 1330 -> 1360 passed, 1 skipped. Revert of the modified files fails 22/30; the remaining 8 (fallback/no-change guards) each killed by a targeted mutation.
+- Operator later: SSO_CLIENT_ID_EPS, SSO_CLIENT_SECRET_EPS in ips .env; https://eps.pdhc.se/callback on sso's allowlist (ALLOWED_CALLBACK_URLS or ALLOWED_ORIGINS).

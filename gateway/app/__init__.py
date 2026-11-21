@@ -1,4 +1,4 @@
-"""Flask application factory for IPS Server."""
+"""Flask application factory for eps.pdhc (formerly ips.pdhc, #1017)."""
 
 import os
 import logging
@@ -30,7 +30,8 @@ def create_app(config_name: str | None = None) -> Flask:
     # Logging
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        # #1017: every line carries the service's name, eps.pdhc.
+        format="%(asctime)s [%(levelname)s] eps.pdhc %(name)s: %(message)s",
     )
 
     # Extensions
@@ -96,6 +97,34 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.admin import bp as admin_bp
     from app import admin_block_lift as _admin_block_lift_module  # noqa: F401 — registers /admin/blocks/<g>/lift*
     app.register_blueprint(admin_bp)
+
+    # #1017: count API requests per (Host, caller) so phase 4 of the
+    # eps rename can prove ips.pdhc.se carries no traffic, per caller.
+    from app.services.host_usage import record_request as _record_host_usage
+    app.after_request(_record_host_usage)
+
+    @app.cli.command("host-usage")
+    @click.option("--host", "host_filter", default=None,
+                  help="Only rows for this Host (e.g. ips.pdhc.se).")
+    def _host_usage_cli(host_filter):  # noqa: D401
+        """Read-only: API requests per (Host, caller), with last seen.
+
+        A caller is an API key (guid + label), a read-grant partner, a
+        bearer's SSO user_type, a refused credential's scheme, or an
+        anonymous User-Agent product. Never a secret.
+        """
+        from app.services.host_usage import rows as _rows
+        found = _rows(host_filter)
+        click.echo("host\tcaller_kind\tcaller_id\tcaller_label\tcount\t"
+                   "first_seen\tlast_seen")
+        for r in found:
+            click.echo("\t".join([
+                r.host, r.caller_kind, r.caller_id, r.caller_label or "",
+                str(r.count),
+                r.first_seen.isoformat() if r.first_seen else "",
+                r.last_seen.isoformat() if r.last_seen else ""]))
+        click.echo(f"{len(found)} row(s), "
+                   f"{sum(r.count for r in found)} request(s)")
 
     # Root URL → admin dashboard
     @app.route("/")

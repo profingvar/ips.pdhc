@@ -36,7 +36,7 @@ class TestPublicEndpoints:
         resp = client.get(_url("/api/v1/health"))
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["service"] == "ips-server"
+        assert data["service"] == "eps.pdhc"  # #1017
         assert data["database"] in ("connected", "disconnected")
         assert "timestamp" in data
         assert "version" in data
@@ -1086,5 +1086,5 @@ class TestAdminUi:
     def test_dashboard_returns_html(self, client, db):
         resp = client.get(_url("/admin/"))
         assert resp.status_code == 200
-        assert b"IPS Server Dashboard" in resp.data
+        assert b"eps.pdhc Dashboard" in resp.data
         assert b"pdhc.css" in resp.data
