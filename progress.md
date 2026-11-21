@@ -2411,3 +2411,10 @@ control that keeps it off the LAN.
 - Counter: table `host_usage` (host, caller_kind, caller_id) -> count, first/last seen, for /api/, /fhir, /external/. Identity = api key guid+label, read-grant partner guid, bearer user_type, refused scheme, or UA product token; never a secret. `flask host-usage [--host ips.pdhc.se]`. Created by create_all on start; `migrations/add_host_usage.sql` is the explicit form.
 - Tests: +30 (test_eps_rename_1017.py); 4 existing name asserts updated. Suite 1330 -> 1360 passed, 1 skipped. Revert of the modified files fails 22/30; the remaining 8 (fallback/no-change guards) each killed by a targeted mutation.
 - Operator later: SSO_CLIENT_ID_EPS, SSO_CLIENT_SECRET_EPS in ips .env; https://eps.pdhc.se/callback on sso's allowlist (ALLOWED_CALLBACK_URLS or ALLOWED_ORIGINS).
+
+## 2026-11-22 — #1017 eps rename code DEPLOYED
+
+- Overlay image on the running one, baseline-hashed first; rollback tag `:pre_eps`, replaced release files kept as `*.pre_eps.<ts>`.
+- Health 200 and file hashes verified in the container; sibling smoke green before (pre-rename smoke) and after.
+- No behaviour change until `EPS_*` is set in .env: operator script `/tmp/epsdep/eps_env.sh <group>` (refuses until https://eps.pdhc.se answers as eps.pdhc).
+- pg_dump `~/backups/predeploy/pdhcips/pre_eps1017_20261121T233750Z.pgdump` (600), then `add_host_usage.sql` (additive). Postgres upsert verified in a rolled-back transaction (count 2 inside, 0 after). `flask host-usage` already lists every caller on ips.pdhc.se by key label.
