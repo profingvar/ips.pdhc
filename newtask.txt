@@ -62,7 +62,7 @@ a re-push reproduces the same keys — but `implant_routes.py:174` returns a
 duplicate and writes NOTHING. Recorded so nobody spends that hour again.
 
 
-NEXT PHASE: THIS SERVICE BECOMES eps.pdhc
+DONE 2026-11-22 (#1015 phases 1-3, 5; phase 4 = #1028 on/after 2026-11-29): THIS SERVICE BECAME eps.pdhc
 ------------------------------------------
 Operator decision, 2026-11-04, following the EPS work (#876 epic, #905).
 

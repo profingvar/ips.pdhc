@@ -2234,7 +2234,7 @@ Both while 32 tests here and 280 in alert stayed green.
   machine traffic cannot be separated from human — the first question anyone
   asks of an audit trail, and the one Rule 24's log exists to answer.
 
-### NEXT PHASE: ips.pdhc BECOMES eps.pdhc
+### DONE 2026-11-22 (#1015; phase 4 = #1028 remains): ips.pdhc BECAME eps.pdhc
 
 Operator decision, 2026-11-04. The service is renamed to `eps.pdhc` in the
 next phase, following the EPS work (#876 epic, #905). Recorded here rather
