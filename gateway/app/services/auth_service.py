@@ -692,6 +692,11 @@ SCOPE_BLOCKS_READ = "blocks:read"
 #: patient who registered themselves, listed at the care unit they chose.
 #: Opens POST /patients/self-register and nothing else.
 SCOPE_PATIENTS_SELF_REGISTER = "patients:self-register"
+#: sso.pdhc's invite page (#1050): "does the personnummer the invited
+#: patient typed equal this eps patient's?". Opens
+#: POST /patients/<guid>/identifier-match and nothing else. The answer is a
+#: yes/no: the number itself never leaves eps.
+SCOPE_PATIENTS_IDENTIFIER_MATCH = "patients:identifier-match"
 
 
 def key_holds_scope(scope: str) -> bool:
@@ -755,3 +760,99 @@ def require_scope(*required):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+# =====================================================================
+# A care professional's own SSO bearer, authorised from the BLOB (#1050).
+# =====================================================================
+
+#: The dev bypass identity of `require_care_professional`: an SU, as the
+#: other gates of this module admit everything under AUTH_DISABLED.
+_DEV_CARE_BLOB = {"user_guid": None, "email": "dev-user", "user_type": "professional",
+                  "is_su_admin": True, "affiliations": [], "session_phases": []}
+
+
+def blob_care_units(blob: dict | None) -> set[str]:
+    """Lower-case care-unit guids of the blob's ACTIVE affiliations.
+
+    sso emits only active affiliations, and none at all for a professional
+    who is not activated (`activation_pending`). The legacy
+    `organization_ids` (memberships) are NOT read: the platform scopes on
+    affiliations alone since 2026-11-14 (CLAUDE.md s11).
+    """
+    out = set()
+    for a in (blob or {}).get("affiliations") or []:
+        if isinstance(a, dict) and a.get("care_unit_guid"):
+            out.add(str(a["care_unit_guid"]).strip().lower())
+    return out
+
+
+def may_act_for_unit(blob: dict | None, care_unit_guid: str) -> bool:
+    """SU admin, or a professional affiliated to this care unit."""
+    if not blob:
+        return False
+    if blob.get("is_su_admin"):
+        return True
+    if blob.get("user_type") != "professional":
+        return False
+    return str(care_unit_guid or "").strip().lower() in blob_care_units(blob)
+
+
+def _transient_actor(blob: dict) -> User:
+    """A NEVER-PERSISTED User carrying the SSO identity, so `log_event`
+    records the professional (actor_guid = the SSO user guid) rather than
+    "system". Not added to the session."""
+    user = User(username=blob.get("email") or "sso-user",
+                display_name=blob.get("email") or "SSO user",
+                role="sso_professional", is_active=True,
+                is_superuser=bool(blob.get("is_su_admin")))
+    try:
+        user.guid = UUID(str(blob.get("user_guid")))
+    except (TypeError, ValueError):
+        user.guid = None
+    return user
+
+
+def require_care_professional(f):
+    """A route a care professional drives from another PDHC service with
+    their OWN SSO bearer (#1050: dashboard's "Bjud in patient").
+
+    Unlike `require_auth`, no local eps `users` row is needed: the decision
+    is made from the SSO access blob, which is re-validated with sso on
+    every request (never cached). Sets `g.access_blob`.
+
+    * no / other Authorization        401
+    * `ApiKey` (a service key)        403: this door is for a person
+    * sso does not accept the bearer  401
+    * must_change_password            403 (the module's uniform answer)
+    * neither SU nor professional     403 `not_professional`
+
+    WHICH unit the caller may act for is the route's question
+    (`may_act_for_unit`), because the unit is in the request body.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if current_app.config.get("AUTH_DISABLED"):
+            g.access_blob = dict(_DEV_CARE_BLOB)
+            g.current_user = _synthetic_dev_user()
+            return f(*args, **kwargs)
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("ApiKey "):
+            return _auth_error(
+                "This endpoint takes a care professional's SSO bearer, "
+                "not a service key", 403)
+        if not auth_header.startswith("Bearer "):
+            return _auth_error("Missing Authorization header")
+        blob = resolve_sso_user(auth_header[7:])
+        if not blob:
+            return _auth_error("Invalid or expired token")
+        mcp = _must_change_password_response(blob)
+        if mcp is not None:
+            return mcp
+        if not blob.get("is_su_admin") and blob.get("user_type") != "professional":
+            return jsonify({"error": "not_professional",
+                            "message": "Care professional access required"}), 403
+        g.access_blob = blob
+        g.current_user = _transient_actor(blob)
+        return f(*args, **kwargs)
+    return decorated

@@ -38,6 +38,9 @@
 - **sso.pdhc's registration** needs its eps key scoped
   `patients:self-register`, which admits `POST /patients/self-register` and
   nothing else (#1049, section 6c).
+- **sso.pdhc's invite acceptance** needs the same key ALSO scoped
+  `patients:identifier-match` (#1050, section 6d), added by
+  `plans/patientapp_deploy/ops/pa7_invite_scope.sh` in the workspace repo.
 
 ## 1) What eps.pdhc is
 
@@ -131,7 +134,7 @@ guessed one silently *widens* the filter.
 | `patient_index` | one row per patient: `guid` (the platform identifier), `resource_id` (the FHIR Patient id), the D1 consent flags, `generation_batch_guid` (#797) |
 | `fhir_resources` | every FHIR resource, keyed by `resource_type` + `resource_id`, scoped to a patient by `patient_guid`, versioned by `version_id` |
 | `clinics` | organisations. `organisation_guid` is **sso's** GUID |
-| `patient_clinic_assignments` | the M2M that answers "where does this patient belong". `ended_at` (#891); `origin` (#1049): NULL = not stated, `self-registered` = the patient registered in the patient app and chose this unit |
+| `patient_clinic_assignments` | the M2M that answers "where does this patient belong". `ended_at` (#891); `origin` (#1049): NULL = not stated, `self-registered` = the patient registered in the patient app and chose this unit, `invited` (#1050) = a professional registered the patient here for an invitation |
 | `patient_blocks` | spärr. `source_scope_type` (clinic / caregiver) + `source_scope_id`, with lift fields |
 | `patient_consents` | per-purpose consent |
 | `emergency_access` | nödöppning |
@@ -370,6 +373,54 @@ assignment read, so without it every such read fails.
 
 Not guarded: two simultaneous registrations of the same number can both pass
 the exists check (no unique index on `patient_index.identifier_value`).
+
+## 6d) Registration by the care unit, for an invitation (#1050)
+
+Patients join the patient app only by invitation (operator decision
+2026-11-22). Self-registration (6c) stays in the code but sso closes it by
+default. dashboard.pdhc's **Bjud in patient** calls two routes here.
+
+### `POST /api/v1/patients/register-at-unit`
+
+`@require_care_professional` (`services/auth_service.py`): the caller's own
+SSO **bearer**, validated with sso's `/api/auth/me/service` like the HTML
+login. Unlike `require_auth`, no local eps `User` row is needed: the access
+blob decides. An `ApiKey` is refused (403) whatever its scopes — this route
+acts on a person's affiliation, which a key does not have. Allowed: an SU, or
+`user_type == "professional"` with `care_unit_guid` among
+`affiliations[].care_unit_guid` (`may_act_for_unit`). `organization_ids` is
+never read (Rule 24). A patient, a must-change-password account or a token sso
+rejects: 403/401. The audit actor is the professional (a transient, never
+stored `User` with the SSO guid and email).
+
+Body `{"given_name", "family_name", "personnummer", "care_unit_guid",
+"mobile"?}`. Checks, in this order:
+
+| outcome | answer |
+|---|---|
+| a required field missing or too long | 422 `validation` |
+| caller not affiliated to `care_unit_guid` (checked BEFORE any lookup, so nothing is learned about the number) | 403 `not_affiliated` |
+| not a personnummer / a VALID check digit while `SELF_REGISTER_SYNTHETIC_ONLY` | 422 `invalid_personnummer` / `real_personnummer` |
+| no ACTIVE clinic with that `organisation_guid` | 422 `unknown_unit` |
+| two patients carry the number | 409 `ambiguous` |
+| the patient is archived | 409 `archived` |
+| the patient exists under another name (case and spacing ignored) | 409 `name_mismatch` — nothing written, so a mistyped number cannot attach a stranger |
+| the patient exists | 200 `{"patient_guid", "created": false, "assignment": "existing"\|"added"}`; an ACTIVE assignment at the unit is ensured (a new one has `origin = 'invited'`; an existing one is left as it is) |
+| otherwise | 201 `{"patient_guid", "created": true, "assignment": "added"}`: a FHIR Patient as in 6c (mobile only as telecom) and an ACTIVE assignment `origin = 'invited'` |
+
+`X-PDHC-Patient-Guid` on 200/201. Audited `patient_registered_at_unit` /
+`patient_register_at_unit_refused`; the personnummer is never logged or
+audited. The mobile number is stored only on a NEW patient. `origin` already
+exists (6c's `add_assignment_origin.sql`); `invited` needs no migration.
+
+### `POST /api/v1/patients/<guid>/identifier-match`
+
+`require_auth` + scope `patients:identifier-match`; the caller is sso.pdhc,
+when an invited patient types their personnummer. `<guid>` is the platform
+guid only. Body `{"personnummer"}` → 200 `{"match": true|false}`; 422
+`invalid_personnummer`; 404 `{"error": "Patient not found"}`. The number is
+never returned; sso learns only yes or no. Audited `patient_identifier_match`
+with `{match}` only.
 
 ## 7) Operational notes
 

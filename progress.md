@@ -2451,3 +2451,12 @@ control that keeps it off the LAN.
 - Tests: test_self_register_1049.py (15), test_card_versions_1049.py (10). Suite 1422 -> 1447 passed, 1 skipped. 20 controls (one revert per rule), each fails its test on the assertion (bytecode writing off; a first pass with stale .pyc reported 2 false survivors).
 - Operator later: run the SQL; give sso's eps key the scope; offered units must exist as active clinics.
 - Not verified: Postgres (tests run on SQLite); a real CDR export with card_version; sso's call against this route; concurrent registrations of one number (no unique index).
+
+## 2026-11-22 — #1050 step 2: registration by the care unit for an invitation (LOCAL, not deployed)
+
+- `POST /api/v1/patients/register-at-unit` (`@require_care_professional`, the professional's own SSO bearer; ApiKey refused). SU or a professional affiliated (`affiliations[].care_unit_guid`) to the unit. 403 `not_affiliated` before any lookup; 422 validation / invalid / real personnummer / unknown_unit; 409 ambiguous / archived / name_mismatch (nothing written). Existing patient → 200, an ACTIVE assignment ensured (`origin = 'invited'` when added); new → 201 FHIR Patient + assignment `invited`. Audited without the number.
+- `POST /api/v1/patients/<guid>/identifier-match` (scope `patients:identifier-match`) → `{"match": bool}`, for sso's invite page.
+- No migration (`origin` exists since #1049's SQL). Operator: give sso's eps key the new scope (`plans/patientapp_deploy/ops/pa7_invite_scope.sh`, NOT run).
+- Tests: `gateway/tests/test_register_at_unit_1050.py` (14). Suite 1447 -> 1461 passed, 1 skipped (clean tree measured by stash). 6 mutation controls (E1-E6), each fails on an assertion.
+- Loopback e2e (sso + eps + dashboard + patientapp, real apps): 18/18.
+- Not verified: Postgres (SQLite in tests and e2e); a real SSO.

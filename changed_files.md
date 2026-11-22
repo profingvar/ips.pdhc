@@ -2013,3 +2013,10 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_api.html, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_technical.html, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html
 - /Users/martiningvar/T7_sidewinder/plans/patient_app_contract.md — [v2 eps] lines under Deviations (workspace repo)
+
+## 2026-11-22 — #1050 step 2
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — register-at-unit, identifier-match, `_personnummer_refusal`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py — `require_care_professional`, `may_act_for_unit`, scope `patients:identifier-match`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/patient_index.py — `ORIGIN_INVITED`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_register_at_unit_1050.py (NEW, 14)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md (6d), /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md

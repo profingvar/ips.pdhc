@@ -167,9 +167,27 @@ If the run refuses with "older than the EPS", the export lacks a newer
 approved sending than the one the summary already shows. Take a fresh export
 from the CDR; do not work around it.
 
-### Patients who registered themselves (#1049)
+### Patients invited by their care unit (#1050)
 
-A patient can register in the patient app without a care order. sso.pdhc then
+Patients join the patient app only by invitation. A professional uses
+**Bjud in patient** in dashboard.pdhc; that registers the patient here at the
+chosen care unit, or finds the patient if they already exist, and makes sure
+they are listed there. In the patient's clinic list such an assignment is
+marked `invited`.
+
+If the patient already exists under a different name, nothing is changed and
+the professional is told the name does not match: check the number before
+trying again. An archived patient, or a number held by two patients, is also
+refused without change; sort those out here first.
+
+Operator step: sso's eps key needs the extra scope
+`patients:identifier-match` so sso can check the number an invited patient
+types (`plans/patientapp_deploy/ops/pa7_invite_scope.sh`).
+
+### Patients who registered themselves (#1049, closed by default)
+
+Self-registration is closed since #1050; this applies only if the operator
+reopens it. A patient can register in the patient app without a care order. sso.pdhc then
 creates the patient here and lists them at the care unit they chose. In the
 patient's clinic list this assignment is marked `self-registered`: nobody at
 the unit has met the patient yet. It is an ordinary active assignment in every

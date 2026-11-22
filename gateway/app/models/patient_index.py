@@ -154,6 +154,10 @@ CONSUMERS_OF_ASSIGNMENT = {
 #: `PatientClinicAssignment.origin` for a patient who registered themselves
 #: (#1049, `POST /api/v1/patients/self-register`).
 ORIGIN_SELF_REGISTERED = "self-registered"
+#: `PatientClinicAssignment.origin` for a patient a professional at the unit
+#: registered there in order to invite them to the patient app (#1050,
+#: `POST /api/v1/patients/register-at-unit`).
+ORIGIN_INVITED = "invited"
 
 
 class PatientClinicAssignment(db.Model):

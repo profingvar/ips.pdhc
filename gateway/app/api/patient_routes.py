@@ -10,7 +10,7 @@ import uuid
 import json
 from datetime import date, datetime, timezone
 
-from flask import (Blueprint, current_app, jsonify, make_response,
+from flask import (Blueprint, current_app, g, jsonify, make_response,
                    request)
 
 from app.models.base import db
@@ -20,7 +20,9 @@ from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services import euips_header as euips_hdr
 from app.services import euips_sections as euips
 from app.services.auth_service import (require_auth, require_scope, SCOPE_EXTERNAL_SUMMARY,
-                                       SCOPE_PATIENTS_SELF_REGISTER)
+                                       SCOPE_PATIENTS_SELF_REGISTER,
+                                       SCOPE_PATIENTS_IDENTIFIER_MATCH,
+                                       may_act_for_unit, require_care_professional)
 from app.services.consent_policy import evaluate_patient
 from app.services import personnummer as pnr
 from app.services.guids import is_uuid
@@ -241,6 +243,21 @@ def _identifier_taken(normalised: str) -> bool:
         .filter(PatientIndex.identifier_value.in_(forms)).exists()).scalar()
 
 
+def _personnummer_refusal(raw_pnr: str):
+    """The pilot's personnummer rule, ONE copy for every eps door that takes
+    a number from outside (#1049 self-register, #1050 register-at-unit):
+    not a personnummer with a real date -> 422 `invalid_personnummer`; a
+    VALID check digit while `SELF_REGISTER_SYNTHETIC_ONLY` (default true) ->
+    422 `real_personnummer`. None when the number may be used."""
+    kind = pnr.classify(raw_pnr)
+    if kind == "malformed":
+        return jsonify({"error": "invalid_personnummer"}), 422
+    if kind == "real_format" and current_app.config.get(
+            "SELF_REGISTER_SYNTHETIC_ONLY", True):
+        return jsonify({"error": "real_personnummer"}), 422
+    return None
+
+
 @bp.route("/self-register", methods=["POST"])
 @require_auth
 @require_scope(SCOPE_PATIENTS_SELF_REGISTER)
@@ -298,12 +315,9 @@ def self_register():
     if bad:
         return jsonify({"error": "validation", "fields": sorted(set(bad))}), 422
 
-    kind = pnr.classify(raw_pnr)
-    if kind == "malformed":
-        return jsonify({"error": "invalid_personnummer"}), 422
-    if kind == "real_format" and current_app.config.get(
-            "SELF_REGISTER_SYNTHETIC_ONLY", True):
-        return jsonify({"error": "real_personnummer"}), 422
+    refusal = _personnummer_refusal(raw_pnr)
+    if refusal is not None:
+        return refusal
     normalised = pnr.normalise(raw_pnr)
 
     clinic = _clinic_for_unit(unit)
@@ -366,6 +380,219 @@ def self_register():
     resp.status_code = 201
     resp.headers["X-PDHC-Patient-Guid"] = str(patient.guid)
     return resp
+
+
+# --------------------------------------------------------------------------
+# #1050: patients join the patient app ONLY by invitation from their unit.
+# --------------------------------------------------------------------------
+
+def _patients_with_identifier(normalised: str) -> list:
+    """Every patient carrying this personnummer, in either stored spelling
+    (`YYYYMMDD-NNNN` and the 12 digits), any system, archived included --
+    the same match as `_identifier_taken`."""
+    forms = {normalised, normalised.replace("-", "")}
+    return (db.session.query(PatientIndex)
+            .filter(PatientIndex.identifier_value.in_(forms)).all())
+
+
+def _same_name(a, b) -> bool:
+    """Names compared as a person reads them: case and surrounding or
+    repeated whitespace ignored, nothing else."""
+    def norm(v):
+        return " ".join(str(v or "").split()).casefold()
+    return norm(a) == norm(b)
+
+
+@bp.route("/register-at-unit", methods=["POST"])
+@require_care_professional
+def register_at_unit():
+    """Find or create a patient at a care unit, for an invitation (#1050).
+
+    Caller: dashboard.pdhc's "Bjud in patient", with the PROFESSIONAL'S OWN
+    SSO bearer (no service key: `require_care_professional` refuses one).
+    Allowed for an SU admin, or a professional with an ACTIVE affiliation to
+    `care_unit_guid` (the blob's `affiliations[].care_unit_guid`). An eps
+    `users` row is not needed: the decision is the blob's.
+
+    Body: {"given_name", "family_name", "personnummer", "care_unit_guid",
+    "mobile"?}
+
+    * 422 {"error": "validation", "fields": [...]}   missing / too long
+    * 403 {"error": "not_affiliated"}                 not the caller's unit
+      (checked BEFORE any lookup, so it tells an outsider nothing)
+    * 422 {"error": "invalid_personnummer"}           not a personnummer
+    * 422 {"error": "real_personnummer"}              VALID check digit in
+      the pilot (`SELF_REGISTER_SYNTHETIC_ONLY`, the self-register rule)
+    * 422 {"error": "unknown_unit"}                   no ACTIVE clinic is it
+    * 409 {"error": "name_mismatch"}                  a patient with that
+      number exists under ANOTHER name. Nothing is written: a mistyped
+      number must not attach a stranger to the unit. The stored name is not
+      returned.
+    * 409 {"error": "ambiguous"}                      two patients carry it
+    * 409 {"error": "archived"}                       the patient is archived
+    * 200 {"patient_guid", "created": false, "assignment": "existing"|"added"}
+      the patient exists; an ACTIVE assignment at the unit is ensured
+      (origin `invited` when added; an existing one is left as it is)
+    * 201 {"patient_guid", "created": true, "assignment": "added"}
+      created as self-register creates one, assignment origin `invited`
+
+    Both success answers carry `X-PDHC-Patient-Guid`. The personnummer is
+    never logged or audited. The mobile number, when given, is stored on a
+    NEW patient's telecom only (an existing record is not edited here).
+    """
+    from app.models.patient_index import ORIGIN_INVITED
+    from app.services.audit_service import log_event
+    from app.services.fhir_service import create_resource
+    from app.services.patient_state import rebuild_for_patient
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "validation", "fields": ["body"]}), 422
+
+    def text(name):
+        v = data.get(name)
+        return v.strip() if isinstance(v, str) else ""
+
+    given, family = text("given_name"), text("family_name")
+    raw_pnr, unit, mobile = text("personnummer"), text("care_unit_guid"), text("mobile")
+    bad = [n for n, v in (("personnummer", raw_pnr), ("given_name", given),
+                          ("family_name", family), ("care_unit_guid", unit)) if not v]
+    bad += [n for n, v in (("given_name", given), ("family_name", family),
+                           ("mobile", mobile)) if len(v) > _SELF_REGISTER_MAX]
+    if data.get("mobile") is not None and not isinstance(data.get("mobile"), str):
+        bad.append("mobile")
+    if bad:
+        return jsonify({"error": "validation", "fields": sorted(set(bad))}), 422
+
+    if not may_act_for_unit(g.access_blob, unit):
+        log_event("patient_register_at_unit_refused",
+                  detail={"reason": "not_affiliated", "care_unit_guid": unit[:64]})
+        db.session.commit()
+        return jsonify({"error": "not_affiliated",
+                        "message": "You are not affiliated to this care unit"}), 403
+
+    refusal = _personnummer_refusal(raw_pnr)
+    if refusal is not None:
+        return refusal
+    normalised = pnr.normalise(raw_pnr)
+
+    clinic = _clinic_for_unit(unit)
+    if clinic is None:
+        log_event("patient_register_at_unit_refused",
+                  detail={"reason": "unknown_unit", "care_unit_guid": unit[:64]})
+        db.session.commit()
+        return jsonify({"error": "unknown_unit"}), 422
+
+    def refuse(reason, patient_guid=None):
+        log_event("patient_register_at_unit_refused", patient_guid=patient_guid,
+                  detail={"reason": reason, "care_unit_guid": clinic.organisation_guid})
+        db.session.commit()
+        return jsonify({"error": reason}), 409
+
+    found = _patients_with_identifier(normalised)
+    if len(found) > 1:
+        return refuse("ambiguous")
+    if found:
+        patient = found[0]
+        if patient.archived_at is not None:
+            return refuse("archived", patient.guid)
+        if not (_same_name(patient.given_name, given)
+                and _same_name(patient.family_name, family)):
+            return refuse("name_mismatch", patient.guid)
+        open_row = PatientClinicAssignment.active_only(
+            db.session.query(PatientClinicAssignment)
+            .filter(PatientClinicAssignment.patient_guid == patient.guid)
+            .filter(PatientClinicAssignment.clinic_guid == clinic.guid)).first()
+        assignment = "existing"
+        if open_row is None:
+            db.session.add(PatientClinicAssignment(
+                patient_guid=patient.guid, clinic_guid=clinic.guid,
+                origin=ORIGIN_INVITED))
+            db.session.flush()
+            rebuild_for_patient(patient.guid)
+            assignment = "added"
+        created, status = False, 200
+    else:
+        patient_id = str(uuid.uuid4())
+        patient_fhir = {
+            "resourceType": "Patient",
+            "id": patient_id,
+            "identifier": [{"system": pnr.PERSONNUMMER_SYSTEM, "value": normalised}],
+            "name": [{"use": "official", "family": family, "given": [given]}],
+            "gender": "unknown",
+            "birthDate": f"{normalised[:4]}-{normalised[4:6]}-{normalised[6:8]}",
+            "managingOrganization": {
+                "reference": f"Organization/{clinic.organisation_guid}",
+                "display": clinic.name,
+            },
+        }
+        if mobile:
+            patient_fhir["telecom"] = [{"system": "phone", "value": mobile,
+                                        "use": "mobile"}]
+        create_resource("Patient", patient_fhir)
+        patient = db.session.query(PatientIndex).filter_by(resource_id=patient_id).first()
+        if patient is None:                               # pragma: no cover
+            db.session.rollback()
+            current_app.logger.error("register-at-unit: PatientIndex was not created")
+            return jsonify({"error": "server_error"}), 500
+        db.session.add(PatientClinicAssignment(
+            patient_guid=patient.guid, clinic_guid=clinic.guid, origin=ORIGIN_INVITED))
+        db.session.flush()
+        rebuild_for_patient(patient.guid)
+        assignment, created, status = "added", True, 201
+
+    log_event("patient_registered_at_unit", patient_guid=patient.guid,
+              resource_type="Patient",
+              detail={"clinic_guid": str(clinic.guid),
+                      "care_unit_guid": clinic.organisation_guid,
+                      "created": created, "assignment": assignment,
+                      "origin": ORIGIN_INVITED if assignment == "added" else None,
+                      "is_su_admin": bool(g.access_blob.get("is_su_admin")),
+                      "mobile": bool(mobile) and created})
+    db.session.commit()
+    resp = jsonify({"patient_guid": str(patient.guid), "created": created,
+                    "assignment": assignment})
+    resp.status_code = status
+    resp.headers["X-PDHC-Patient-Guid"] = str(patient.guid)
+    return resp
+
+
+@bp.route("/<guid>/identifier-match", methods=["POST"])
+@require_auth
+@require_scope(SCOPE_PATIENTS_IDENTIFIER_MATCH)
+def identifier_match(guid):
+    """Does this personnummer belong to this patient? (#1050)
+
+    Caller: sso.pdhc's invite page, with its eps key carrying scope
+    `patients:identifier-match`. The invited patient types their number and
+    sso asks here before it creates the account. The answer is a yes/no:
+    the stored number never leaves eps and is never logged here.
+
+    Body {"personnummer"} (in the BODY: personal data stays out of URLs).
+    Matched on the PLATFORM guid only (not a FHIR resource_id), because the
+    invite holds the platform guid.
+
+    * 200 {"match": true|false}
+    * 404 {"error": "Patient not found"}  (the shape `/clinics` answers)
+    * 422 {"error": "invalid_personnummer"}
+    """
+    from app.services.audit_service import log_event
+    if not _is_uuid(guid):
+        return jsonify({"error": "Patient not found"}), 404
+    patient = db.session.query(PatientIndex).filter_by(guid=guid).first()
+    if patient is None:
+        return jsonify({"error": "Patient not found"}), 404
+    data = request.get_json(silent=True)
+    raw = data.get("personnummer") if isinstance(data, dict) else None
+    if not isinstance(raw, str) or pnr.classify(raw) == "malformed":
+        return jsonify({"error": "invalid_personnummer"}), 422
+    normalised = pnr.normalise(raw)
+    stored = str(patient.identifier_value or "")
+    match = bool(stored) and stored in {normalised, normalised.replace("-", "")}
+    log_event("patient_identifier_match", patient_guid=patient.guid,
+              detail={"match": match})
+    db.session.commit()
+    return jsonify({"match": match})
 
 
 def _years_ago(today: date, years: int) -> date:
