@@ -2424,3 +2424,10 @@ control that keeps it off the LAN.
 - ips: key scoped `consents:emit` may list/grant/revoke consents (these three routes only). contract: an eps refusal is a counted failure (`failed`, status `error`, reconcile `errors`), no longer a silent empty list.
 - Deployed as overlay, rollback tag `:pre1030`, files `*.pre_eps.<ts>`.
 - Verified in prod without writing: contract key list 200; grant without grantee 400; revoke unknown consent 404; junk key 401; blocks still 403. patient_consents still 0 rows.
+
+## 2026-11-22 — #1047 blocks:read for filtering services — DEPLOYED (eps half)
+
+- A key scoped `blocks:read` may GET a patient's blocks, unredacted; nothing else opens. The answer carries `blocks` beside `items` until gateway and dashboard read `items`.
+- Deployed as overlay, rollback tag `:pre1047`. The scope was added to the key gateway uses (label "request.pdhc service", shared with request); table backup `~/backups/predeploy/ips.pdhc/pre1047_api_keys_*.sql`.
+- Verified from inside gateway_pdhc_app: blocks 200 (was 403), create 403, junk 401. Suite 1375 passed.
+- Open: gateway half (fail closed, read `items`); a dedicated eps key for gateway instead of the shared one (operator, .env).
