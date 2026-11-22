@@ -684,6 +684,10 @@ SCOPE_EXTERNAL_SUMMARY = "external:summary"
 #: the patient signers of a contract (#231, Lag 2022:913). The key has no
 #: user, so the per-clinic rule refused it for every patient (2026-11-22).
 SCOPE_CONSENTS_EMIT = "consents:emit"
+# A service that must FILTER on a patient's blocks (gateway's observation
+# filter, #206) reads the full, unredacted list for any patient. Read only:
+# it opens GET /patients/<guid>/blocks and nothing else.
+SCOPE_BLOCKS_READ = "blocks:read"
 
 
 def key_holds_scope(scope: str) -> bool:

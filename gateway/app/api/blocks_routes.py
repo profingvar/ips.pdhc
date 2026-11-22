@@ -30,7 +30,9 @@ from app.models.patient_block import (
 )
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services.audit_service import log_event
-from app.services.auth_service import require_auth
+from app.services.auth_service import (
+    require_auth, key_holds_scope, SCOPE_BLOCKS_READ,
+)
 from app.services.block_webhook import safe_dispatch as _emit_block_webhook
 
 
@@ -213,7 +215,11 @@ def list_blocks(patient_guid):
     patient = _patient_or_404(patient_guid)
     if patient is None:
         return _bad("Patient not found", 404)
-    if not _can_act_on_patient(patient.guid):
+    # A key scoped blocks:read is a filtering service (gateway). It has no
+    # user and no clinic, so the per-clinic rule refused it for EVERY patient
+    # and its filter then let everything through (found 2026-11-22).
+    filtering_service = key_holds_scope(SCOPE_BLOCKS_READ)
+    if not (_can_act_on_patient(patient.guid) or filtering_service):
         return _bad("Not authorised to view blocks for this patient", 403)
 
     active_only = request.args.get("active", "true").lower() in ("true", "1", "yes")
@@ -232,7 +238,7 @@ def list_blocks(patient_guid):
         # Plan §5.2: don't leak source_scope_id to clients without the
         # right relationship. Admin sees all; others see only their own
         # clinic's blocks in detail. Surface scope-name too for UX.
-        if not _scope_visible_to_caller(r):
+        if not (filtering_service or _scope_visible_to_caller(r)):
             d["source_scope_id"] = None
             d.pop("created_reason", None)
             d.pop("created_by_user_guid", None)
@@ -246,7 +252,10 @@ def list_blocks(patient_guid):
                 if clinic:
                     d["source_scope_name"] = clinic.name
         items.append(d)
-    return jsonify({"items": items, "total": len(items)}), 200
+    # "blocks" duplicates "items": gateway's and dashboard's clients read
+    # "blocks" and so saw an empty list in every 200 answer. Kept until both
+    # read "items".
+    return jsonify({"items": items, "blocks": items, "total": len(items)}), 200
 
 
 # ---------------------------------------------------------------------------
