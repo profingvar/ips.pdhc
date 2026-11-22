@@ -688,6 +688,10 @@ SCOPE_CONSENTS_EMIT = "consents:emit"
 # filter, #206) reads the full, unredacted list for any patient. Read only:
 # it opens GET /patients/<guid>/blocks and nothing else.
 SCOPE_BLOCKS_READ = "blocks:read"
+#: sso.pdhc's patient registration (#1049, contract s7.1/s7.2): create a
+#: patient who registered themselves, listed at the care unit they chose.
+#: Opens POST /patients/self-register and nothing else.
+SCOPE_PATIENTS_SELF_REGISTER = "patients:self-register"
 
 
 def key_holds_scope(scope: str) -> bool:

@@ -19,7 +19,8 @@ from app.models.fhir_resource import FhirResource
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
 from app.services import euips_header as euips_hdr
 from app.services import euips_sections as euips
-from app.services.auth_service import require_auth, require_scope, SCOPE_EXTERNAL_SUMMARY
+from app.services.auth_service import (require_auth, require_scope, SCOPE_EXTERNAL_SUMMARY,
+                                       SCOPE_PATIENTS_SELF_REGISTER)
 from app.services.consent_policy import evaluate_patient
 from app.services import personnummer as pnr
 from app.services.guids import is_uuid
@@ -202,6 +203,169 @@ def validate_identifier():
         })
     return jsonify({"results": results})
 
+
+
+#: Longest name / telecom value accepted from a self-registration. The
+#: PatientIndex columns are String(255); a longer value would fail at the
+#: driver as a 500 instead of a named refusal.
+_SELF_REGISTER_MAX = 255
+
+
+def _clinic_for_unit(care_unit_guid: str):
+    """The ACTIVE clinic that IS this care unit, or None.
+
+    Matched on `Clinic.organisation_guid`, which `to_dict()` also publishes as
+    `care_unit_guid` -- the field sso's `verify_patient` reads -- and compared
+    case-insensitively as sso does. Never on `Clinic.guid`: sso holds unit
+    guids, not eps clinic guids.
+    """
+    wanted = str(care_unit_guid).strip().lower()
+    return (db.session.query(Clinic)
+            .filter(db.func.lower(Clinic.organisation_guid) == wanted)
+            .filter(Clinic.is_active.is_(True))
+            .first())
+
+
+def _identifier_taken(normalised: str) -> bool:
+    """Does ANY patient already carry this personnummer?
+
+    Any system, archived or inactive patients included: "exists" is the
+    conservative answer, because sso then creates the account UNLINKED and a
+    professional decides (contract s7.1). Both stored spellings are checked,
+    `YYYYMMDD-NNNN` (what every eps writer stores) and the 12 digits without
+    the dash (what a FHIR client may have sent).
+    """
+    forms = {normalised, normalised.replace("-", "")}
+    return db.session.query(
+        db.session.query(PatientIndex)
+        .filter(PatientIndex.identifier_value.in_(forms)).exists()).scalar()
+
+
+@bp.route("/self-register", methods=["POST"])
+@require_auth
+@require_scope(SCOPE_PATIENTS_SELF_REGISTER)
+def self_register():
+    """A patient registered themselves in the patient app (#1049, s7.2).
+
+    Caller: sso.pdhc's `/register-patient`, with its own eps key carrying
+    scope `patients:self-register`. A human (SSO bearer) is refused by
+    `require_scope`, SU included.
+
+    Body: {"personnummer", "given_name", "family_name", "care_unit_guid",
+    "email"?, "mobile"?}
+
+    * 422 {"error": "validation", "fields": [...]} -- a field missing or too long
+    * 422 {"error": "invalid_personnummer"} -- not a personnummer with a real date
+    * 422 {"error": "real_personnummer"} -- a VALID check digit while
+      `SELF_REGISTER_SYNTHETIC_ONLY` (default true): the pilot holds
+      synthetic people only
+    * 422 {"error": "unknown_unit"} -- no ACTIVE clinic is that care unit
+    * 409 {"error": "exists"} -- a patient with that identifier exists. No guid
+      and no detail: the caller is a registration form anyone can fill in, and
+      the answer must not confirm WHO is registered
+    * 201 {"patient_guid"} + `X-PDHC-Patient-Guid`
+
+    The patient is created exactly as the admin form and the clinic import
+    create one -- a FHIR Patient through `create_resource`, which materialises
+    the PatientIndex row with guid == resource_id -- so every reader finds
+    them. The assignment is ACTIVE and says `origin = self-registered`.
+    The personnummer is never logged or audited.
+    """
+    from app.models.patient_index import ORIGIN_SELF_REGISTERED
+    from app.services.audit_service import log_event
+    from app.services.fhir_service import create_resource
+    from app.services.patient_state import rebuild_for_patient
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "validation", "fields": ["body"]}), 422
+
+    def text(name):
+        v = data.get(name)
+        return v.strip() if isinstance(v, str) else ""
+
+    given, family = text("given_name"), text("family_name")
+    raw_pnr, unit = text("personnummer"), text("care_unit_guid")
+    email, mobile = text("email"), text("mobile")
+    bad = [n for n, v in (("personnummer", raw_pnr), ("given_name", given),
+                          ("family_name", family), ("care_unit_guid", unit)) if not v]
+    bad += [n for n, v in (("given_name", given), ("family_name", family),
+                           ("email", email), ("mobile", mobile))
+            if len(v) > _SELF_REGISTER_MAX]
+    for n in ("email", "mobile"):
+        if data.get(n) is not None and not isinstance(data.get(n), str):
+            bad.append(n)
+    if bad:
+        return jsonify({"error": "validation", "fields": sorted(set(bad))}), 422
+
+    kind = pnr.classify(raw_pnr)
+    if kind == "malformed":
+        return jsonify({"error": "invalid_personnummer"}), 422
+    if kind == "real_format" and current_app.config.get(
+            "SELF_REGISTER_SYNTHETIC_ONLY", True):
+        return jsonify({"error": "real_personnummer"}), 422
+    normalised = pnr.normalise(raw_pnr)
+
+    clinic = _clinic_for_unit(unit)
+    if clinic is None:
+        log_event("patient_self_register_refused",
+                  detail={"reason": "unknown_unit", "care_unit_guid": unit[:64]})
+        db.session.commit()
+        return jsonify({"error": "unknown_unit"}), 422
+
+    if _identifier_taken(normalised):
+        log_event("patient_self_register_refused",
+                  detail={"reason": "exists", "care_unit_guid": clinic.organisation_guid})
+        db.session.commit()
+        return jsonify({"error": "exists"}), 409
+
+    patient_id = str(uuid.uuid4())
+    telecom = []
+    if email:
+        telecom.append({"system": "email", "value": email})
+    if mobile:
+        telecom.append({"system": "phone", "value": mobile, "use": "mobile"})
+    patient_fhir = {
+        "resourceType": "Patient",
+        "id": patient_id,
+        "identifier": [{"system": pnr.PERSONNUMMER_SYSTEM, "value": normalised}],
+        "name": [{"use": "official", "family": family, "given": [given]}],
+        "gender": "unknown",
+        # The date the number encodes, so the record and its identifier agree
+        # (#789's self-contradictory rows were exactly this disagreement).
+        "birthDate": f"{normalised[:4]}-{normalised[4:6]}-{normalised[6:8]}",
+        "managingOrganization": {
+            "reference": f"Organization/{clinic.organisation_guid}",
+            "display": clinic.name,
+        },
+    }
+    if telecom:
+        patient_fhir["telecom"] = telecom
+
+    create_resource("Patient", patient_fhir)
+    patient = db.session.query(PatientIndex).filter_by(resource_id=patient_id).first()
+    if patient is None:                               # pragma: no cover
+        db.session.rollback()
+        current_app.logger.error("self-register: PatientIndex was not created")
+        return jsonify({"error": "server_error"}), 500
+    db.session.add(PatientClinicAssignment(
+        patient_guid=patient.guid, clinic_guid=clinic.guid,
+        origin=ORIGIN_SELF_REGISTERED))
+    db.session.flush()
+    # #901a: the assignment is a state fact; `_sync_patient_index` ran before
+    # it existed.
+    rebuild_for_patient(patient.guid)
+    log_event("patient_self_registered", patient_guid=patient.guid,
+              resource_type="Patient",
+              detail={"clinic_guid": str(clinic.guid),
+                      "care_unit_guid": clinic.organisation_guid,
+                      "origin": ORIGIN_SELF_REGISTERED,
+                      "telecom": sorted(t["system"] for t in telecom)})
+    db.session.commit()
+    resp = jsonify({"patient_guid": str(patient.guid)})
+    resp.status_code = 201
+    resp.headers["X-PDHC-Patient-Guid"] = str(patient.guid)
+    return resp
 
 
 def _years_ago(today: date, years: int) -> date:

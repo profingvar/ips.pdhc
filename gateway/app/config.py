@@ -37,6 +37,14 @@ class Config:
         if o.strip()
     ]
     AUTH_DISABLED = os.environ.get("AUTH_DISABLED", "false").lower() == "true"
+    # #1049: POST /api/v1/patients/self-register refuses a personnummer with a
+    # VALID check digit (it may be a real person's) while this is true. The
+    # pilot holds synthetic people only, and sso applies the same rule
+    # (PATIENT_REGISTRATION_SYNTHETIC_ONLY); this is eps's own floor, so an
+    # sso misconfiguration cannot put a real number here. Only "false" turns
+    # it off.
+    SELF_REGISTER_SYNTHETIC_ONLY = os.environ.get(
+        "SELF_REGISTER_SYNTHETIC_ONLY", "true").strip().lower() != "false"
     APP_PORT = int(os.environ.get("APP_PORT", "9040"))
     ADMIN_PORT = int(os.environ.get("ADMIN_PORT", "9042"))
 

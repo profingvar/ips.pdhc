@@ -151,6 +151,11 @@ CONSUMERS_OF_ASSIGNMENT = {
 }
 
 
+#: `PatientClinicAssignment.origin` for a patient who registered themselves
+#: (#1049, `POST /api/v1/patients/self-register`).
+ORIGIN_SELF_REGISTERED = "self-registered"
+
+
 class PatientClinicAssignment(db.Model):
     """Which clinic a patient belongs to, and SINCE WHEN — and now UNTIL when.
 
@@ -216,6 +221,15 @@ class PatientClinicAssignment(db.Model):
     #: than piecemeal here, and `created_at` is not it.
     ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None)
+    #: HOW the assignment came about (#1049). NULL = not stated, which is every
+    #: row written before this column and every writer that does not set it
+    #: (admin form, clinic import, mock generator, the assignments route).
+    #: `ORIGIN_SELF_REGISTERED` = the patient registered themselves in the
+    #: patient app and chose this care unit; nobody at the unit has seen them
+    #: yet. Nullable, no default, additive: eleven sibling services read this
+    #: table set. Migration: `migrations/add_assignment_origin.sql`.
+    origin: Mapped[str | None] = mapped_column(String(32), nullable=True,
+                                               default=None)
 
     patient = relationship("PatientIndex", back_populates="clinic_assignments")
     clinic = relationship("Clinic")
