@@ -1,6 +1,13 @@
-# IPS Server — User Manual
+# EPS (eps.pdhc) — User Manual
 
-This is the manual for people who **use** ips.pdhc through its web interface.
+> **Renamed 2026-11-22 (#1015).** ips.pdhc is now **eps.pdhc**, at
+> <https://eps.pdhc.se>; `ips.pdhc.se` no longer resolves. Only the name and
+> address changed: the containers (`ips-app-1`, `ips-db-1`), the database
+> (`ips_db`), the server directory (`/usr/local/www/pdhcips/`) and stored
+> identifiers keep `ips` on purpose. "IPS card" below is the document type
+> (International Patient Summary), not the service.
+
+This is the manual for people who **use** eps.pdhc through its web interface.
 For how the service works internally, and for integrating another service with
 it, see the technical manual.
 
@@ -14,7 +21,7 @@ it, see the technical manual.
 
 ## 1) What this service is for
 
-ips.pdhc holds **the platform's patient registry**. Every other PDHC service
+eps.pdhc holds **the platform's patient registry**. Every other PDHC service
 refers to a patient by a GUID that originates here.
 
 Three questions can only be answered here, and other services ask them
@@ -36,12 +43,12 @@ decides who may see their data.
 
 ## 2) Signing in
 
-ips.pdhc uses PDHC SSO. Opening the service redirects you to sso.pdhc and
+eps.pdhc uses PDHC SSO. Opening the service redirects you to sso.pdhc and
 returns you signed in.
 
 Every page carries the platform ribbon in the top left:
 
-    PDHC / IPS Server
+    PDHC / eps.pdhc
 
 `PDHC` returns you to the service index at <https://www.pdhc.se/services.html>.
 

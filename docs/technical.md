@@ -1,4 +1,11 @@
-# ips.pdhc — Technical Manual
+# eps.pdhc (formerly ips.pdhc) — Technical Manual
+
+> **Renamed 2026-11-22 (#1015).** ips.pdhc is now **eps.pdhc**, at
+> <https://eps.pdhc.se>; `ips.pdhc.se` no longer resolves. Only the name and
+> address changed: the containers (`ips-app-1`, `ips-db-1`), the database
+> (`ips_db`), the server directory (`/usr/local/www/pdhcips/`) and stored
+> identifiers keep `ips` on purpose. "IPS card" below is the document type
+> (International Patient Summary), not the service.
 
 > **What this file used to be.** Until 2026-10-08 it was 99 lines about a
 > single 2026-06-09 data sweep plus a port table, and it was published as the
@@ -8,9 +15,30 @@
 
 ---
 
-## 1) What ips.pdhc is
+## 0) Names, addresses and the rename (#1015)
 
-**ips.pdhc is the platform's patient registry.** Every other service refers to
+- **Callers** set `EPS_BASE_URL=https://eps.pdhc.se` and `EPS_API_KEY`. The old
+  `IPS_BASE_URL` / `IPS_API_KEY` are still read, each only when its `EPS_*`
+  twin is blank, until phase 4 (#1028) removes them. Both unset behaves as
+  before in the services: no invented default. The one exception is sim.pdhc
+  (a Mac-side tool), which defaults to `https://eps.pdhc.se` (#1027).
+- **SSO**: requests arriving on host `eps.pdhc.se` use the client pair
+  `SSO_CLIENT_ID_EPS` / `SSO_CLIENT_SECRET_EPS`, falling back to
+  `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` when that pair is incomplete.
+- **Health** reports `"service": "eps.pdhc"` with
+  `"service_aliases": ["ips-server", "ips.pdhc"]`, so a reader of the old
+  name keeps working.
+- **Who still calls which address**: every `/api/`, `/fhir/` and `/external/`
+  request increments one row of `host_usage` per (Host, caller). Read it with
+  `docker exec -w /app ips-app-1 flask host-usage [--host eps.pdhc.se]`.
+  Callers are named by key label, never by secret.
+- **contract.pdhc's consent emitter** holds a key scoped `consents:emit`, which
+  admits list / grant / revoke of PatientConsent for any patient and nothing
+  else (#1030).
+
+## 1) What eps.pdhc is
+
+**eps.pdhc is the platform's patient registry.** Every other service refers to
 a patient by a GUID that originates here, and three decisions that no other
 service may make are made here:
 
