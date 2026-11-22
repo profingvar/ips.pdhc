@@ -34,7 +34,9 @@ from app.models.patient_consent import (
 )
 from app.models.patient_index import PatientIndex
 from app.services.audit_service import log_event
-from app.services.auth_service import require_auth
+from app.services.auth_service import (
+    require_auth, key_holds_scope, SCOPE_CONSENTS_EMIT,
+)
 
 
 bp = Blueprint("consents_api", __name__, url_prefix="/api/v1/patients")
@@ -75,6 +77,17 @@ def _can_act_on_patient(patient_guid) -> bool:
         .first()
     )
     return has is not None
+
+
+def _may_manage_consents(patient_guid) -> bool:
+    """The per-clinic rule for people, OR an API key scoped
+    ``consents:emit`` (contract.pdhc's emitter, which has no user and so no
+    clinic; it acts for the patient signers of a contract). The scope opens
+    the three consent routes in this file and nothing else -- blocks,
+    state, export and the FHIR surface keep their own gates.
+    """
+    return _can_act_on_patient(patient_guid) or key_holds_scope(
+        SCOPE_CONSENTS_EMIT)
 
 
 def _patient_or_404(patient_guid):
@@ -125,7 +138,7 @@ def create_consent(patient_guid):
     patient = _patient_or_404(patient_guid)
     if patient is None:
         return _bad("Patient not found", 404)
-    if not _can_act_on_patient(patient.guid):
+    if not _may_manage_consents(patient.guid):
         return _bad(
             "Not authorised to grant consents for this patient", 403,
         )
@@ -233,7 +246,7 @@ def list_consents(patient_guid):
     patient = _patient_or_404(patient_guid)
     if patient is None:
         return _bad("Patient not found", 404)
-    if not _can_act_on_patient(patient.guid):
+    if not _may_manage_consents(patient.guid):
         return _bad(
             "Not authorised to view consents for this patient", 403,
         )
@@ -329,7 +342,7 @@ def revoke_consent(patient_guid, consent_guid):
     patient = _patient_or_404(patient_guid)
     if patient is None:
         return _bad("Patient not found", 404)
-    if not _can_act_on_patient(patient.guid):
+    if not _may_manage_consents(patient.guid):
         return _bad(
             "Not authorised to revoke consents for this patient", 403,
         )

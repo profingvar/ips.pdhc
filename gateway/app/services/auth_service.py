@@ -680,6 +680,26 @@ def require_proxy_self(f):
 SCOPE_IMPLANTS_WRITE = "implants:write"
 #: The CDRs' external read door fetching the de-identified IPS summary (2026-11-19).
 SCOPE_EXTERNAL_SUMMARY = "external:summary"
+#: contract.pdhc's consent emitter: list / grant / revoke PatientConsent for
+#: the patient signers of a contract (#231, Lag 2022:913). The key has no
+#: user, so the per-clinic rule refused it for every patient (2026-11-22).
+SCOPE_CONSENTS_EMIT = "consents:emit"
+
+
+def key_holds_scope(scope: str) -> bool:
+    """True when THIS request was authenticated by an API key carrying
+    ``scope``. The same reading as :func:`require_scope` -- a malformed
+    scopes value denies, a string never matches by substring -- but as a
+    predicate, for a route that admits EITHER a human by its own rule OR
+    a narrowly scoped machine. An SSO caller never holds a scope.
+    """
+    api_key = getattr(g, "api_key", None)
+    if api_key is None:
+        return False
+    held = api_key.scopes or []
+    if not isinstance(held, (list, tuple, set, frozenset)):
+        return False
+    return scope in {str(x) for x in held}
 
 
 def require_scope(*required):
