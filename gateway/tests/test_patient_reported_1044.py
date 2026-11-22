@@ -274,7 +274,8 @@ def test_a_coded_answer_is_recognised_by_code_OR_by_the_forms_display():
     q = {i["linkId"]: i for i in _walk(_q()["item"])}
     display = next(o["valueCoding"]["display"] for o in q["allergy.severity"]["answerOption"]
                    if o["valueCoding"]["code"] == "severe")
-    for value in ("severe", display, {"code": "severe", "display": display}):
+    for value in ("severe", display, {"code": "severe", "display": display},
+                  {"coding": [{"code": "severe"}], "text": display}):
         ((*_, js),), _ = _plan([endorsement("a1", "o1", "allergy.substance", "Bi"),
                                 endorsement("a2", "o2", "allergy.reaction", "Svullnad"),
                                 endorsement("a3", "o3", "allergy.severity", value)])

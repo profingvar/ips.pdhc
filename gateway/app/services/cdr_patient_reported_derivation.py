@@ -159,7 +159,10 @@ def _split(row: dict) -> tuple[str | None, str | None]:
 
 def _text(value) -> str | None:
     if isinstance(value, dict):
-        value = value.get("display") or value.get("code")
+        # a Coding, or a CodeableConcept as the CDR may hand a coded answer over
+        first = (value.get("coding") or [{}])[0] if isinstance(value.get("coding"), list) else {}
+        value = (value.get("display") or value.get("text") or first.get("display")
+                 or value.get("code") or first.get("code"))
     if value is None or isinstance(value, bool):
         return None
     out = str(value).strip()
@@ -171,7 +174,10 @@ def _choice(field: str, value) -> str | None:
     it is neither: an unrecognised answer is not mapped to the nearest one."""
     if isinstance(value, bool) and field == "prescribed":
         return "yes" if value else "no"
-    code = value.get("code") if isinstance(value, dict) else None
+    code = None
+    if isinstance(value, dict):
+        coding = value.get("coding")
+        code = value.get("code") or ((coding or [{}])[0].get("code") if isinstance(coding, list) else None)
     text = _text(value)
     for cand in (code, text):
         if cand and str(cand).strip().lower() in CHOICES[field]:
