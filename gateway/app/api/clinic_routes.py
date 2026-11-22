@@ -2,12 +2,13 @@
 
 import uuid
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app.models.base import db
 from app.models.clinic import Clinic
 from app.models.patient_index import PatientIndex, PatientClinicAssignment
-from app.services.auth_service import require_auth
+from app.services.auth_service import (require_auth, require_auth_or_care_bearer,
+                                       may_act_for_unit)
 from app.services.audit_service import log_event
 from app.services.fhir_service import create_resource
 from app.services import personnummer as pnr
@@ -93,9 +94,24 @@ def update_clinic(guid):
 
 
 @bp.route("/<guid>/patients", methods=["GET"])
-@require_auth
+@require_auth_or_care_bearer
 def list_clinic_patients(guid):
     """List active patients assigned to a clinic.
+
+    #1050 (dashboard's patient picker). `<guid>` is the eps `Clinic.guid` OR
+    the sso care-unit guid (`Clinic.organisation_guid`, case-insensitive,
+    active clinics only) — a professional's SSO blob names units, not eps
+    clinic guids. `Clinic.guid` is tried first, so every existing caller gets
+    exactly the clinic it got before.
+
+    WHO MAY READ WHICH ROSTER. The roster carries names and personnummer.
+    * ApiKey (sim.pdhc, request.pdhc, icd11.pdhc): unchanged — any clinic.
+    * A person's SSO bearer: an SU, or a professional AFFILIATED to this
+      clinic's care unit (`affiliations[].care_unit_guid`, Rule 24 — never
+      `organization_ids`). Anyone else 403 `not_affiliated`; a clinic with
+      no care unit is SU-only. Before #1050 any bearer with an eps user row
+      read any clinic's roster. No local eps user row is needed
+      (`require_auth_or_care_bearer`).
 
     Returns the same PatientIndex.to_dict() shape as the rest of the
     application API, ordered by (family_name, given_name). The join
@@ -118,7 +134,19 @@ def list_clinic_patients(guid):
 
     clinic = db.session.query(Clinic).filter_by(guid=guid).first()
     if not clinic:
+        clinic = (db.session.query(Clinic)
+                  .filter(db.func.lower(Clinic.organisation_guid) == guid.strip().lower())
+                  .filter(Clinic.is_active.is_(True))
+                  .first())
+    if not clinic:
         return jsonify({"error": "Clinic not found"}), 404
+
+    # #1050: the per-unit gate, on the human-bearer path ONLY (g.bearer_blob
+    # is set by require_auth_or_care_bearer for a Bearer and never for a key).
+    blob = getattr(g, "bearer_blob", None)
+    if blob is not None and not may_act_for_unit(blob, clinic.organisation_guid or ""):
+        return jsonify({"error": "not_affiliated",
+                        "message": "Not affiliated to this clinic's care unit"}), 403
 
     # #891: ACTIVE assignments only. This roster is what sim.pdhc builds
     # cohorts from, so a patient who has left the clinic appearing here puts
@@ -138,6 +166,12 @@ def list_clinic_patients(guid):
         .order_by(PatientIndex.family_name, PatientIndex.given_name)
         .all()
     )
+    if blob is not None:
+        # A person read a roster of names and personnummer: one audit row
+        # (who, which clinic, how many). Never the names or numbers.
+        log_event("clinic_roster_read", resource_type="Clinic",
+                  resource_guid=clinic.guid, detail={"patients": len(patients)})
+        db.session.commit()
     return jsonify([p.to_dict() for p in patients])
 
 

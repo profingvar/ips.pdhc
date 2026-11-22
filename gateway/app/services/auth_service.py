@@ -70,6 +70,17 @@ def validate_api_key(raw_key: str) -> ApiKey | None:
     return api_key
 
 
+def _local_user_for(blob: dict) -> "User | None":
+    """The local eps `users` row for an SSO blob, or None.
+
+    ips usernames are email-shaped and the SSO blob carries no `username`, so
+    the blob email is the fallback (see require_auth)."""
+    ident = (blob.get("username") or blob.get("email") or "")
+    if not ident:
+        return None
+    return db.session.query(User).filter_by(username=ident).first()
+
+
 def require_auth(f):
     """Decorator to enforce authentication on a route."""
     @wraps(f)
@@ -104,10 +115,7 @@ def require_auth(f):
             # the bearer API path was dead for operators (found by the
             # 2026-07-10 kontroller chain demo). ips usernames are
             # email-shaped, so fall back to the blob email.
-            ident = (user_info.get("username")
-                     or user_info.get("email") or "")
-            user = db.session.query(User).filter_by(
-                username=ident).first()
+            user = _local_user_for(user_info)
             if not user:
                 return _auth_error("User not found in local system")
             if not user.is_active:
@@ -854,5 +862,58 @@ def require_care_professional(f):
                             "message": "Care professional access required"}), 403
         g.access_blob = blob
         g.current_user = _transient_actor(blob)
+        return f(*args, **kwargs)
+    return decorated
+
+
+def require_auth_or_care_bearer(f):
+    """`require_auth`, except that a care professional's OWN SSO bearer is
+    admitted WITHOUT a local eps `users` row (#1050, dashboard's patient
+    picker).
+
+    Why: `require_auth`'s Bearer path answers 401 "User not found in local
+    system" unless eps holds a `users` row whose username is the blob's email.
+    Professionals live in sso; eps rows exist only for people who were given
+    one by hand. So a dashboard calling eps with the professional's bearer
+    failed for every professional without such a row.
+
+    * `ApiKey ...`, no header, AUTH_DISABLED: exactly `require_auth`
+      (sim.pdhc, request.pdhc, icd11.pdhc read rosters with a key).
+    * `Bearer ...`: re-validated with sso on every request (never cached);
+      must_change_password answered as everywhere; the local row is used when
+      there is one (inactive -> 401, as before); otherwise an SU or a
+      professional is admitted as a never-persisted actor, anyone else 401
+      exactly as `require_auth` would.
+
+    It sets `g.bearer_blob` ONLY on the Bearer path. A route uses that to
+    apply its per-unit gate to people and leave service keys alone; on the
+    ApiKey path the attribute is absent.
+    """
+    keyed = require_auth(f)
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if current_app.config.get("AUTH_DISABLED"):
+            return keyed(*args, **kwargs)
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return keyed(*args, **kwargs)
+        blob = resolve_sso_user(auth_header[7:])
+        if not blob:
+            return _auth_error("Invalid or expired token")
+        mcp = _must_change_password_response(blob)
+        if mcp is not None:
+            return mcp
+        user = _local_user_for(blob)
+        if user is not None:
+            if not user.is_active:
+                return _auth_error("User account is inactive")
+        elif blob.get("is_su_admin") or blob.get("user_type") == "professional":
+            user = _transient_actor(blob)
+        else:
+            return _auth_error("User not found in local system")
+        g.current_user = user
+        g.access_blob = blob
+        g.bearer_blob = blob
         return f(*args, **kwargs)
     return decorated

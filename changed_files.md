@@ -2020,3 +2020,9 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/patient_index.py — `ORIGIN_INVITED`
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_register_at_unit_1050.py (NEW, 14)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md (6d), /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+
+## 2026-11-22 — #1050 picker: roster for a professional's bearer
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py — `_local_user_for`, `require_auth_or_care_bearer`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/clinic_routes.py — `list_clinic_patients`: bearer gate, care-unit guid lookup, `clinic_roster_read` audit
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_clinic_roster_gate_1050.py (NEW, 13)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md (6d), /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md

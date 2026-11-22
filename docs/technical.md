@@ -422,6 +422,42 @@ guid only. Body `{"personnummer"}` → 200 `{"match": true|false}`; 422
 never returned; sso learns only yes or no. Audited `patient_identifier_match`
 with `{match}` only.
 
+### `GET /api/v1/clinics/<guid>/patients` — the roster, for a person too (#1050 picker)
+
+dashboard.pdhc's patient picker lists each of the caller's care units' rosters
+(names and personnummer) with the professional's own SSO **bearer**.
+
+- `@require_auth_or_care_bearer` (`services/auth_service.py`). The `ApiKey`
+  path is exactly `require_auth` (sim.pdhc, request.pdhc, icd11.pdhc read
+  rosters with a key; unchanged, any clinic). On the `Bearer` path the blob is
+  re-validated with sso on every request; a local eps `users` row is used when
+  one exists (inactive → 401), and otherwise an SU or a professional is
+  admitted as a transient actor (anyone else 401 as before). Before this,
+  `require_auth` answered 401 "User not found in local system" to every
+  professional without an eps user row, i.e. to practically every real
+  professional.
+- **Gate, Bearer path only:** SU, or a professional affiliated to the
+  clinic's care unit (`may_act_for_unit` over `affiliations[].care_unit_guid`;
+  `organization_ids` never read). Otherwise 403 `not_affiliated`. A clinic with
+  no `organisation_guid` is SU-only. Before #1050 any bearer with an eps user
+  row could read any clinic's roster.
+- `<guid>` is the eps `Clinic.guid` or, failing that, the sso care-unit guid
+  (`Clinic.organisation_guid`, case-insensitive, active clinics only).
+- A bearer read writes one `clinic_roster_read` audit row (`resource_guid` =
+  clinic, `detail = {"patients": n}`); never names or numbers. Key reads are
+  not audited here (unchanged).
+- Tests: `gateway/tests/test_clinic_roster_gate_1050.py`.
+
+**Still open for the invite (not changed here):** `GET /patients/<guid>/state`
+and `/patients/<guid>/clinics` remain `@require_auth`. For a professional with
+no eps user row they answer 401; `/state` with a row still scopes through
+`patient_export.exportable`, which reads the eps-local `UserClinicAssignment`
+of that row, not the SSO affiliations, so a row without clinic assignments
+reads 404. The fix is the same decorator on both routes plus an
+affiliation-based reader scope for the transient actor in
+`patient_export._reader_clinic_guids` (map `affiliations[].care_unit_guid` to
+`Clinic.organisation_guid`).
+
 ## 7) Operational notes
 
 - **Generation is batched.** Each admin generate run stamps one

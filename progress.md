@@ -2460,3 +2460,12 @@ control that keeps it off the LAN.
 - Tests: `gateway/tests/test_register_at_unit_1050.py` (14). Suite 1447 -> 1461 passed, 1 skipped (clean tree measured by stash). 6 mutation controls (E1-E6), each fails on an assertion.
 - Loopback e2e (sso + eps + dashboard + patientapp, real apps): 18/18.
 - Not verified: Postgres (SQLite in tests and e2e); a real SSO.
+
+## 2026-11-22 — #1050 picker: the roster for a professional's bearer (LOCAL, not deployed)
+
+- Operator question: "why is the patient list in the invite lacking patient names and personnummer?" dashboard's picker now reads each affiliated unit's roster here.
+- `GET /api/v1/clinics/<guid>/patients`: new `@require_auth_or_care_bearer` (no eps user row needed for an SU/professional bearer; ApiKey path = `require_auth`). Bearer path gated: SU or affiliated to the clinic's care unit, else 403 `not_affiliated` (a Rule 24 hole: any bearer with an eps user row could read any roster). `<guid>` may be the sso care-unit guid. Bearer reads audited `clinic_roster_read` (count only).
+- Finding: `require_auth` + Bearer needs an eps `users` row whose username is the blob email, else 401 "User not found in local system". `/state` and `/patients/<guid>/clinics` (the invite's reads) are still like that, and `/state` additionally scopes on eps-local `UserClinicAssignment`. Documented in docs/technical.md 6d, not changed.
+- Callers of the roster (git ls-files): sim.pdhc `sim/ips_client.py` (ApiKey), request.pdhc `patient_service.py` (ApiKey), icd11.pdhc `ips_client.py` (scheme from `IPS_AUTH_SCHEME`, default ApiKey; its picker includes Zone-2 caregiver clinics, which a Bearer would now be refused — production value not verified).
+- Tests: `gateway/tests/test_clinic_roster_gate_1050.py` (13). Suite 1461 -> 1474 passed, 1 skipped. 7 mutation controls, each fails on an assertion.
+- Deploy: code only (`app/services/auth_service.py`, `app/api/clinic_routes.py`); no migration, no .env.
