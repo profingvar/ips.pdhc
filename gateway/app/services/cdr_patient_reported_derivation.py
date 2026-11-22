@@ -57,8 +57,30 @@ endorsement row is not in the present export is left in place and REPORTED as
 `orphaned` on every run until someone decides about it. An entry that
 differs from what the export says gets a NEW VERSION (#934). Re-running on
 the same export plans nothing.
+
+LATEST ENDORSED CARD VERSION WINS (#1049, contract s7.2/s7.4). In v2 the
+patient sends a whole SECTION of "Mitt patientkort" at a time, and every row
+of one sending carries the same `card_version` (with `card_section`). Care
+endorses a version as a whole. Per patient and section, ONLY the rows of the
+latest endorsed version are sources -- latest by `reviewed_at`, ties broken by
+the version string so the choice is deterministic. An older endorsed version
+is REPLACED: its rows derive nothing, and an entry derived from it earlier is
+RETIRED (a new version row with status `retired`; history kept, no read
+returns it). So a removal by the patient, once endorsed, removes the entry
+from the summary. Rows WITHOUT `card_version` (v1, one row per answer) keep
+the rule above and are never replaced or retired by a card version.
+
+A derived entry records its version in the endorsement extension
+(`cardVersion`), so a later run can tell which version an entry came from.
+Retirement needs that version AND a newer endorsed version of the same
+patient and section in the present export; an entry without one is orphaned,
+never retired on inference. An export that would bring a retired entry back
+(it lacks the newer version that retired it) is REFUSED: it is older than the
+EPS, and running it would silently undo an endorsed removal.
 """
 from __future__ import annotations
+
+from datetime import datetime
 
 import json
 import os
@@ -92,6 +114,11 @@ RESOURCE_TYPE = {"allergy": "AllergyIntolerance", "medication": "MedicationState
                  "history": "Condition", "vaccination": "Immunization",
                  "contact": "RelatedPerson"}
 DERIVED_TYPES = tuple(RESOURCE_TYPE.values())
+#: The inverse holds for DERIVED entries only (a derived Condition is always
+#: a past illness): the type of an entry this module wrote names its section.
+SECTION_OF_TYPE = {v: k for k, v in RESOURCE_TYPE.items()}
+#: FhirResource.status of an entry whose card version was replaced (#1049).
+RETIRED = "retired"
 #: "none known", endorsed, becomes the section's own absent assertion where
 #: IPS defines one. Past illnesses and contacts have none: plain absence is
 #: the correct representation there and nothing is written.
@@ -194,6 +221,73 @@ def endorser(row: dict) -> dict:
             "at": _first(row, "reviewed_at", "endorsed_at", "created_at")}
 
 
+def card_version(row: dict) -> str | None:
+    """The row's card version (#1049), or None for a v1 row."""
+    v = row.get("card_version")
+    if v in (None, ""):
+        return None
+    return str(v).strip() or None
+
+
+def _instant(value, guid) -> datetime:
+    try:
+        out = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise ValueError(f"endorsement row {guid} has reviewed_at {value!r}, which is "
+                         "not an ISO time; card versions are ordered by it")
+    if out.tzinfo is None:
+        raise ValueError(f"endorsement row {guid} has reviewed_at {value!r} without a "
+                         "timezone; card versions cannot be ordered across offsets")
+    return out
+
+
+def latest_cards(src: list[dict]) -> tuple[list[dict], dict, list[str]]:
+    """(kept, latest, replaced) for endorsement rows `src` (#1049).
+
+    kept      the v1 rows and the rows of each (patient, section)'s latest
+              endorsed card version; everything else is replaced
+    latest    (patient_guid, section) -> card_version
+    replaced  guids of rows of an older endorsed version
+
+    Refuses (ValueError) a `card_section` that contradicts the row's linkId,
+    and one card version spanning two patients or two sections: a version is
+    one sending of ONE section of ONE patient's card.
+    """
+    owner: dict[str, tuple] = {}
+    at: dict[str, datetime] = {}
+    for r in src:
+        cv = card_version(r)
+        if cv is None:
+            continue
+        section, _ = _split(r)
+        stated = r.get("card_section")
+        if stated not in (None, "") and section is not None and stated != section:
+            raise ValueError(f"CDR row {r.get('guid')} says card_section {stated!r} but its "
+                             f"link_id is in section {section!r}")
+        section = section or (stated or None)
+        if section is None:
+            continue                     # not the EPS form: reported by desired()
+        key = (r.get("patient_guid"), section)
+        if owner.setdefault(cv, key) != key:
+            raise ValueError(f"card_version {cv} spans {owner[cv]} and {key}; a version is "
+                             "one section of one patient's card")
+        t = _instant(endorser(r)["at"], r.get("guid"))
+        at[cv] = max(at.get(cv, t), t)
+    latest: dict[tuple, str] = {}
+    for cv, key in owner.items():
+        best = latest.get(key)
+        if best is None or (at[cv], cv) > (at[best], best):
+            latest[key] = cv
+    kept, replaced = [], []
+    for r in src:
+        cv = card_version(r)
+        if cv is None or cv not in owner or latest[owner[cv]] == cv:
+            kept.append(r)
+        else:
+            replaced.append(r.get("guid"))
+    return kept, latest, replaced
+
+
 def eps_id_for(cdr_guid: str) -> str:
     return str(uuid.uuid5(_NS, f"cdr/Observation/{cdr_guid}"))
 
@@ -247,8 +341,13 @@ def _who_ref(who: dict) -> dict:
             "identifier": {"system": SSO_USER_SYSTEM, "value": who["user_guid"]}}
 
 
-def _endorsement_extension(patient_ref: str, endorsers: list[dict]) -> dict:
+def _endorsement_extension(patient_ref: str, endorsers: list[dict],
+                           version: str | None = None) -> dict:
     ext = [{"url": "informant", "valueReference": {"reference": patient_ref}}]
+    if version:
+        # #1049: which card version this entry came from. Absent for v1, so a
+        # v1 entry's JSON is unchanged and a re-run still plans nothing.
+        ext.append({"url": "cardVersion", "valueString": version})
     for who in endorsers:
         inner = [{"url": "who", "valueReference": _who_ref(who)},
                  {"url": "at", "valueDateTime": who["at"]}]
@@ -281,7 +380,8 @@ def _wrap(body: dict, anchor: dict, details: dict[str, dict]) -> dict:
            "meta": {"tag": [dict(ENDORSED_TAG)]},
            "identifier": [{"system": CDR_IDENTIFIER_SYSTEM, "value": r["guid"],
                            "assigner": {"display": r.get("cdr")}} for r in rows],
-           "extension": [_endorsement_extension(patient_ref, endorsers)]}
+           "extension": [_endorsement_extension(patient_ref, endorsers,
+                                                card_version(anchor))]}
     out.update(body)
     names = ", ".join(w["name"] for w in endorsers)
     out["text"] = _narrative(f"{out.pop('_summary')}. Uppgift från patienten, godkänd av "
@@ -421,9 +521,14 @@ def is_derived(resource: dict) -> bool:
 
 
 def desired(rows: list[dict]) -> tuple[dict[str, tuple], dict]:
-    """(entries, report). entries: eps id -> (resource_type, patient_guid, json)."""
+    """(entries, report). entries: eps id -> (resource_type, patient_guid, json).
+
+    `report["latest_cards"]` is (patient_guid, section) -> card_version."""
     src = sources(rows)
-    report = {"rows": len(rows), "sources": len(src),
+    n_sources = len(src)
+    src, latest, replaced = latest_cards(src)
+    report = {"rows": len(rows), "sources": n_sources,
+              "replaced_by_newer_card": replaced, "latest_cards": latest,
               "originals_ignored": sum(1 for r in rows if r.get("data_origin") == PATIENT_GENERATED),
               "not_eps_form": [], "unattached": [], "no_information": [],
               "none_without_absent_code": [], "unrecognised": [], "empty": []}
@@ -467,15 +572,44 @@ def desired(rows: list[dict]) -> tuple[dict[str, tuple], dict]:
     return out, report
 
 
-def plan(rows: list[dict], current: dict[str, dict]) -> tuple[list[tuple], dict]:
+def _patient_of(resource: dict) -> str | None:
+    for k in ("patient", "subject"):
+        ref = str(((resource.get(k) or {}) if isinstance(resource.get(k), dict) else {})
+                  .get("reference") or "")
+        if ref.startswith("Patient/"):
+            return ref.split("/", 1)[1]
+    return None
+
+
+def card_version_of(resource: dict) -> str | None:
+    """The card version a derived entry came from, or None (v1, or care's)."""
+    for e in (resource.get("extension") or []) if isinstance(resource, dict) else []:
+        if isinstance(e, dict) and e.get("url") == ENDORSEMENT_EXT:
+            for sub in e.get("extension") or []:
+                if sub.get("url") == "cardVersion":
+                    return sub.get("valueString")
+    return None
+
+
+def plan(rows: list[dict], current: dict[str, dict],
+         retired: frozenset | set = frozenset()) -> tuple[list[tuple], dict]:
     """(changes, report). changes: (action, resource_type, id, patient_guid, json),
-    action "create" or "update" (a new version).
+    action "create", "update" (a new version) or "retire" (#1049: a new
+    version with status `retired`, because a newer endorsed card version of
+    the same patient and section replaced the one this entry came from).
 
     `current` maps resource_id -> active resource_json, for the derived
-    resource types. Nothing is deleted: a derived entry whose endorsement is
-    not in `rows` is reported under `orphaned` and left as it is.
+    resource types; `retired` is the ids whose current version is retired.
+    A derived entry whose endorsement is not in `rows`, and that no newer card
+    version replaces, is reported under `orphaned` and left as it is.
     """
     want, report = desired(rows)
+    back = sorted(set(want) & set(retired))
+    if back:
+        raise ValueError(f"the export would bring back {len(back)} retired entr(y/ies) "
+                         f"({', '.join(back)}): it lacks the newer card version that "
+                         "replaced them, so it is older than the EPS")
+    latest = report["latest_cards"]
     changes = []
     for rid in sorted(want):
         rtype, pg, js = want[rid]
@@ -483,8 +617,19 @@ def plan(rows: list[dict], current: dict[str, dict]) -> tuple[list[tuple], dict]
             changes.append(("create", rtype, rid, pg, js))
         elif current[rid] != js:
             changes.append(("update", rtype, rid, pg, js))
+    retiring = set()
+    for rid in sorted(current):
+        js = current[rid]
+        if rid in want or not is_derived(js):
+            continue
+        cv, section = card_version_of(js), SECTION_OF_TYPE.get(js.get("resourceType"))
+        pg = _patient_of(js)
+        newer = latest.get((pg, section))
+        if cv and newer and newer != cv:
+            changes.append(("retire", js.get("resourceType"), rid, pg, js))
+            retiring.add(rid)
     report["orphaned"] = sorted(rid for rid, js in current.items()
-                                if is_derived(js) and rid not in want)
+                                if is_derived(js) and rid not in want and rid not in retiring)
     return changes, report
 
 

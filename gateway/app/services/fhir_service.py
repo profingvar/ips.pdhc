@@ -110,6 +110,34 @@ def update_resource(resource_type: str, resource_id: str, resource_json: dict) -
     return new_version
 
 
+def retire_resource(resource_type: str, resource_id: str) -> FhirResource | None:
+    """Take a resource out of every read WITHOUT deleting anything (#1049).
+
+    Append-only, like `update_resource` (#934): the current version becomes
+    `superseded` and a NEW version row with the same content and status
+    `retired` records that and when it was taken out. Every reader selects
+    `status = 'active'`, so a retired resource is gone from the summary, the
+    FHIR reads and the sections, while its history stays. Used when a newer
+    endorsed card version replaces the one an entry was derived from.
+    Returns the retired version row, or None when nothing active exists.
+    """
+    current = read_resource(resource_type, resource_id)
+    if not current:
+        return None
+    tomb = FhirResource(
+        resource_type=resource_type,
+        resource_id=resource_id,
+        version_id=current.version_id + 1,
+        resource_json=copy.deepcopy(current.resource_json),
+        patient_guid=current.patient_guid,
+        status="retired",
+    )
+    current.status = "superseded"
+    db.session.add(tomb)
+    db.session.flush()
+    return tomb
+
+
 def read_resource(resource_type: str, resource_id: str) -> FhirResource | None:
     """Read the current version of a FHIR resource."""
     return db.session.query(FhirResource).filter_by(

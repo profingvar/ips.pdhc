@@ -303,8 +303,11 @@ def create_app(config_name: str | None = None) -> Flask:
         """Bring what the patient reported AND CARE ENDORSED into the EPS (#1044).
 
         PATH is a JSON export of CDR answer rows ({cdr, guid, patient_guid,
-        link_id, value, data_origin, endorses_guid, reviewed_by_*}). Only an
-        endorsement row (endorses_guid set, data_origin null) is a source.
+        link_id, value, data_origin, endorses_guid, reviewed_by_*,
+        [card_section, card_version]}). Only an endorsement row (endorses_guid
+        set, data_origin null) is a source; per patient and section only the
+        LATEST endorsed card version (#1049), and an entry from an older
+        version is retired (a new version with status `retired`).
         DRY RUN BY DEFAULT; every change is a new resource or a NEW VERSION;
         nothing is deleted, and an entry whose endorsement is not in PATH is
         reported as orphaned.
@@ -315,15 +318,17 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.models.fhir_resource import FhirResource
         from app.models.patient_index import PatientIndex
         from app.services import cdr_patient_reported_derivation as der
-        from app.services.fhir_service import create_resource, update_resource
+        from app.services.fhir_service import (create_resource, retire_resource,
+                                               update_resource)
         with open(path) as fh:
             rows = _json.load(fh)
-        current = {r.resource_id: r.resource_json for r in
-                   db.session.query(FhirResource)
-                   .filter(FhirResource.resource_type.in_(der.DERIVED_TYPES))
-                   .filter_by(status="active")}
+        derived_q = (db.session.query(FhirResource)
+                     .filter(FhirResource.resource_type.in_(der.DERIVED_TYPES)))
+        current = {r.resource_id: r.resource_json for r in derived_q.filter_by(status="active")}
+        retired = {rid for (rid,) in derived_q.filter_by(status=der.RETIRED)
+                   .with_entities(FhirResource.resource_id)} - set(current)
         try:
-            changes, report = der.plan(rows, current)
+            changes, report = der.plan(rows, current, retired)
         except ValueError as exc:
             raise SystemExit(f"ABORT: {exc}. Nothing was written.")
         known = {str(g) for (g,) in db.session.query(PatientIndex.guid)}
@@ -335,7 +340,8 @@ def create_app(config_name: str | None = None) -> Flask:
                    f"{report['originals_ignored']} patient-generated original(s) ignored; "
                    f"planned {dict(n)}")
         for key in ("unattached", "orphaned", "unrecognised", "empty", "not_eps_form",
-                    "no_information", "none_without_absent_code"):
+                    "no_information", "none_without_absent_code",
+                    "replaced_by_newer_card"):
             if report[key]:
                 click.echo(f"  {key}: {len(report[key])} -- {', '.join(report[key])}")
         if expect is not None and len(changes) != expect:
@@ -344,8 +350,10 @@ def create_app(config_name: str | None = None) -> Flask:
             click.echo(f"dry run -- nothing written. Re-run with --apply --expect {len(changes)}.")
             return
         for action, rtype, rid, pg, js in changes:
-            if action == "update":
-                if update_resource(rtype, rid, js) is None:
+            if action in ("update", "retire"):
+                done = (update_resource(rtype, rid, js) if action == "update"
+                        else retire_resource(rtype, rid))
+                if done is None:
                     db.session.rollback()
                     raise SystemExit(f"ABORT: {rid} vanished. Rolled back.")
             else:
