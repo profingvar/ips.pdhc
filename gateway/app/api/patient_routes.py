@@ -94,10 +94,17 @@ def list_patient_clinics(guid):
         )
         .filter(PatientClinicAssignment.patient_guid == patient.guid)
         .filter(Clinic.is_active.is_(True))
-        .order_by(Clinic.name)
-        .all()
     )
-    return jsonify([c.to_dict() for c in clinics])
+    # #1040: the docstring says ACTIVE, and callers decide access on this
+    # list (request's need-to-know, sso's patient link). An ended assignment
+    # must not count. The canonical rule, not an inline ended_at test (#899).
+    clinics = PatientClinicAssignment.active_only(clinics).order_by(Clinic.name).all()
+    resp = jsonify([c.to_dict() for c in clinics])
+    # The route also resolves a FHIR resource_id. The body is a bare list, so
+    # the platform guid goes in a header: a caller that stores the identifier
+    # (sso's patient link) can refuse one that is not the platform guid.
+    resp.headers["X-PDHC-Patient-Guid"] = str(patient.guid)
+    return resp
 
 
 #: Cap on one validate-identifier call. A patient record carries a handful of
