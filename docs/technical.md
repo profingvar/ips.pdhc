@@ -35,6 +35,9 @@
 - **contract.pdhc's consent emitter** holds a key scoped `consents:emit`, which
   admits list / grant / revoke of PatientConsent for any patient and nothing
   else (#1030).
+- **sso.pdhc's registration** needs its eps key scoped
+  `patients:self-register`, which admits `POST /patients/self-register` and
+  nothing else (#1049, section 6c).
 
 ## 1) What eps.pdhc is
 
@@ -128,7 +131,7 @@ guessed one silently *widens* the filter.
 | `patient_index` | one row per patient: `guid` (the platform identifier), `resource_id` (the FHIR Patient id), the D1 consent flags, `generation_batch_guid` (#797) |
 | `fhir_resources` | every FHIR resource, keyed by `resource_type` + `resource_id`, scoped to a patient by `patient_guid`, versioned by `version_id` |
 | `clinics` | organisations. `organisation_guid` is **sso's** GUID |
-| `patient_clinic_assignments` | the M2M that answers "where does this patient belong" |
+| `patient_clinic_assignments` | the M2M that answers "where does this patient belong". `ended_at` (#891); `origin` (#1049): NULL = not stated, `self-registered` = the patient registered in the patient app and chose this unit |
 | `patient_blocks` | spärr. `source_scope_type` (clinic / caregiver) + `source_scope_id`, with lift fields |
 | `patient_consents` | per-purpose consent |
 | `emergency_access` | nödöppning |
@@ -309,6 +312,64 @@ null. Its export has not carried that field; the check works when it does.
 
 `/euips-summary` and `/euips-sections` read current versions only. Before,
 a superseded version was returned as an entry of its own.
+
+### Card versions: the latest endorsed version wins (#1049)
+
+In patient app v2 the patient sends one SECTION of "Mitt patientkort" at a
+time, and every row of one sending carries the same `card_version` (the CDR
+export also gives `card_section` and `reviewed_at`). Care endorses a version as
+a whole.
+
+| situation | what happens |
+|---|---|
+| a section has endorsed rows of several card versions | only the rows of the LATEST (by `reviewed_at`, ties by the version string) are sources; the others are listed as `replaced_by_newer_card` |
+| an entry derived earlier from an older version of that patient and section | **retired**: the current version becomes `superseded` and a new version row with the same content and status `retired` is written (`fhir_service.retire_resource`). Every read selects `status = 'active'`, so it is gone from the summary, the sections and FHIR reads; history is kept. So a removal by the patient, once endorsed, removes the entry |
+| row without `card_version` (v1, one row per answer) | the #1044 rule unchanged; never replaced or retired by a card version |
+| an entry with a card version, but no newer version of its section in FILE | `orphaned`, as before; never retired on inference |
+| FILE would bring back a retired entry (it lacks the newer version that retired it) | refused, nothing written: the export is older than the EPS |
+| `card_section` contradicts the linkId; one `card_version` spanning two patients or sections; `reviewed_at` not an ISO time with a timezone | refused, nothing written |
+
+A derived entry records its version in the endorsement extension
+(`{"url": "cardVersion", "valueString": ...}`); a v1 entry has none, so its
+JSON is unchanged and a re-run of a v1 export still plans nothing. The dry run
+prints `planned {'create': .., 'update': .., 'retire': ..}`; `--expect` counts
+all three.
+
+## 6c) Self-registration (#1049)
+
+`POST /api/v1/patients/self-register`, `require_auth` + scope
+`patients:self-register` (`SCOPE_PATIENTS_SELF_REGISTER`). Caller: sso.pdhc's
+`/register-patient`, with its `EPS_API_KEY`. That key must carry the scope; an
+SSO bearer is refused even for an SU (`require_scope`).
+
+Body `{"personnummer", "given_name", "family_name", "care_unit_guid",
+"email"?, "mobile"?}`.
+
+| outcome | answer |
+|---|---|
+| a required field missing or a value over 255 characters | 422 `{"error": "validation", "fields": [...]}` |
+| not a personnummer with a real date | 422 `{"error": "invalid_personnummer"}` |
+| a VALID check digit while `SELF_REGISTER_SYNTHETIC_ONLY` is true (default; only `false` turns it off) | 422 `{"error": "real_personnummer"}` |
+| `care_unit_guid` is not the `organisation_guid` (= `care_unit_guid` in `Clinic.to_dict`) of an ACTIVE clinic, compared case-insensitively as sso does. An eps clinic `guid` is not a unit guid | 422 `{"error": "unknown_unit"}` |
+| any patient already carries the number (`YYYYMMDD-NNNN` or the 12 digits without the dash; any system, archived included) | 409 `{"error": "exists"}`, no guid, no detail |
+| otherwise | 201 `{"patient_guid"}` + `X-PDHC-Patient-Guid` |
+
+The patient is created as the admin form and the clinic import create one: a
+FHIR Patient through `create_resource` (identifier under the personnummer OID,
+`name`, `birthDate` = the date the number encodes, `gender` unknown,
+`managingOrganization` = the unit, `telecom` email / phone `use: mobile`),
+which writes the PatientIndex row with `guid == resource_id`. Then an ACTIVE
+`PatientClinicAssignment` with `origin = 'self-registered'`, and the state
+projection is rebuilt. Audited `patient_self_registered` (clinic, unit, which
+telecom kinds); refusals for unit and exists as `patient_self_register_refused`.
+The personnummer is never logged or audited.
+
+**Deploy order.** `migrations/add_assignment_origin.sql` must run BEFORE the
+image with this code: the model selects the `origin` column on every
+assignment read, so without it every such read fails.
+
+Not guarded: two simultaneous registrations of the same number can both pass
+the exists check (no unique index on `patient_index.identifier_value`).
 
 ## 7) Operational notes
 

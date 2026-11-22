@@ -1998,3 +1998,18 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md
 - /Users/martiningvar/T7_sidewinder/plans/patient_app_contract.md — three [ips] lines under Deviations
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_technical.html, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html — the served manuals: a section on patient-reported content
+
+## 2026-11-22 — #1049 patient app v2 (eps part)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — POST /api/v1/patients/self-register
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py — SCOPE_PATIENTS_SELF_REGISTER
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/models/patient_index.py — PatientClinicAssignment.origin, ORIGIN_SELF_REGISTERED
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/migrations/add_assignment_origin.sql (NEW)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/config.py — SELF_REGISTER_SYNTHETIC_ONLY
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/.env.example — SELF_REGISTER_SYNTHETIC_ONLY
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/cdr_patient_reported_derivation.py — latest endorsed card version, retire
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/fhir_service.py — retire_resource
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — derive-patient-reported-from-cdr retires, reads retired ids
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_self_register_1049.py (NEW), /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_card_versions_1049.py (NEW)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_api.html, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_technical.html, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html
+- /Users/martiningvar/T7_sidewinder/plans/patient_app_contract.md — [v2 eps] lines under Deviations (workspace repo)

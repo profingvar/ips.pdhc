@@ -2442,3 +2442,12 @@ control that keeps it off the LAN.
 - Found and fixed: `/euips-summary` and `/euips-sections` read superseded versions too, so an entry with a new version was shown twice. Now current versions only.
 - Tests: tests/test_patient_reported_1044.py, 45 cases. Suite 1375 -> 1420 passed, 1 skipped (clean tree measured by stash, same day). 25 mutations (one per rule), each fails its test on the assertion.
 - Not done: no deploy; no run against a real CDR export (the CDR side was being written at the same time; the file shape is in the contract's Deviations); docs (#1046) in docs/technical.md s6b and docs/user_manual.md.
+
+## 2026-11-22 — #1049 patient app v2, eps part (LOCAL, not deployed)
+
+- `POST /api/v1/patients/self-register` (contract s7.2): `require_auth` + scope `patients:self-register` (`SCOPE_PATIENTS_SELF_REGISTER`). Unit = an ACTIVE clinic whose `organisation_guid` (= `care_unit_guid`) matches, case-insensitive like sso's `verify_patient` -> else 422 `unknown_unit`; existing personnummer (dashed or 12-digit, any system) -> 409 `{"error":"exists"}`; else Patient via `create_resource` (same path as admin form / clinic import, PatientIndex guid == resource_id), ACTIVE assignment with new column `origin = 'self-registered'`, state rebuilt, audited `patient_self_registered` (no personnummer). Extra 422s: `validation`, `invalid_personnummer`, `real_personnummer` (config `SELF_REGISTER_SYNTHETIC_ONLY`, default true).
+- New column `patient_clinic_assignments.origin` (nullable, additive). This service has no Alembic: `gateway/migrations/add_assignment_origin.sql`. **Must run BEFORE the code is deployed** (every assignment read selects the column).
+- Derivation: per patient and section only the latest endorsed `card_version` (by `reviewed_at`) is a source; entries from an older version are RETIRED (`fhir_service.retire_resource`: new version row status `retired`, history kept). v1 rows unchanged. An export that would bring back a retired entry is refused. Dry run default, idempotent.
+- Tests: test_self_register_1049.py (15), test_card_versions_1049.py (10). Suite 1422 -> 1447 passed, 1 skipped. 20 controls (one revert per rule), each fails its test on the assertion (bytecode writing off; a first pass with stale .pyc reported 2 false survivors).
+- Operator later: run the SQL; give sso's eps key the scope; offered units must exist as active clinics.
+- Not verified: Postgres (tests run on SQLite); a real CDR export with card_version; sso's call against this route; concurrent registrations of one number (no unique index).

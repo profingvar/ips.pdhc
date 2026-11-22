@@ -135,6 +135,13 @@
   </table>
 </div>
 
+<div class="endpoint-card">
+  <h3><span class="method method-post">POST</span> <span class="endpoint-path">/api/v1/patients/self-register</span></h3>
+  <p>A patient registered themselves in the patient app (#1049). API key with scope <code>patients:self-register</code> only; an SSO bearer is refused.</p>
+  <p><strong>Body:</strong> <code>{"personnummer", "given_name", "family_name", "care_unit_guid", "email"?, "mobile"?}</code>. <code>care_unit_guid</code> is the sso care unit guid (a clinic's <code>organisation_guid</code>), not an eps clinic guid.</p>
+  <p><strong>Response:</strong> <code>201</code> <code>{"patient_guid"}</code> + header <code>X-PDHC-Patient-Guid</code>. <code>409</code> <code>{"error": "exists"}</code>. <code>422</code> <code>unknown_unit</code>, <code>invalid_personnummer</code>, <code>real_personnummer</code>, or <code>{"error": "validation", "fields": [...]}</code>. <code>401</code>/<code>403</code> without a key carrying the scope.</p>
+</div>
+
 <!-- ───── FHIR Clinical ───── -->
 <h2 id="fhir-clinical">FHIR — Clinical Resources</h2>
 <p>Supported resource types: <code>Condition</code>, <code>Observation</code>, <code>MedicationStatement</code>, <code>AllergyIntolerance</code>, <code>Immunization</code>, <code>Procedure</code>, <code>DocumentReference</code>, <code>DiagnosticReport</code>.</p>

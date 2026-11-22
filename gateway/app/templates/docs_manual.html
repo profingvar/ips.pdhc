@@ -138,6 +138,10 @@
 
 <h2 id="patient-reported">What the patient reported (#1044)</h2>
 <p>A patient can report allergies, medication, previous illnesses, vaccinations and contact persons in the patient app. An answer appears in the summary only after a physician or nurse at the patient's care unit has approved it in the dashboard queue "EPS att granska". Such an entry is the patient's own words with no code, says that it came from the patient, and names who approved it. A previous illness reported by the patient is listed under past illnesses, never in the problem list. Approved answers reach eps.pdhc when an administrator runs the derivation; it is not automatic.</p>
+<p><strong>Mitt patientkort (#1049).</strong> The patient sends a whole section at a time and care approves it as a whole. The latest approved sending wins: an entry the patient removed disappears from the summary once that sending is approved and the derivation has run (it is marked retired, not deleted). If the run refuses with "older than the EPS", take a fresh CDR export.</p>
+
+<h2 id="self-registered">Patients who registered themselves (#1049)</h2>
+<p>A patient can register in the patient app without a care order; sso.pdhc creates the patient here and lists them at the unit they chose, marked <code>self-registered</code>. Before this works: run <code>migrations/add_assignment_origin.sql</code> (before the code), give sso's eps key the scope <code>patients:self-register</code>, and make sure the offered units exist as active clinics with the sso unit guid as <code>organisation_guid</code>.</p>
 
 <h2 id="audit">Audit Log</h2>
 <p>All significant operations are recorded in the audit log. Query via <code>GET /api/v1/audit</code> or view the most recent events on the Dashboard page.</p>

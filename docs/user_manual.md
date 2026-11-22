@@ -155,6 +155,40 @@ not automatic. The run reports answers it could not place (`unattached`) and
 entries whose approval is no longer in the CDR export (`orphaned`). Neither is
 removed or guessed; someone has to look at them.
 
+**Mitt patientkort (#1049).** In version 2 the patient sends a whole section
+of their card at a time (for example all their allergies), and care approves
+that sending as a whole. The latest approved sending wins: when the
+derivation runs, the summary shows the section exactly as last approved. An
+entry the patient removed, once that sending is approved, disappears from the
+summary. It is not deleted from the history; it is marked retired. Answers from
+the first version of the form, sent one by one, are not affected by this.
+
+If the run refuses with "older than the EPS", the export lacks a newer
+approved sending than the one the summary already shows. Take a fresh export
+from the CDR; do not work around it.
+
+### Patients who registered themselves (#1049)
+
+A patient can register in the patient app without a care order. sso.pdhc then
+creates the patient here and lists them at the care unit they chose. In the
+patient's clinic list this assignment is marked `self-registered`: nobody at
+the unit has met the patient yet. It is an ordinary active assignment in every
+other respect.
+
+Operator steps before this works:
+
+1. Run `gateway/migrations/add_assignment_origin.sql` on the database
+   (before deploying the code).
+2. sso's eps key (`EPS_API_KEY` in sso.pdhc) must carry the scope
+   `patients:self-register` (mint or rotate it with that scope).
+3. The care units offered at registration must exist here as ACTIVE clinics
+   whose `organisation_guid` is the sso care unit guid.
+
+eps refuses a personnummer with a valid check digit (the pilot holds test
+persons only) unless `SELF_REGISTER_SYNTHETIC_ONLY=false`. An existing number
+is answered with "exists" and nothing else; sso then creates the account
+without a link, and a professional links it.
+
 ## 4) Spärr (patient blocks)
 
 A spärr is a patient's decision to hide their records at one care unit from
