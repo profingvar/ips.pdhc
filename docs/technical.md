@@ -216,6 +216,100 @@ check digit was correct about 10% of the time — by chance.
 
 ---
 
+## 6b) Patient-reported EPS content and endorsement (#1044)
+
+The patient may report five things through the patient app's EPS form:
+allergies, medication, previous illnesses, vaccinations and contact persons.
+Diagnoses are not in the form; they come from care. eps.pdhc takes none of it
+directly. Each answer is stored in the CDR as a patient-generated original, a
+professional approves, amends or rejects it there, and an approval writes a
+new CDR row, the **endorsement row**.
+
+**The rule.** Of patient-reported material, only an endorsement row is a
+source: `endorses_guid` set and `data_origin` null. An original is never a
+source, whatever its `review_status`. The rule is one function,
+`cdr_patient_reported_derivation.is_source`.
+
+**The form.** `gateway/app/resources/eps_patient_v1.json`, a byte-identical
+copy of `plans/PROMs/eps_patient_v1.json` in the workspace repo (a test
+compares them). Canonical `https://plan.pdhc.se/fhir/Questionnaire/eps-patient`,
+version 1. Per section: `<section>.status` (has / none / unknown) and a
+repeating group `<section>.entry`.
+
+**The command.** File-fed, like `derive-conditions-from-cdr`:
+
+```
+flask derive-patient-reported-from-cdr FILE            # dry run
+flask derive-patient-reported-from-cdr FILE --apply --expect N
+```
+
+FILE is a JSON list of CDR answer rows: `{cdr, guid, patient_guid, link_id,
+value, data_origin, endorses_guid, reviewed_by_user_guid, reviewed_by_name,
+reviewed_at, [author_org_guid], [group], [review_status]}`.
+
+| situation | what happens |
+|---|---|
+| original only, pending or rejected | nothing derived; counted as ignored |
+| endorsement row | one entry per anchor field, value = the endorsement row's (the amended one if care amended) |
+| same file again | nothing planned |
+| export differs from the stored entry | a new version (#934), not a second entry |
+| derived entry whose endorsement is not in FILE | kept, and listed as `orphaned` on every run; nothing is deleted |
+| `endorses_guid` set but `data_origin` not null | the run is refused, nothing written |
+| row without the `data_origin` key, endorsement without author, endorsement of a non-endorsed original, two endorsements of one original, patient unknown to eps | the run is refused, nothing written |
+| `--expect` differs from the planned count | refused, nothing written |
+
+**Mapping.** The anchor field names the thing and becomes one resource; the
+other fields are details of it. Free text stays text: no code is derived from
+a string.
+
+| section | anchor | resource | details |
+|---|---|---|---|
+| allergy | `allergy.substance` | AllergyIntolerance, `code.text`, clinicalStatus active | `reaction` -> `reaction.manifestation.concept.text`; `severity` -> `reaction.severity` (the patient's own choice) |
+| medication | `medication.name` | MedicationStatement, `medication.concept.text`, status recorded | `dose` + `frequency` -> `dosage.text`; `indication` -> `reason.concept.text`; `prescribed` -> a note |
+| history | `history.condition` | Condition, `code.text`, clinicalStatus **inactive**, no verificationStatus | `year` -> `onsetDateTime` |
+| vaccination | `vaccination.vaccine` | Immunization, `vaccineCode.text`, primarySource false | `date` -> `occurrenceDateTime`, else `occurrenceString` |
+| contact | `contact.name` | RelatedPerson, `name.text` | `relation` -> `relationship.text`; `phone` -> `telecom` |
+
+A history entry is a past illness: `inactive` keeps it out of the problem
+list, which holds care's diagnoses. A contact is a RelatedPerson because that
+is the resource the document header already carries and it can hold its own
+id, CDR link and endorsement; it is not mirrored into `Patient.contact`, so
+`/euips-header` does not count a text-only derived contact as `contact_person`.
+
+"None known" (`<section>.status` = none), endorsed, becomes the section's own
+absent assertion for allergies, medication and vaccinations. Past illnesses
+and contacts have no such code and nothing is written. "Unknown" writes
+nothing.
+
+A detail is attached to the anchor of the same patient, section and `group`.
+Without `group` it is attached only when the section has exactly one endorsed
+anchor for that patient; otherwise it is listed as `unattached`.
+
+**What each derived entry carries.**
+
+- id: uuid5 of the endorsement row's guid, so a re-run finds it.
+- `identifier`: `https://cdr.pdhc.se/fhir/Observation|<endorsement row guid>`,
+  assigner = the CDR's name; the anchor first, then each attached detail.
+- `meta.tag`: `endorsed-patient-reported`.
+- extension `https://ips.pdhc.se/fhir/StructureDefinition/endorsement` (a PDHC
+  extension): the patient as informant, and each endorser with name, SSO user
+  guid, organisation and time. AllergyIntolerance and Condition also carry
+  `participant` (informant, verifier); MedicationStatement and Immunization
+  carry `informationSource`.
+
+**Where it shows.** In the document, each endorser is a
+`Composition.attester` with mode `professional`, once, at their latest
+endorsement, beside the custodian's legal attester. In `/euips-summary`, each
+entry has `provenance`: null for care's entries, else `{origin:
+"patient_reported", informant: "patient", endorsed_by: [...]}`; `cdr_backed`
+and `cdr` name the endorsement row.
+
+`derive-conditions-from-cdr` now refuses a row whose `data_origin` is not
+null. Its export has not carried that field; the check works when it does.
+
+`/euips-summary` and `/euips-sections` read current versions only. Before,
+a superseded version was returned as an entry of its own.
+
 ## 7) Operational notes
 
 - **Generation is batched.** Each admin generate run stamps one

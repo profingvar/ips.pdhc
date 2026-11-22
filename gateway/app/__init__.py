@@ -293,6 +293,66 @@ def create_app(config_name: str | None = None) -> Flask:
         click.echo(f"wrote {len(changes)}; EPS Conditions now {len(after)}, "
                    f"CDR-backed {sum(der.is_cdr_backed(r) for r in after)}")
 
+    @app.cli.command("derive-patient-reported-from-cdr")
+    @click.argument("path")
+    @click.option("--apply", "do_apply", is_flag=True, default=False,
+                  help="Write the changes. Omit for a dry run.")
+    @click.option("--expect", type=int, default=None,
+                  help="Abort unless exactly this many changes are planned.")
+    def _derive_patient_reported_cli(path, do_apply, expect):  # noqa: D401
+        """Bring what the patient reported AND CARE ENDORSED into the EPS (#1044).
+
+        PATH is a JSON export of CDR answer rows ({cdr, guid, patient_guid,
+        link_id, value, data_origin, endorses_guid, reviewed_by_*}). Only an
+        endorsement row (endorses_guid set, data_origin null) is a source.
+        DRY RUN BY DEFAULT; every change is a new resource or a NEW VERSION;
+        nothing is deleted, and an entry whose endorsement is not in PATH is
+        reported as orphaned.
+        """
+        import json as _json
+        import uuid as _uuid
+        from collections import Counter
+        from app.models.fhir_resource import FhirResource
+        from app.models.patient_index import PatientIndex
+        from app.services import cdr_patient_reported_derivation as der
+        from app.services.fhir_service import create_resource, update_resource
+        with open(path) as fh:
+            rows = _json.load(fh)
+        current = {r.resource_id: r.resource_json for r in
+                   db.session.query(FhirResource)
+                   .filter(FhirResource.resource_type.in_(der.DERIVED_TYPES))
+                   .filter_by(status="active")}
+        try:
+            changes, report = der.plan(rows, current)
+        except ValueError as exc:
+            raise SystemExit(f"ABORT: {exc}. Nothing was written.")
+        known = {str(g) for (g,) in db.session.query(PatientIndex.guid)}
+        missing = sorted({pg for _, _, _, pg, _ in changes} - known)
+        if missing:
+            raise SystemExit(f"ABORT: the EPS has no patient {missing}. Nothing was written.")
+        n = Counter(a for a, *_ in changes)
+        click.echo(f"{report['rows']} CDR row(s), {report['sources']} endorsement(s), "
+                   f"{report['originals_ignored']} patient-generated original(s) ignored; "
+                   f"planned {dict(n)}")
+        for key in ("unattached", "orphaned", "unrecognised", "empty", "not_eps_form",
+                    "no_information", "none_without_absent_code"):
+            if report[key]:
+                click.echo(f"  {key}: {len(report[key])} -- {', '.join(report[key])}")
+        if expect is not None and len(changes) != expect:
+            raise SystemExit(f"ABORT: --expect {expect} but {len(changes)} planned. Nothing was written.")
+        if not do_apply:
+            click.echo(f"dry run -- nothing written. Re-run with --apply --expect {len(changes)}.")
+            return
+        for action, rtype, rid, pg, js in changes:
+            if action == "update":
+                if update_resource(rtype, rid, js) is None:
+                    db.session.rollback()
+                    raise SystemExit(f"ABORT: {rid} vanished. Rolled back.")
+            else:
+                create_resource(rtype, js, patient_guid=_uuid.UUID(pg))
+        db.session.commit()
+        click.echo(f"wrote {len(changes)}")
+
     @app.cli.command("backfill-ucum-codes")
     @click.option("--apply", "do_apply", is_flag=True, default=False,
                   help="Write the changes. Omit for a dry run.")

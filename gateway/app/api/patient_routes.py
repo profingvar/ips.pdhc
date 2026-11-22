@@ -674,8 +674,12 @@ def euips_section_status(guid):
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
 
+    # Current versions only (#1044): a superseded version is history (#934),
+    # and counting it made a section read PRESENT on content that had been
+    # replaced.
     rows = (db.session.query(FhirResource)
             .filter(FhirResource.patient_guid == patient.guid)
+            .filter(FhirResource.status == "active")
             .all())
     status = euips.status_for_resources(rows)
 
@@ -798,8 +802,13 @@ def euips_summary(guid):
     if str(patient.guid) not in {str(a) for a in allowed}:
         return jsonify(not_found[0]), not_found[1]
 
+    # Current versions only (#1044). Without the filter every superseded
+    # version was returned as an entry of its own, so an entry that got a new
+    # version (a CDR link, an amended endorsement) was shown twice, once with
+    # its old content.
     rows = (db.session.query(FhirResource)
-            .filter(FhirResource.patient_guid == patient.guid).all())
+            .filter(FhirResource.patient_guid == patient.guid)
+            .filter(FhirResource.status == "active").all())
     sections = summ.compose(rows)
     status = {s["key"]: s["status"] for s in sections}
 

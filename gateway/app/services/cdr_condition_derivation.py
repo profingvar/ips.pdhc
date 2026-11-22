@@ -81,6 +81,14 @@ def plan(cdr_rows: list[dict], current: dict[str, dict]) -> list[tuple]:
     """
     out = []
     for row in cdr_rows:
+        # #1044: a patient-generated CDR row is never an EPS source. This
+        # export has not carried `data_origin` so far, so the check can only
+        # bite when the key is present; it must be, once the CDR's condition
+        # table can hold patient-generated rows.
+        if row.get("data_origin") is not None:
+            raise ValueError(f"CDR {row['cdr']} Condition {row['guid']} has data_origin "
+                             f"{row['data_origin']!r}: a patient-generated row is never "
+                             "an EPS source")
         raw = row["raw_json"]
         ips_id = _ident(raw, IPS_IDENTIFIER_SYSTEM)
         if ips_id is not None:

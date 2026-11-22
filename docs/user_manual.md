@@ -131,6 +131,30 @@ absent" — useful, and narrower than it sounds.
 
 ---
 
+### What the patient reported (#1044)
+
+A patient can report allergies, medication, previous illnesses, vaccinations
+and contact persons in the patient app. None of it appears in the summary
+until a physician or nurse at the patient's care unit has approved it in the
+dashboard queue "EPS att granska". A rejected or not yet reviewed answer never
+appears here.
+
+An approved answer is shown as an ordinary entry with three differences:
+
+- the text is the patient's own words (or the reviewer's amended wording),
+  with no code;
+- the entry says it came from the patient and names who approved it and when;
+- the reviewer is listed as an attester of the summary document.
+
+A previous illness reported by the patient is listed under past illnesses,
+not in the problem list. Diagnoses come from care only.
+
+Approved answers reach eps.pdhc when an administrator runs the derivation
+(`flask derive-patient-reported-from-cdr`, technical manual section 6b); it is
+not automatic. The run reports answers it could not place (`unattached`) and
+entries whose approval is no longer in the CDR export (`orphaned`). Neither is
+removed or guessed; someone has to look at them.
+
 ## 4) Spärr (patient blocks)
 
 A spärr is a patient's decision to hide their records at one care unit from

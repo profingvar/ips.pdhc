@@ -184,6 +184,10 @@
 
 <div class="warn"><strong>Production requirements:</strong> Set <code>AUTH_DISABLED=false</code>. Enforce HTTPS via nginx. Never log tokens, keys, or raw patient identifiers. Audit logs need retention policies and restricted access.</div>
 
+<h2 id="patient-reported">Patient-reported content and endorsement (#1044)</h2>
+<p>A patient may report allergies, medication, previous illnesses, vaccinations and contact persons through the patient app. eps.pdhc takes none of it directly. Each answer is stored in the CDR as a patient-generated original; an approval by care writes a new CDR row, the endorsement row. Only an endorsement row (<code>endorses_guid</code> set, <code>data_origin</code> null) is a source for the summary.</p>
+<p>The derivation is file-fed and a dry run by default: <code>flask derive-patient-reported-from-cdr FILE [--apply --expect N]</code>. Free text stays text; no code is derived from a string. Each derived entry links to its CDR endorsement row, names the endorser, and the endorser is a <code>Composition.attester</code> (mode professional). Nothing is deleted; entries whose endorsement has left the export are reported as orphaned. Full description: <code>docs/technical.md</code> section 6b.</p>
+
 <h2 id="api-surface">API Surface Summary</h2>
 <table>
   <thead><tr><th>Group</th><th>Endpoints</th><th>Auth</th></tr></thead>

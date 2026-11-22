@@ -218,6 +218,13 @@ def generate_ips_bundle(
         language=language,
         attested_at=composition_date,
     ))
+    # #1044: whoever endorsed patient-reported content carried in THIS
+    # document attests to it, beside the custodian's legal attestation.
+    from app.services import cdr_patient_reported_derivation as _pr
+    endorsers = _pr.attesters([r.resource_json for r in clinical_resources]
+                              + [r.resource_json for r in header_resources])
+    if endorsers:
+        composition["attester"] = composition.get("attester", []) + endorsers
 
     # A stale managingOrganization is a real finding, not a thing to paper
     # over: the assignment is used regardless, and the disagreement is

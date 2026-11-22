@@ -136,6 +136,9 @@
 
 <div class="warn"><strong>Security:</strong> Review active keys monthly. Revoke unused keys (no activity in 30+ days). Rotate all service-account keys at least every 90 days. After a security incident: revoke all keys and issue new ones.</div>
 
+<h2 id="patient-reported">What the patient reported (#1044)</h2>
+<p>A patient can report allergies, medication, previous illnesses, vaccinations and contact persons in the patient app. An answer appears in the summary only after a physician or nurse at the patient's care unit has approved it in the dashboard queue "EPS att granska". Such an entry is the patient's own words with no code, says that it came from the patient, and names who approved it. A previous illness reported by the patient is listed under past illnesses, never in the problem list. Approved answers reach eps.pdhc when an administrator runs the derivation; it is not automatic.</p>
+
 <h2 id="audit">Audit Log</h2>
 <p>All significant operations are recorded in the audit log. Query via <code>GET /api/v1/audit</code> or view the most recent events on the Dashboard page.</p>
 

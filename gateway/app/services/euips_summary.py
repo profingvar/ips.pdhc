@@ -165,9 +165,17 @@ def entry(row) -> dict:
         # the derived from the not-yet-backed rather than trust both alike.
         "cdr_backed": cdr is not None,
         "cdr": cdr,
+        # #1044: None for care's own entries. For what the patient reported
+        # and care endorsed: the patient as informant, and who endorsed.
+        "provenance": _endorsement(rj),
         "onset": rj.get("onsetDateTime") or (rj.get("onsetPeriod") or {}).get("start"),
         "abatement": rj.get("abatementDateTime") or (rj.get("abatementPeriod") or {}).get("start"),
     }
+
+
+def _endorsement(rj: dict) -> dict | None:
+    from app.services.cdr_patient_reported_derivation import endorsement_of
+    return endorsement_of(rj)
 
 
 _CDR_IDENTIFIER_PREFIX = "https://cdr.pdhc.se/fhir/"

@@ -2431,3 +2431,14 @@ control that keeps it off the LAN.
 - Deployed as overlay, rollback tag `:pre1047`. The scope was added to the key gateway uses (label "request.pdhc service", shared with request); table backup `~/backups/predeploy/ips.pdhc/pre1047_api_keys_*.sql`.
 - Verified from inside gateway_pdhc_app: blocks 200 (was 403), create 403, junk 401. Suite 1375 passed.
 - Open: gateway half (fail closed, read `items`); a dedicated eps key for gateway instead of the shared one (operator, .env).
+
+## 2026-11-22 — #1044 patient-reported EPS content: form, mapping, derivation rule (LOCAL, not deployed)
+
+- Form: `plans/PROMs/eps_patient_v1.json` (workspace repo) + byte-identical copy `gateway/app/resources/eps_patient_v1.json`. 5 sections, each `<s>.status` (has/none/unknown) + repeating group `<s>.entry`; 20 answerable items.
+- Rule (contract s4.4): only an endorsement row (`endorses_guid` set, `data_origin` null) is a source. `app/services/cdr_patient_reported_derivation.py`, CLI `flask derive-patient-reported-from-cdr FILE [--apply --expect N]` (dry run default, file-fed, idempotent, nothing deleted, orphans reported).
+- A smuggled row (`endorses_guid` + `data_origin` set) REFUSES the run. So do: no `data_origin` key, no author, endorsement of a non-endorsed original, two endorsements of one original, unknown patient.
+- Mapping: AllergyIntolerance / MedicationStatement / Condition (inactive = past illness) / Immunization / RelatedPerson, text-only. Endorser = Composition.attester (mode professional); `/euips-summary` entries carry `provenance`.
+- `derive-conditions-from-cdr` refuses a row with `data_origin` set (only bites when the export states it).
+- Found and fixed: `/euips-summary` and `/euips-sections` read superseded versions too, so an entry with a new version was shown twice. Now current versions only.
+- Tests: tests/test_patient_reported_1044.py, 45 cases. Suite 1375 -> 1420 passed, 1 skipped (clean tree measured by stash, same day). 25 mutations (one per rule), each fails its test on the assertion.
+- Not done: no deploy; no run against a real CDR export (the CDR side was being written at the same time; the file shape is in the contract's Deviations); docs (#1046) in docs/technical.md s6b and docs/user_manual.md.

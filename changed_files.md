@@ -1984,3 +1984,17 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/{base,dashboard,docs_api,docs_base,docs_capability,docs_index,docs_manual,docs_technical,patient_detail,patients,push_monitor}.html — titles/brand/headings
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/.env.example — SSO_*_EPS pair and EPS_* names documented
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_eps_rename_1017.py (NEW); /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_health.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_api_endpoints.py, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_admin.py — expect the new name
+
+## 2026-11-22 — #1044 patient-reported EPS content and endorsement
+- /Users/martiningvar/T7_sidewinder/plans/PROMs/eps_patient_v1.json (NEW, workspace repo) — the EPS patient Questionnaire
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/resources/eps_patient_v1.json (NEW) — byte-identical copy for the image
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/cdr_patient_reported_derivation.py (NEW) — the rule, the mapping, attesters, provenance reader
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — `flask derive-patient-reported-from-cdr`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/ips_generator.py — endorsers as Composition.attester
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/euips_summary.py — `provenance` per entry
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/cdr_condition_derivation.py — refuses a row with data_origin set
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — euips-summary and euips-sections read current versions only
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patient_reported_1044.py (NEW)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/user_manual.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md
+- /Users/martiningvar/T7_sidewinder/plans/patient_app_contract.md — three [ips] lines under Deviations
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_technical.html, /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/docs_manual.html — the served manuals: a section on patient-reported content
