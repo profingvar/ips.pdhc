@@ -2418,3 +2418,9 @@ control that keeps it off the LAN.
 - Health 200 and file hashes verified in the container; sibling smoke green before (pre-rename smoke) and after.
 - No behaviour change until `EPS_*` is set in .env: operator script `/tmp/epsdep/eps_env.sh <group>` (refuses until https://eps.pdhc.se answers as eps.pdhc).
 - pg_dump `~/backups/predeploy/pdhcips/pre_eps1017_20261121T233750Z.pgdump` (600), then `add_host_usage.sql` (additive). Postgres upsert verified in a rolled-back transaction (count 2 inside, 0 after). `flask host-usage` already lists every caller on ips.pdhc.se by key label.
+
+## 2026-11-22 — #1030 consent emitter refused by eps for every patient — FIXED and DEPLOYED
+
+- ips: key scoped `consents:emit` may list/grant/revoke consents (these three routes only). contract: an eps refusal is a counted failure (`failed`, status `error`, reconcile `errors`), no longer a silent empty list.
+- Deployed as overlay, rollback tag `:pre1030`, files `*.pre_eps.<ts>`.
+- Verified in prod without writing: contract key list 200; grant without grantee 400; revoke unknown consent 404; junk key 401; blocks still 403. patient_consents still 0 rows.
