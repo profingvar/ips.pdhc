@@ -448,15 +448,31 @@ dashboard.pdhc's patient picker lists each of the caller's care units' rosters
   not audited here (unchanged).
 - Tests: `gateway/tests/test_clinic_roster_gate_1050.py`.
 
-**Still open for the invite (not changed here):** `GET /patients/<guid>/state`
-and `/patients/<guid>/clinics` remain `@require_auth`. For a professional with
-no eps user row they answer 401; `/state` with a row still scopes through
-`patient_export.exportable`, which reads the eps-local `UserClinicAssignment`
-of that row, not the SSO affiliations, so a row without clinic assignments
-reads 404. The fix is the same decorator on both routes plus an
-affiliation-based reader scope for the transient actor in
-`patient_export._reader_clinic_guids` (map `affiliations[].care_unit_guid` to
-`Clinic.organisation_guid`).
+### `GET /patients/<guid>/state` and `/patients/<guid>/clinics` with a professional's bearer (#1050 invite)
+
+dashboard's invite reads both with the professional's own bearer. Under
+`require_auth` they answered 401 "User not found in local system" to anyone
+without an eps `users` row, and production holds ONE such row (measured
+2026-11-22), so the invite could not work for real professionals. Both now take
+`@require_auth_or_care_bearer`:
+
+| caller | reader scope (`patient_export.exportable`) | `/clinics` |
+|---|---|---|
+| Bearer, NO eps users row, SU | every patient (`is_admin()`: the transient actor's `is_superuser`) | any patient |
+| Bearer, NO eps users row, professional | patients ACTIVELY assigned to an ACTIVE clinic whose `organisation_guid` (care unit) is in `affiliations[].care_unit_guid`; `organization_ids` never read | same scope check; out of scope = the same 404 `{"error": "Patient not found"}` as no such patient, no `X-PDHC-Patient-Guid` |
+| Bearer WITH an eps users row | eps-local `UserClinicAssignment`, unchanged | unscoped, unchanged |
+| ApiKey | unchanged (an identity-less key has no assignments: `/state` 404) | unscoped, unchanged (request, contract, gateway, icd11, sso, cdr smoke) |
+
+The transient actor is marked `g.care_bearer_transient` by the decorator;
+`patient_export._reader_clinic_guids` takes the affiliation branch only then,
+so `/export` and `/euips-summary` (still `require_auth`) cannot reach it.
+A patient or other non-professional bearer without a row: 401 as before;
+must_change_password as everywhere.
+
+Tests: `gateway/tests/test_invite_reads_bearer_1050.py` (13). Run against the
+pre-change code, the 9 transient-path tests fail (401) and the 4
+unchanged-path tests pass, which is the evidence the key and eps-row paths
+did not move.
 
 ## 7) Operational notes
 

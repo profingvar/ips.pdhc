@@ -2026,3 +2026,10 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/clinic_routes.py — `list_clinic_patients`: bearer gate, care-unit guid lookup, `clinic_roster_read` audit
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_clinic_roster_gate_1050.py (NEW, 13)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md (6d), /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+
+## 2026-11-22 — #1050 invite reads (/state, /clinics) with a professional's bearer
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py — `g.care_bearer_transient`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/patient_export.py — `_reader_clinic_guids`: affiliation scope for the transient actor
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — `/state`, `/clinics` take `require_auth_or_care_bearer`; `/clinics` scoped for the transient actor
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_invite_reads_bearer_1050.py (NEW, 13)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md (6d), /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md

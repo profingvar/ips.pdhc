@@ -112,6 +112,20 @@ def is_admin() -> bool:
 
 
 def _reader_clinic_guids() -> list:
+    # #1050: a care professional admitted on their SSO bearer WITHOUT an eps
+    # users row (`require_auth_or_care_bearer`) has no UserClinicAssignment.
+    # Their scope is the ACTIVE clinics whose care unit is in their
+    # `affiliations[].care_unit_guid` (Rule 24; `organization_ids` is never
+    # read). An SU is already all via `is_admin()`. Every other reader (an eps
+    # users row, a key) is unchanged.
+    if getattr(g, "care_bearer_transient", False):
+        from app.services.auth_service import blob_care_units
+        units = blob_care_units(getattr(g, "bearer_blob", None))
+        if not units:
+            return []
+        return [r[0] for r in db.session.query(Clinic.guid)
+                .filter(db.func.lower(Clinic.organisation_guid).in_(sorted(units)))
+                .filter(Clinic.is_active.is_(True)).all()]
     u = getattr(g, "current_user", None)
     if u is None:
         return []

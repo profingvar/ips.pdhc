@@ -887,7 +887,9 @@ def require_auth_or_care_bearer(f):
 
     It sets `g.bearer_blob` ONLY on the Bearer path. A route uses that to
     apply its per-unit gate to people and leave service keys alone; on the
-    ApiKey path the attribute is absent.
+    ApiKey path the attribute is absent. `g.care_bearer_transient` is True
+    only when no eps users row was found: such an actor has no eps-local
+    clinic assignments, so `patient_export` scopes it by its affiliations.
     """
     keyed = require_auth(f)
 
@@ -905,15 +907,21 @@ def require_auth_or_care_bearer(f):
         if mcp is not None:
             return mcp
         user = _local_user_for(blob)
+        transient = False
         if user is not None:
             if not user.is_active:
                 return _auth_error("User account is inactive")
         elif blob.get("is_su_admin") or blob.get("user_type") == "professional":
             user = _transient_actor(blob)
+            transient = True
         else:
             return _auth_error("User not found in local system")
         g.current_user = user
         g.access_blob = blob
         g.bearer_blob = blob
+        # True only for an actor admitted WITHOUT an eps users row. Its reader
+        # scope is its sso affiliations (patient_export._reader_clinic_guids);
+        # an eps-user row keeps its eps-local clinic assignments as before.
+        g.care_bearer_transient = transient
         return f(*args, **kwargs)
     return decorated

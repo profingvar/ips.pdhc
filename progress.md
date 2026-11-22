@@ -2465,7 +2465,15 @@ control that keeps it off the LAN.
 
 - Operator question: "why is the patient list in the invite lacking patient names and personnummer?" dashboard's picker now reads each affiliated unit's roster here.
 - `GET /api/v1/clinics/<guid>/patients`: new `@require_auth_or_care_bearer` (no eps user row needed for an SU/professional bearer; ApiKey path = `require_auth`). Bearer path gated: SU or affiliated to the clinic's care unit, else 403 `not_affiliated` (a Rule 24 hole: any bearer with an eps user row could read any roster). `<guid>` may be the sso care-unit guid. Bearer reads audited `clinic_roster_read` (count only).
-- Finding: `require_auth` + Bearer needs an eps `users` row whose username is the blob email, else 401 "User not found in local system". `/state` and `/patients/<guid>/clinics` (the invite's reads) are still like that, and `/state` additionally scopes on eps-local `UserClinicAssignment`. Documented in docs/technical.md 6d, not changed.
+- Finding: `require_auth` + Bearer needs an eps `users` row whose username is the blob email, else 401 "User not found in local system". Fixed for the invite's reads in the follow-up entry below.
 - Callers of the roster (git ls-files): sim.pdhc `sim/ips_client.py` (ApiKey), request.pdhc `patient_service.py` (ApiKey), icd11.pdhc `ips_client.py` (scheme from `IPS_AUTH_SCHEME`, default ApiKey; its picker includes Zone-2 caregiver clinics, which a Bearer would now be refused — production value not verified).
 - Tests: `gateway/tests/test_clinic_roster_gate_1050.py` (13). Suite 1461 -> 1474 passed, 1 skipped. 7 mutation controls, each fails on an assertion.
 - Deploy: code only (`app/services/auth_service.py`, `app/api/clinic_routes.py`); no migration, no .env.
+
+## 2026-11-22 — #1050 invite reads with a professional's bearer (LOCAL, not deployed)
+
+- Measured by the coordinator (production, aggregate): eps `users` has 1 row, so `/patients/<guid>/state` and `/patients/<guid>/clinics` answered 401 to essentially every professional; icd11 `IPS_AUTH_SCHEME` unset (= ApiKey); dashboard has IPS_ and EPS_BASE_URL.
+- Both routes now `@require_auth_or_care_bearer`. The decorator marks an actor admitted without an eps row `g.care_bearer_transient`; `patient_export._reader_clinic_guids` scopes that actor to ACTIVE clinics whose care unit is in `affiliations[].care_unit_guid` (SU = all via `is_admin()`; never `organization_ids`). `/clinics` applies `exportable` for that actor only (out of scope = the same 404 as no such patient). eps-row bearers and ApiKey unchanged.
+- Callers checked (git ls-files): `/clinics` — request, contract, gateway, icd11, sso, cdr smoke, contract_check: all `ApiKey`; dashboard invite: Bearer. `/state` — dashboard invite only. `_reader_clinic_guids` — only via `exportable` (`/state`, `/export`, `/euips-summary`).
+- Tests: `gateway/tests/test_invite_reads_bearer_1050.py` (13); against pre-change code 9 fail (401), the 4 unchanged-path tests pass. Suite 1474 -> 1487 passed, 1 skipped. 9 mutation controls, each fails on an assertion. dashboard `test_invite_1050.py` + `test_picker_roster_1050.py`: 57 passed.
+- Deploy: code only (`app/services/auth_service.py`, `app/services/patient_export.py`, `app/api/patient_routes.py`, plus the roster commit's `app/api/clinic_routes.py`); no migration, no .env.

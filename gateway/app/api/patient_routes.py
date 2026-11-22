@@ -22,7 +22,8 @@ from app.services import euips_sections as euips
 from app.services.auth_service import (require_auth, require_scope, SCOPE_EXTERNAL_SUMMARY,
                                        SCOPE_PATIENTS_SELF_REGISTER,
                                        SCOPE_PATIENTS_IDENTIFIER_MATCH,
-                                       may_act_for_unit, require_care_professional)
+                                       may_act_for_unit, require_care_professional,
+                                       require_auth_or_care_bearer)
 from app.services.consent_policy import evaluate_patient
 from app.services import personnummer as pnr
 from app.services.guids import is_uuid
@@ -73,7 +74,7 @@ def _patient_by_either_id(value):
 
 
 @bp.route("/<guid>/clinics", methods=["GET"])
-@require_auth
+@require_auth_or_care_bearer
 def list_patient_clinics(guid):
     """List active clinics a patient is assigned to.
 
@@ -88,6 +89,18 @@ def list_patient_clinics(guid):
     patient = _patient_by_either_id(guid)
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
+    # #1050: a care professional on their SSO bearer without an eps users row
+    # (dashboard's invite) sees only a patient in their scope — the SAME
+    # `patient_export.exportable` question as /state, answering the same 404
+    # as "no such patient". Keys and eps users rows are unchanged.
+    if getattr(g, "care_bearer_transient", False):
+        from app.services import patient_export as px
+        try:
+            allowed, _ = px.exportable([str(patient.guid)])
+        except Exception:
+            allowed = []
+        if str(patient.guid) not in allowed:
+            return jsonify({"error": "Patient not found"}), 404
 
     clinics = (
         db.session.query(Clinic)
@@ -813,7 +826,7 @@ def end_patient_assignment(guid, clinic_guid):
 
 
 @bp.route("/<guid>/state", methods=["GET"])
-@require_auth
+@require_auth_or_care_bearer
 def patient_state_read(guid):
     """The patient's state as at a date, as it was known on another (#901c).
 
