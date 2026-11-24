@@ -2477,3 +2477,12 @@ control that keeps it off the LAN.
 - Callers checked (git ls-files): `/clinics` — request, contract, gateway, icd11, sso, cdr smoke, contract_check: all `ApiKey`; dashboard invite: Bearer. `/state` — dashboard invite only. `_reader_clinic_guids` — only via `exportable` (`/state`, `/export`, `/euips-summary`).
 - Tests: `gateway/tests/test_invite_reads_bearer_1050.py` (13); against pre-change code 9 fail (401), the 4 unchanged-path tests pass. Suite 1474 -> 1487 passed, 1 skipped. 9 mutation controls, each fails on an assertion. dashboard `test_invite_1050.py` + `test_picker_roster_1050.py`: 57 passed.
 - Deploy: code only (`app/services/auth_service.py`, `app/services/patient_export.py`, `app/api/patient_routes.py`, plus the roster commit's `app/api/clinic_routes.py`); no migration, no .env.
+
+
+## 2026-11-24 — #1045 loggkontroll: a patient's access log for a person (LOCAL, not deployed)
+
+- `GET /api/v1/audit/patients/<guid>?from&to&limit` (gateway/app/api/audit_routes.py): eps's `audit_log` rows for one patient, oldest first, in the platform access-log shape (dashboard.pdhc merges it). `detail` filtered to metadata keys.
+- Gate: `require_auth_or_care_bearer`, then a Bearer is REQUIRED (ApiKey -> 403 `bearer_required`: a key names no person and is organisation-blind), then `patient_export.exportable` (SU = all; professional = patients actively listed at a clinic of their affiliated units). Out of scope = the same 404 as no such patient. Logged: `patient.access_log.read`; a refusal for an existing patient `patient.access_log.refused`.
+- FIXED inline: `GET /api/v1/audit` (whole log, any filter) was `require_auth` only, so any eps users row or API key read every patient's audit rows organisation-blind. No service calls it (checked over every repo's `git ls-files`); now SU only (403 otherwise).
+- Tests: gateway/tests/test_patient_access_log_1045.py (10). Suite 1490 (HEAD 842540c) -> 1500 passed, 1 skipped. 5 mutation controls (bearer, scope, SU-only whole log, read logged, detail filter), each fails on an assertion.
+- Deploy: code only, no migration, no `.env` key.

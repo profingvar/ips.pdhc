@@ -578,6 +578,26 @@ WHERE raw::text ILIKE '%hidden%'
 
 ---
 
+## Access log of one patient (#1045)
+
+`GET /api/v1/audit/patients/<guid>?from=<ISO>&to=<ISO, exclusive>&limit=<n ≤ 5000>`
+(gateway/app/api/audit_routes.py), for dashboard.pdhc's loggkontroll.
+
+- `require_auth_or_care_bearer`, and a **Bearer is required**: an `ApiKey`
+  caller gets 403 `bearer_required` (a key names no person, and is
+  organisation-blind).
+- Scope: `patient_export.exportable` — SU all; a professional the patients
+  actively listed at a clinic of their affiliated care units. Out of scope =
+  the same 404 as no such patient.
+- Rows: `audit_log` where `patient_guid`, oldest first, in the platform
+  access-log shape (`at, user_guid, user_label, actor_type, action, outcome,
+  route, resource_type, session_id, actor_units, basis, detail`); `detail` is
+  limited to `reason, outcome, format, mode, access_basis, refusal_code, scope`.
+- Logged: `patient.access_log.read`; refusal for an existing patient
+  `patient.access_log.refused`.
+- `GET /api/v1/audit` (the whole log) is **SU only** since #1045; it was
+  `require_auth`, i.e. organisation-blind for any users row or key.
+
 ## Port Allocation
 
 | Port | Service |

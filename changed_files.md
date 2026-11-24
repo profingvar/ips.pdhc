@@ -2033,3 +2033,8 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — `/state`, `/clinics` take `require_auth_or_care_bearer`; `/clinics` scoped for the transient actor
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_invite_reads_bearer_1050.py (NEW, 13)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md (6d), /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/audit_routes.py — #1045 `/api/v1/audit/patients/<guid>`; `/api/v1/audit` SU only
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patient_access_log_1045.py (NEW, 10)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py  (#1045 patient bearer is never a local eps user)
+/Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patient_bearer_not_local_user_1045.py  (#1045)
