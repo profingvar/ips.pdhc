@@ -74,7 +74,14 @@ def _local_user_for(blob: dict) -> "User | None":
     """The local eps `users` row for an SSO blob, or None.
 
     ips usernames are email-shaped and the SSO blob carries no `username`, so
-    the blob email is the fallback (see require_auth)."""
+    the blob email is the fallback (see require_auth).
+
+    #1045: only a professional's or an SU's blob may BE a local eps user. A
+    patient picks their own email (the invite page), so matching any blob by
+    email let a patient whose email equals an eps username act with that
+    row's role and is_superuser. Patients use `require_patient`."""
+    if not (blob.get("user_type") == "professional" or blob.get("is_su_admin") is True):
+        return None
     ident = (blob.get("username") or blob.get("email") or "")
     if not ident:
         return None
