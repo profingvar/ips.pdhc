@@ -50,6 +50,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.push_routes import bp as push_bp
     from app.api.auth_routes import bp as auth_bp
     from app.api.audit_routes import bp as audit_bp
+    from app.api.patient_extract_routes import bp as patient_extract_bp  # #1059
     from app.api.clinic_routes import bp as clinic_bp
     from app.api.patient_routes import bp as patient_bp
     from app.api.blocks_routes import bp as blocks_bp
@@ -69,6 +70,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(push_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(audit_bp)
+    app.register_blueprint(patient_extract_bp)  # #1059
     app.register_blueprint(clinic_bp)
     app.register_blueprint(patient_bp)
     app.register_blueprint(blocks_bp)

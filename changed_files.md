@@ -2038,3 +2038,11 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/auth_service.py  (#1045 patient bearer is never a local eps user)
 /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patient_bearer_not_local_user_1045.py  (#1045)
+
+## 2026-11-24 — #1059 patient extract (eps part)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/patient_extract.py (NEW) — sections, coverage map, D9
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_extract_routes.py (NEW) — `GET /api/v1/patient-extract/<guid>`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/__init__.py — blueprint registered
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patient_extract_1059.py (NEW, 22)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+

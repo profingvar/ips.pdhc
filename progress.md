@@ -2486,3 +2486,14 @@ control that keeps it off the LAN.
 - FIXED inline: `GET /api/v1/audit` (whole log, any filter) was `require_auth` only, so any eps users row or API key read every patient's audit rows organisation-blind. No service calls it (checked over every repo's `git ls-files`); now SU only (403 otherwise).
 - Tests: gateway/tests/test_patient_access_log_1045.py (10). Suite 1490 (HEAD 842540c) -> 1500 passed, 1 skipped. 5 mutation controls (bearer, scope, SU-only whole log, read logged, detail filter), each fails on an assertion.
 - Deploy: code only, no migration, no `.env` key.
+
+## 2026-11-24 — #1059 patient extract, eps part (record.pdhc stage 6b) (LOCAL, not deployed)
+
+- `GET /api/v1/patient-extract/<guid>` (gateway/app/api/patient_extract_routes.py, gateway/app/services/patient_extract.py), contract `plans/record_pdhc_extract_contract.md`. 13 sections: identity (personnummer only here), care_units (incl. ended), contacts, related_persons, proxy_grants, blocks, consents (incl. contract #558), emergency_access, patient_card, conditions, summary (cdr_backed), eps_documents (every snapshot), eps_deliveries.
+- Versions: `fhir_resources` all versions (append-only); every other eps table updates in place, so one version plus the row's own lifecycle `events`, and each section's `note_sv` says so.
+- Mitt patientkort: eps holds only entries derived from ENDORSED card versions (incl. retired); submitted versions and review decisions are in cdr1 — the section says `source_of_rest: cdr1.pdhc`.
+- Gate: #1045 door (Bearer required, ApiKey 403 `bearer_required`) + `exportable` + D9 (sso affiliation role doctor/nurse at an active unit where the patient is actively listed). Out of scope = same 404 as no such patient. Audit `patient_extract`, outcome served/denied/not_found, refusals included.
+- Excluded by name: `patient_state_facts` (derived), `audit_log` (D10, loggkontroll endpoint). A test fails when a new patient-linked table is in neither the coverage nor the exclusion map (control: three synthetic tables — by column, by FK, transitive — are detected).
+- Tests: gateway/tests/test_patient_extract_1059.py (22). Suite 1500 -> 1522 passed, 1 skipped. 5 mutation controls (no bearer_required, no scope+D9, no D9, no personnummer redaction, exclusion lost), each fails on an assertion.
+- Deploy: code only (3 files + blueprint registration in app/__init__.py); no migration, no `.env` key.
+

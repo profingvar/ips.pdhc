@@ -53,6 +53,7 @@ service may make are made here:
 | does this patient exist, and where are they assigned | contract, request, gateway | `GET /api/v1/patients/<guid>/clinics` |
 | is this patient's data from source X blocked (**spärr**, PDL Ch 4 §4) | cdr1–3, cdr_6, gateway, analyse | `GET /api/v1/patients/<guid>/blocks/check` |
 | may this patient's data be used for this analysis purpose | analyse, rosetta, cdr2–6 | `POST /api/v1/patients/analysis-filter` |
+| everything eps holds about one patient, for the journal extract (#1059) | record.pdhc, with the professional's own bearer | `GET /api/v1/patient-extract/<guid>` |
 
 It also renders **International Patient Summary** documents (FHIR R5 Bundles)
 and, since the euIPS epic (#788–#799), measures them against the EU patient
@@ -597,6 +598,74 @@ WHERE raw::text ILIKE '%hidden%'
   `patient.access_log.refused`.
 - `GET /api/v1/audit` (the whole log) is **SU only** since #1045; it was
   `require_auth`, i.e. organisation-blind for any users row or key.
+
+## Patient extract (#1059, record.pdhc stage 6b)
+
+`GET /api/v1/patient-extract/<patient_guid>` (gateway/app/api/patient_extract_routes.py,
+gateway/app/services/patient_extract.py): everything eps holds about ONE
+patient, in the platform shape `pdhc.patient-extract/1`
+(`plans/record_pdhc_extract_contract.md`). record.pdhc merges it with the
+other services' parts into the PDF (plan s4.4).
+
+**Door and gate** (the #1045 door):
+
+- `require_auth_or_care_bearer`, then a **Bearer is required**: `ApiKey` ->
+  403 `bearer_required`. A patient's bearer is 401 (842540c).
+- `patient_export.exportable` (Rule 24 scope, as `/state`) **and** D9
+  (`patient_extract.d9_allows`): SU, or an sso affiliation with role
+  `doctor` or `nurse` at an ACTIVE clinic where the patient is ACTIVELY
+  listed. A professional affiliated as `other_care`, `researcher` etc. is out
+  of scope. An eps users row still needs the D9 affiliation in its blob.
+- Out of scope = the same 404 `patient not found` as no such patient;
+  malformed guid 400.
+- Audit: every call writes `patient_extract` with `detail.outcome` =
+  `served` (with `n_sections`, `n_items`) / `denied` (`reason`
+  `bearer_required`, `out_of_scope`, `malformed_guid`) / `not_found`. The
+  loggkontroll view shows a refusal as `denied`.
+
+**Sections** (fixed order; every section always present, `count` = items):
+
+| key | source | versions | event_time / recorded_at |
+|---|---|---|---|
+| `identity` | `fhir_resources` Patient (all versions) + `patient_index` row | Patient: all; index: 1 (updated in place) | null / row `created_at` |
+| `care_units` | `patient_clinic_assignments` (incl. ended) + clinic name and care unit | 1 per row; `events` assigned/ended | `assigned_at` / null (no record column) |
+| `contacts` | `Patient.contact` of each Patient version | one item, a version per Patient version | null / Patient row `created_at` |
+| `related_persons` | `fhir_resources` RelatedPerson (not patient-reported) | all | resource date / `created_at` |
+| `proxy_grants` | `patient_proxy_grants` (ombud, #889) | 1; `events` granted/revoked | `valid_from` / `granted_at` |
+| `blocks` | `patient_blocks` incl. lifted/expired | 1; `events` created/lifted | `created_at` / `created_at` |
+| `consents` | `patient_consents` incl. revoked and contract-emitted (#558) | 1; `events` granted/revoked | `granted_at` / null |
+| `emergency_access` | `emergency_access` (insert-only) | 1 | `attested_at` / `created_at` |
+| `patient_card` | `fhir_resources` carrying the #1044 endorsed tag, incl. `retired` (#1049) | all | resource date / `created_at` |
+| `conditions` | other `fhir_resources` Condition | all | onset/recorded / `created_at` |
+| `summary` | every other `fhir_resources` type of the patient | all | resource date / `created_at` |
+| `eps_documents` | `ips_cards` with every `ips_snapshots` bundle | a version per snapshot | `composition_date` / snapshot `created_at` |
+| `eps_deliveries` | `push_jobs` of those snapshots + destination name/type | 1 | completed/last attempt / `created_at` |
+
+Each `fhir_resources` resource lands in exactly ONE section
+(`patient_extract.fhir_category`). Clinical items carry `cdr_backed`, `cdr`
+(#984/#985) and `eps_sections`; card items carry `card_version`,
+`endorsed_by`, `informant` per version. `patient_card` says
+`source_of_rest: cdr1.pdhc`: every SUBMITTED card version, pending and
+rejected ones, and care's review decisions are in cdr1 (endorsements), not
+here; eps holds only what was derived from endorsed versions.
+
+**Not in the extract, by name** (`TABLE_EXCLUSIONS`): `patient_state_facts`
+(derived projection of tables that are in it) and `audit_log` (D10: the
+optional "who read" part comes from `/api/v1/audit/patients/<guid>`).
+`test_every_patient_linked_table_is_exported_or_excluded_by_name` fails when a
+new table linked to a patient (column name containing `patient`, FK to
+`patient_index`, or FK to such a table) is in neither map.
+
+**Personnummer** appears only in `identity`. Elsewhere (snapshot bundles, a
+RelatedPerson's own identifier, a `subject.identifier`) the value of a
+`urn:oid:1.2.752.129.2.1.3.1` identifier is replaced by
+`[personnummer: se avsnittet Identitet]`.
+
+**Never included:** API keys or their hashes, `emergency_access.session_id`,
+push destinations' `endpoint_url`, `auth_config`, `headers`, push jobs'
+`error_message` (a transport error can quote a URL with a token).
+
+No limit and no truncation: `complete` is always true.
 
 ## Port Allocation
 
