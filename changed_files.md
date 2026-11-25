@@ -2048,3 +2048,4 @@ deployed.
 
 
 - 2026-11-25 #1055: gateway/app/api/care_access_routes.py, gateway/tests/test_care_access_routes.py (care-access-check admits a professional bearer without an eps users row, narrowed to own units)
+- 2026-11-25 record picker: gateway/app/api/clinic_routes.py, gateway/tests/test_clinic_roster_gate_1050.py (GET /clinics admits a care bearer: SU all, others own units)

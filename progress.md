@@ -2501,3 +2501,7 @@ control that keeps it off the LAN.
 ## 2026-11-25 #1055 care-access-check for record.pdhc
 
 `POST /api/v1/patients/<g>/care-access-check` now uses `require_auth_or_care_bearer` (as `/clinics`, #1050): record.pdhc asks with the professional's own bearer, and almost no professional has an eps users row. An actor admitted without such a row may ask only about a reader unit in its own `affiliations` (403 otherwise, not audited as a check); SU, eps users rows and ApiKey callers unchanged. Tests 1526 passed; revert controls: decorator (3 fail), unit gate (1 fail).
+
+## 2026-11-25 GET /api/v1/clinics for record.pdhc's picker
+
+`require_auth_or_care_bearer`; bearer without eps row: SU every active clinic, professional only own units (affiliations), patient 401; ApiKey and eps rows unchanged. 1530 tests; controls decorator (3 fail), unit filter (2 fail).

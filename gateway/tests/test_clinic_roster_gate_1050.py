@@ -222,3 +222,28 @@ def test_bearer_read_is_audited_without_names_or_personnummer(api, db, world):
     assert world["pa"].identifier_value not in dumped
     assert world["pa"].identifier_value.replace("-", "") not in dumped
     assert "Alfasson" not in dumped
+
+
+# --- GET /api/v1/clinics with a person's bearer (record.pdhc picker) -------
+
+def test_clinic_list_su_bearer_without_eps_row_sees_every_active_clinic(api, db, world):
+    r = api.get("/api/v1/clinics", headers=H("su"))
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert {c["name"] for c in r.get_json()} == {"Enhet A", "Enhet B", "Utan enhet"}
+
+
+def test_clinic_list_professional_bearer_sees_only_own_units(api, db, world):
+    r = api.get("/api/v1/clinics", headers=H("pro_a"))
+    assert r.status_code == 200
+    assert [c["name"] for c in r.get_json()] == ["Enhet A"]
+
+
+def test_clinic_list_professional_without_affiliation_sees_none(api, db, world):
+    r = api.get("/api/v1/clinics", headers=H("legacy_member"))
+    assert r.status_code == 200 and r.get_json() == []
+
+
+def test_clinic_list_patient_bearer_refused_and_key_unchanged(api, db, world):
+    assert api.get("/api/v1/clinics", headers=H("patient")).status_code == 401
+    r = api.get("/api/v1/clinics", headers=_key(db))
+    assert r.status_code == 200 and len(r.get_json()) == 3

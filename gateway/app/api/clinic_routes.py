@@ -36,9 +36,26 @@ def create_clinic():
 
 
 @bp.route("", methods=["GET"])
-@require_auth
+@require_auth_or_care_bearer
 def list_clinics():
-    clinics = db.session.query(Clinic).filter_by(is_active=True).order_by(Clinic.name).all()
+    """Active clinics.
+
+    record.pdhc (operator 2026-11-25) lists an SU's patients from every
+    clinic, asked with the SU's own bearer, and an SU rarely has an eps users
+    row. On the bearer path (`g.bearer_blob`): an SU gets every active clinic;
+    any other person only the clinics of their own care units (Rule 24). The
+    ApiKey path and an eps users row are unchanged.
+    """
+    q = db.session.query(Clinic).filter_by(is_active=True)
+    blob = getattr(g, "bearer_blob", None)
+    if (blob is not None and getattr(g, "care_bearer_transient", False)
+            and not blob.get("is_su_admin")):
+        from app.services.auth_service import blob_care_units
+        units = sorted(blob_care_units(blob))
+        if not units:
+            return jsonify([])
+        q = q.filter(db.func.lower(Clinic.organisation_guid).in_(units))
+    clinics = q.order_by(Clinic.name).all()
     return jsonify([c.to_dict() for c in clinics])
 
 
