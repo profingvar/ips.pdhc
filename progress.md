@@ -2505,3 +2505,16 @@ control that keeps it off the LAN.
 ## 2026-11-25 GET /api/v1/clinics for record.pdhc's picker
 
 `require_auth_or_care_bearer`; bearer without eps row: SU every active clinic, professional only own units (affiliations), patient 401; ApiKey and eps rows unchanged. 1530 tests; controls decorator (3 fail), unit filter (2 fail).
+
+## 2026-11-25 Patientkort: the shared patient card, eps first (LOCAL, not deployed)
+
+Operator request 2026-11-25: one graphic look for the patient card in eps, dashboard and record, starting in eps; addition the same day: every item gets a mouseover pop-out with WHERE it is stored, HOW it came about and its HISTORY. No ticket.
+
+- Three files travel together (per-repo copies, CLAUDE.md §4): `gateway/app/services/patientkort_view.py` (pure view-model, input and output shapes documented at the top), `gateway/app/templates/_patientkort.html` (reads only `pk`), `gateway/static/css/patientkort.css` (`pk-` prefix, tokens, light and dark). NB the static folder is `gateway/static/`, not `gateway/app/static/`.
+- eps-specific half: `_patientkort()` in `gateway/app/admin.py` turns models into the plain input (all FhirResource versions, write-audit rows, assignments incl. ended, blocks, consents, euips summary). A port writes its own version of that one function.
+- Admin page: card on top; Registerdata, Klinik (Byt klinik), Add Clinical Resource, IPS cards, Snapshots unchanged below an "Administration" divider.
+- Provenance is only what eps records: resource versions (append-only), audit rows (fhir_create, patient_self_registered, patient.assigned/ended …), provenance tags (derived-from-cdr, endorsed-patient-reported, simulated), the endorsement extension, generation_batch_guid, assignment.origin. Where nothing is recorded it says "uppgift saknas i eps". Findings worth knowing: the admin "Add Clinical Resource" form and the CLI derivations write NO audit row, so their versions show no actor; history names changed fields, never values, and no pop-out carries a personnummer.
+- Pop-out: CSS opens it on hover and focus; a small inline script adds tap, Escape and viewport fitting (flips above when there is no room below). Measured: no horizontal scroll and every pop-out inside the viewport at 520 and 1280 px.
+- `repo_css.md`, named by ips.pdhc/CLAUDE.md, does not exist; followed its stated rules instead (12px base, PDHC colour tokens, extends base.html).
+- Tests: gateway/tests/test_patientkort_view.py (33). Suite 1530 -> 1563 passed, 1 skipped. Mutation control: a pop-out carrying the personnummer fails the guard test (the first regex-based version of that guard did not capture whole pop-outs, caught by its own control and replaced by an HTML parse).
+- Deploy: code + one new static file; no migration, no `.env` key.

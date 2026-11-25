@@ -2049,3 +2049,12 @@ deployed.
 
 - 2026-11-25 #1055: gateway/app/api/care_access_routes.py, gateway/tests/test_care_access_routes.py (care-access-check admits a professional bearer without an eps users row, narrowed to own units)
 - 2026-11-25 record picker: gateway/app/api/clinic_routes.py, gateway/tests/test_clinic_roster_gate_1050.py (GET /clinics admits a care bearer: SU all, others own units)
+
+## 2026-11-25 — Patientkort (shared patient card, eps first; no ticket)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/services/patientkort_view.py (NEW) — pure view-model incl. provenance/history
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/_patientkort.html (NEW) — partial + pop-out script
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/static/css/patientkort.css (NEW) — pk- styles, tokens, light/dark
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py — `_patientkort()` collector, passed as `pk`
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patient_detail.html — card on top, Administration below
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patientkort_view.py (NEW, 33)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md

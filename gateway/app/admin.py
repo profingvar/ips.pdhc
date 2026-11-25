@@ -350,6 +350,125 @@ def create_patient():
 
 # ── Patient Detail ───────────────────────────────────────────
 
+#: Audit events that WRITE a patient or its resources — the only ones the
+#: patient card's provenance reads. Reads (summary, export) are not origin.
+_PK_WRITE_EVENTS = ("fhir_create", "fhir_update", "clinic_patient_create",
+                    "patient_self_registered", "patient_registered_at_unit",
+                    "patient.assigned", "patient.assignment_ended")
+
+
+def _pk_audit(a):
+    return {"event_type": a.event_type, "at": a.created_at,
+            "actor_type": a.actor_type, "actor_label": a.actor_label,
+            "resource_guid": str(a.resource_guid) if a.resource_guid else None,
+            "detail": a.detail or {}}
+
+
+def _pk_version(r):
+    return {"guid": str(r.guid), "version_id": r.version_id, "status": r.status,
+            "created_at": r.created_at, "resource_json": r.resource_json}
+
+
+def _patientkort(patient):
+    """eps's half of the patient card: models -> the plain input that
+    `patientkort_view.build` documents. A port to dashboard/record writes its
+    own version of THIS function and copies the rest unchanged."""
+    from app.models.patient_block import PatientBlock
+    from app.models.patient_consent import PatientConsent
+    from app.services import euips_summary, patientkort_view
+
+    guid = patient.guid
+    rows = (db.session.query(FhirResource)
+            .filter(FhirResource.patient_guid == guid).all())
+    patient_rows = (db.session.query(FhirResource)
+                    .filter(FhirResource.resource_type == "Patient",
+                            FhirResource.resource_id == patient.resource_id).all())
+    version_guids = [r.guid for r in rows] + [r.guid for r in patient_rows]
+
+    audit_q = db.session.query(AuditLog).filter(
+        AuditLog.event_type.in_(_PK_WRITE_EVENTS),
+        or_(AuditLog.patient_guid == guid,
+            AuditLog.resource_guid.in_(version_guids + [guid])))
+    audits = [_pk_audit(a) for a in audit_q.order_by(AuditLog.created_at).all()]
+
+    resources = {}
+    for r in rows:
+        rec = resources.setdefault(f"{r.resource_type}/{r.resource_id}",
+                                   {"versions": [], "audits": []})
+        rec["versions"].append(_pk_version(r))
+        rec["audits"].extend(a for a in audits if a["resource_guid"] == str(r.guid))
+
+    p_guids = {str(r.guid) for r in patient_rows} | {str(guid)}
+    # The Patient's own versions, plus registrations, which are audited by
+    # patient_guid only (no resource_guid).
+    patient_audits = [a for a in audits
+                      if a["resource_guid"] in p_guids
+                      or a["event_type"] in ("patient_self_registered",
+                                             "patient_registered_at_unit")]
+
+    all_assign = (db.session.query(PatientClinicAssignment, Clinic)
+                  .join(Clinic, Clinic.guid == PatientClinicAssignment.clinic_guid)
+                  .filter(PatientClinicAssignment.patient_guid == guid)
+                  .order_by(PatientClinicAssignment.assigned_at).all())
+    caregivers = {c.organisation_guid: c.name for c in db.session.query(Clinic).filter(
+        Clinic.organisation_guid.in_([c.care_organisation_guid for _, c in all_assign
+                                      if c.care_organisation_guid]))}
+    units = [{
+        "guid": str(a.guid), "name": c.name, "since": a.assigned_at,
+        "caregiver_name": (c.name if c.is_own_caregiver()
+                           else caregivers.get(c.care_organisation_guid)),
+        "is_own_caregiver": c.is_own_caregiver(),
+        "clinic_guid": str(c.guid), "unit_org_guid": c.organisation_guid,
+        "caregiver_org_guid": c.care_organisation_guid, "origin": a.origin,
+    } for a, c in all_assign if a.ended_at is None]
+
+    now = datetime.now(timezone.utc)
+    blocks = [{
+        "guid": str(b.guid), "active": b.is_active(now),
+        "scope_type": b.source_scope_type, "created_at": b.created_at,
+        "created_by": str(b.created_by_user_guid) if b.created_by_user_guid else None,
+        "expires_at": b.expires_at, "lifted_at": b.lifted_at,
+        "lift_kind": b.lift_kind, "lift_expires_at": b.lift_expires_at,
+    } for b in db.session.query(PatientBlock).filter_by(patient_guid=guid).all()]
+    consents = [{
+        "guid": str(c.guid), "active": c.is_active(now),
+        "granted_at": c.granted_at, "granted_via": c.granted_via,
+        "granted_by": str(c.granted_by_user_guid) if c.granted_by_user_guid else None,
+        "expires_at": c.expires_at, "revoked_at": c.revoked_at,
+    } for c in db.session.query(PatientConsent).filter_by(patient_guid=guid).all()]
+
+    # The summary is optional for the card: a failure is reported BY NAME as
+    # "could not be read", never as an empty summary.
+    try:
+        sections = euips_summary.compose([r for r in rows if r.status == "active"])
+    except Exception:  # noqa: BLE001
+        logger.exception("patientkort: euips summary failed for a patient")
+        sections = None
+
+    return patientkort_view.build(
+        {"guid": str(guid), "fhir_id": patient.resource_id,
+         "family_name": patient.family_name, "given_name": patient.given_name,
+         "birth_date": patient.birth_date, "gender": patient.gender,
+         "identifier_value": patient.identifier_value,
+         "is_active": patient.is_active,
+         "archived": patient.archived_at is not None,
+         "created_at": patient.created_at,
+         "batch_guid": (str(patient.generation_batch_guid)
+                        if patient.generation_batch_guid else None)},
+        units=units, sections=sections, blocks=blocks, consents=consents,
+        records={"service": "eps.pdhc",
+                 "patient": {"versions": [_pk_version(r) for r in patient_rows],
+                             "audits": patient_audits},
+                 "resources": resources,
+                 "assignments": [{"guid": str(a.guid), "clinic_name": c.name,
+                                  "clinic_guid": str(c.guid),
+                                  "assigned_at": a.assigned_at,
+                                  "ended_at": a.ended_at, "origin": a.origin}
+                                 for a, c in all_assign],
+                 "assignment_audits": [a for a in audits if a["event_type"] in
+                                       ("patient.assigned", "patient.assignment_ended")]})
+
+
 @bp.route("/patients/<uuid:guid>")
 def patient_detail(guid):
     """Patient detail — resources, cards, and snapshots."""
@@ -385,6 +504,7 @@ def patient_detail(guid):
 
     return render_template(
         "patient_detail.html",
+        pk=_patientkort(patient),
         open_assignments=open_assignments,
         all_clinics=all_clinics,
         patient=patient,
