@@ -2060,3 +2060,9 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
 
 - 2026-11-25 gateway/app/templates/_patientkort.html, gateway/static/css/patientkort.css: two cards (narrow particulars+diagnoses left, sticky; wide EPS summary right; stacked below 60rem), operator 2026-11-25
+
+## 2026-11-25 — Patientkort API for dashboard/record (no ticket)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py — `GET /api/v1/patients/<guid>/patientkort`; `/euips-summary`'s gate lifted into the shared `_summary_reader_patient` (behaviour unchanged)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py — `_patientkort(patient, *, block_detail_visible=None)` (spärr redaction hook for the API)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patientkort_api.py (NEW, 12)
+- /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md

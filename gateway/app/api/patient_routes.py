@@ -1165,6 +1165,44 @@ def euips_section_status(guid):
     })
 
 
+def _summary_reader_patient(guid):
+    """The ONE gate for patient-content reads behind `@require_auth`:
+    `/euips-summary` (#980) and `/patientkort`. Returns `(patient, None)` or
+    `(None, response)`.
+
+    Shared rather than copied so the two reads cannot drift apart: the card
+    carries the summary, so a looser card gate would be a back door to it.
+
+    * malformed guid -> 400;
+    * unknown patient and out-of-scope patient -> the SAME 404, so the guid's
+      existence is not confirmed;
+    * a scope check that FAILS -> 503 `scope_undetermined`, never "not found".
+
+    Scope is `patient_export.exportable`, the one authoritative "may this
+    reader see this patient".
+    """
+    from app.services import patient_export as px
+
+    not_found = (jsonify({"error": "patient not found"}), 404)
+    if not is_uuid(guid):
+        return None, (jsonify({"error": "malformed patient guid"}), 400)
+    patient = _patient_by_either_id(guid)
+    if not patient:
+        return None, not_found
+    try:
+        allowed, _ = px.exportable([str(patient.guid)])
+    except Exception as exc:  # noqa: BLE001
+        return None, (jsonify({
+            "error": "scope_undetermined",
+            "message": ("whether this reader may see the patient could not be "
+                        "established; refused rather than served unchecked"),
+            "detail": type(exc).__name__,
+        }), 503)
+    if str(patient.guid) not in {str(a) for a in allowed}:
+        return None, not_found
+    return patient, None
+
+
 @bp.route("/<guid>/euips-summary", methods=["GET"])
 @require_auth
 def euips_summary(guid):
@@ -1190,28 +1228,12 @@ def euips_summary(guid):
     `fhir_resources` has no authoring-clinic column, so spärr cannot be
     applied per resource here; scope is per patient, via `exportable`.
     """
-    from app.services import patient_export as px
     from app.services import euips_summary as summ
     from app.services.audit_service import log_event
 
-    not_found = ({"error": "patient not found"}, 404)
-    if not is_uuid(guid):
-        return jsonify({"error": "malformed patient guid"}), 400
-    patient = _patient_by_either_id(guid)
-    if not patient:
-        return jsonify(not_found[0]), not_found[1]
-
-    try:
-        allowed, _ = px.exportable([str(patient.guid)])
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({
-            "error": "scope_undetermined",
-            "message": ("whether this reader may see the patient could not be "
-                        "established; refused rather than served unchecked"),
-            "detail": type(exc).__name__,
-        }), 503
-    if str(patient.guid) not in {str(a) for a in allowed}:
-        return jsonify(not_found[0]), not_found[1]
+    patient, refused = _summary_reader_patient(guid)
+    if refused is not None:
+        return refused
 
     # Current versions only (#1044). Without the filter every superseded
     # version was returned as an entry of its own, so an entry that got a new
@@ -1242,6 +1264,49 @@ def euips_summary(guid):
         "codes_verified": euips.CODES_VERIFIED,
         "codes_verified_against": euips.CODES_VERIFIED_AGAINST,
     })
+
+
+@bp.route("/<guid>/patientkort", methods=["GET"])
+@require_auth
+def patientkort(guid):
+    """The shared patient card's view-model, for dashboard.pdhc and record.pdhc.
+
+    `{"patientkort": pk, "version": 1}` where `pk` is exactly what
+    `_patientkort.html` renders, built by the SAME function as eps's own
+    patient page (`admin._patientkort`), so the three cards cannot disagree.
+
+    GATED EXACTLY AS `/euips-summary` — `@require_auth` and the shared
+    `_summary_reader_patient` (400 / same 404 / 503), and AUDITED like it. The
+    card carries the summary, so it must not be the looser door to it.
+
+    Spärr: like the summary, `fhir_resources` has no authoring-clinic column,
+    so nothing is filtered per resource. The block BANNER is the PDL Ch 4 §4
+    ¶3 notice and is shown to every reader; who set a block is withheld from
+    a reader outside the block's source scope, exactly as `GET .../blocks`
+    redacts `created_by_user_guid`.
+
+    JSON-safe by construction: `patientkort_view.build` emits strings, numbers,
+    booleans, None, lists and dicts only (a test round-trips it).
+    """
+    from app.admin import _patientkort
+    from app.api.blocks_routes import _scope_visible_to_caller
+    from app.services import patient_export as px
+    from app.services.audit_service import log_event
+
+    patient, refused = _summary_reader_patient(guid)
+    if refused is not None:
+        return refused
+
+    pk = _patientkort(patient, block_detail_visible=(
+        None if px.is_admin() else _scope_visible_to_caller))
+
+    log_event("patientkort_read", patient_guid=patient.guid,
+              detail={"entries": sum(s["count"] for s in pk["sections"]
+                                     if s["state"] == "present"),
+                      "diagnoses": len(pk["diagnoses"]),
+                      "sections_state": pk["sections_state"]})
+    db.session.commit()
+    return jsonify({"patientkort": pk, "version": 1})
 
 
 @bp.route("/<guid>/euips-header", methods=["GET"])

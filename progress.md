@@ -2518,3 +2518,11 @@ Operator request 2026-11-25: one graphic look for the patient card in eps, dashb
 - `repo_css.md`, named by ips.pdhc/CLAUDE.md, does not exist; followed its stated rules instead (12px base, PDHC colour tokens, extends base.html).
 - Tests: gateway/tests/test_patientkort_view.py (33). Suite 1530 -> 1563 passed, 1 skipped. Mutation control: a pop-out carrying the personnummer fails the guard test (the first regex-based version of that guard did not capture whole pop-outs, caught by its own control and replaced by an HTML parse).
 - Deploy: code + one new static file; no migration, no `.env` key.
+
+## 2026-11-25 Patientkort API — `GET /api/v1/patients/<guid>/patientkort` (LOCAL, not deployed)
+- Operator 2026-11-25: "För in samma patientkort i dashboard och record". eps serves the card's view-model; dashboard.pdhc and record.pdhc render the same partial from it.
+- Contract: `200 {"patientkort": pk, "version": 1}`, `pk` exactly what `_patientkort.html` renders, built by the SAME `admin._patientkort` as eps's own patient page (a test renders the partial from the JSON and compares it to the admin page's card byte for byte).
+- Gate = `/euips-summary`'s, SHARED not copied: `@require_auth` (Authorization Bearer/ApiKey only) + `_summary_reader_patient` (400 malformed; the same 404 for unknown and out-of-scope via `patient_export.exportable`; 503 `scope_undetermined` when the scope check fails). Audited as `patientkort_read`.
+- Spärr: as for the summary, no per-resource filter (fhir_resources has no authoring clinic). The block banner (PDL Ch 4 §4 ¶3) shows for every reader; WHO set a block is withheld outside its source scope, the same rule `GET .../blocks` uses (`_scope_visible_to_caller`). SU sees all.
+- Tests: 12 new (200, 401, same-404, no-unit, 400, card==summary status for 5 readers, 503, audit, block redaction + its control, JSON round trip, admin-page equality). Mutations: gate removed -> 5 fail; redaction removed -> 1 fails. Full suite **1575 passed, 1 skipped** (was 1563).
+- Deploy: eps FIRST, then dashboard/record. No new key or scope: dashboard calls it with the person's bearer, as it calls `/euips-summary`.

@@ -369,10 +369,17 @@ def _pk_version(r):
             "created_at": r.created_at, "resource_json": r.resource_json}
 
 
-def _patientkort(patient):
+def _patientkort(patient, *, block_detail_visible=None):
     """eps's half of the patient card: models -> the plain input that
     `patientkort_view.build` documents. A port to dashboard/record writes its
-    own version of THIS function and copies the rest unchanged."""
+    own version of THIS function and copies the rest unchanged.
+
+    The ONE builder for both readers of the card: this admin page (SU only)
+    and `GET /api/v1/patients/<guid>/patientkort`, which dashboard.pdhc and
+    record.pdhc render. `block_detail_visible(block) -> bool` is the API's
+    spärr redaction, the same rule `GET .../blocks` applies (plan §5.2): a
+    block the reader may not see in detail still counts toward the banner,
+    but WHO set it is withheld. None = no redaction (an SU)."""
     from app.models.patient_block import PatientBlock
     from app.models.patient_consent import PatientConsent
     from app.services import euips_summary, patientkort_view
@@ -426,7 +433,10 @@ def _patientkort(patient):
     blocks = [{
         "guid": str(b.guid), "active": b.is_active(now),
         "scope_type": b.source_scope_type, "created_at": b.created_at,
-        "created_by": str(b.created_by_user_guid) if b.created_by_user_guid else None,
+        "created_by": (str(b.created_by_user_guid)
+                       if b.created_by_user_guid and (block_detail_visible is None
+                                                      or block_detail_visible(b))
+                       else None),
         "expires_at": b.expires_at, "lifted_at": b.lifted_at,
         "lift_kind": b.lift_kind, "lift_expires_at": b.lift_expires_at,
     } for b in db.session.query(PatientBlock).filter_by(patient_guid=guid).all()]
