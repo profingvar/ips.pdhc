@@ -31,7 +31,11 @@ from app.models.emergency_access import (
     EmergencyAccess,
 )
 from app.services.audit_service import log_event
-from app.services.auth_service import require_auth
+from app.services.auth_service import (
+    blob_care_units,
+    require_auth,
+    require_auth_or_care_bearer,
+)
 from app.services.care_access_policy import evaluate_care_access
 from app.services.guids import is_uuid
 
@@ -95,9 +99,16 @@ def _active_emergency(patient_guid, reader_unit_guid):
 
 
 @bp.route("/<patient_guid>/care-access-check", methods=["POST"])
-@require_auth
+@require_auth_or_care_bearer
 def care_access_check(patient_guid):
-    """Evaluate the composed zone rule for one read."""
+    """Evaluate the composed zone rule for one read.
+
+    #1055: a care professional's own SSO bearer is admitted without an eps
+    users row (record.pdhc asks with the professional's bearer, like the
+    dashboard's patient picker, #1050). Such a caller may ask ONLY about a
+    reader unit it is affiliated to; otherwise anyone logged in could probe
+    which units a patient has spärrat. An SU and the ApiKey path are unchanged.
+    """
     patient = _patient_or_404(patient_guid)
     if patient is None:
         return _bad("patient not found", 404)
@@ -109,6 +120,13 @@ def care_access_check(patient_guid):
     author_caregiver = (body.get("author_caregiver_guid") or "").strip()
     if not reader_unit or not author_clinic:
         return _bad("reader_care_unit_guid and author_clinic_guid required")
+    # Only the actor admitted WITHOUT an eps users row is narrowed; an eps
+    # users row keeps its behaviour from before #1055.
+    blob = getattr(g, "bearer_blob", None)
+    if (getattr(g, "care_bearer_transient", False) and blob is not None
+            and not blob.get("is_su_admin")
+            and reader_unit.lower() not in blob_care_units(blob)):
+        return _bad("reader_care_unit_guid is not one of your care units", 403)
 
     emergency = _active_emergency(patient.guid, reader_unit)
     allowed, zone, basis, reason = evaluate_care_access(

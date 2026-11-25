@@ -2046,3 +2046,5 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patient_extract_1059.py (NEW, 22)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/docs/technical.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
 
+
+- 2026-11-25 #1055: gateway/app/api/care_access_routes.py, gateway/tests/test_care_access_routes.py (care-access-check admits a professional bearer without an eps users row, narrowed to own units)

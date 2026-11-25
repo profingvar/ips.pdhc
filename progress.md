@@ -2497,3 +2497,7 @@ control that keeps it off the LAN.
 - Tests: gateway/tests/test_patient_extract_1059.py (22). Suite 1500 -> 1522 passed, 1 skipped. 5 mutation controls (no bearer_required, no scope+D9, no D9, no personnummer redaction, exclusion lost), each fails on an assertion.
 - Deploy: code only (3 files + blueprint registration in app/__init__.py); no migration, no `.env` key.
 
+
+## 2026-11-25 #1055 care-access-check for record.pdhc
+
+`POST /api/v1/patients/<g>/care-access-check` now uses `require_auth_or_care_bearer` (as `/clinics`, #1050): record.pdhc asks with the professional's own bearer, and almost no professional has an eps users row. An actor admitted without such a row may ask only about a reader unit in its own `affiliations` (403 otherwise, not audited as a check); SU, eps users rows and ApiKey callers unchanged. Tests 1526 passed; revert controls: decorator (3 fail), unit gate (1 fail).

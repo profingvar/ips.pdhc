@@ -189,3 +189,56 @@ def test_sso_bearer_resolves_local_user_by_email(client, db, patient,
               "author_clinic_guid": UNIT_A1,
               "author_caregiver_guid": ORG_A})
     assert r.status_code == 200
+
+
+# --- #1055: record.pdhc asks with the professional's own bearer -------------
+
+def _bearer(client, monkeypatch, blob):
+    from app.services import auth_service
+    monkeypatch.setitem(client.application.config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(auth_service, "resolve_sso_user", lambda tok: blob)
+
+
+def _bearer_check(client, patient, reader_unit):
+    return client.post(
+        f"/api/v1/patients/{patient.guid}/care-access-check",
+        headers={"Authorization": "Bearer t"},
+        json={"reader_care_unit_guid": reader_unit,
+              "reader_care_organisation_guid": ORG_B,
+              "author_clinic_guid": UNIT_A1,
+              "author_caregiver_guid": ORG_A})
+
+
+def test_professional_without_eps_row_is_answered_for_own_unit(
+        client, db, patient, monkeypatch):
+    _bearer(client, monkeypatch, {
+        "email": "no-eps-row@example.se", "user_type": "professional",
+        "affiliations": [{"care_unit_guid": UNIT_B1.upper()}]})
+    r = _bearer_check(client, patient, UNIT_B1)
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["zone"] == 3
+
+
+def test_professional_cannot_ask_for_a_unit_they_are_not_affiliated_to(
+        client, db, patient, monkeypatch):
+    _bearer(client, monkeypatch, {
+        "email": "no-eps-row@example.se", "user_type": "professional",
+        "affiliations": [{"care_unit_guid": str(uuid.uuid4())}]})
+    r = _bearer_check(client, patient, UNIT_B1)
+    assert r.status_code == 403
+    assert db.session.query(AuditLog).filter_by(
+        event_type="care_access.check").count() == 0
+
+
+def test_su_bearer_may_ask_for_any_unit(client, db, patient, monkeypatch):
+    _bearer(client, monkeypatch, {
+        "email": "su@example.se", "user_type": "professional",
+        "is_su_admin": True, "affiliations": []})
+    assert _bearer_check(client, patient, UNIT_B1).status_code == 200
+
+
+def test_patient_bearer_is_still_refused(client, db, patient, monkeypatch):
+    _bearer(client, monkeypatch, {
+        "email": "pat@example.se", "user_type": "patient",
+        "affiliations": [{"care_unit_guid": UNIT_B1}]})
+    assert _bearer_check(client, patient, UNIT_B1).status_code == 401
