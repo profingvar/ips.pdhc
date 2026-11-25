@@ -46,14 +46,35 @@
   font-size: var(--pk-fs);
   line-height: 1.5;
   color: var(--pk-text);
+  margin: 0 0 20px;
+  min-width: 0;
+  /* Two cards side by side: particulars and diagnoses on the left (narrow),
+     the EPS summary on the right (wide). One column below 60rem. */
+  display: grid;
+  grid-template-columns: minmax(17rem, 24rem) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+/* The particulars stay in view while the summary scrolls (wide only). */
+.pk-side { position: sticky; top: 12px; }
+@media (max-width: 60rem) {
+  .pk { grid-template-columns: minmax(0, 1fr); }
+  .pk-side { position: static; }
+}
+.pk-card {
   background: var(--pk-bg);
   border: 1px solid var(--pk-border);
   border-radius: var(--pk-radius);
   box-shadow: var(--pk-shadow);
   padding: var(--pk-pad);
-  margin: 0 0 20px;
   min-width: 0;
 }
+/* In the narrow card the identity takes the full width and the badges wrap
+   under it; the facts stack two by two. */
+.pk-side .pk-ident { flex-basis: 100%; }
+.pk-side .pk-facts { gap: 8px 22px; }
+.pk-side .pk-name { font-size: 1.75em; }
+.pk-main .pk-block--main { padding-top: 0; }
 
 @media (prefers-color-scheme: dark) {
   .pk {

@@ -44,6 +44,10 @@
 {%- endmacro -%}
 
 <section class="pk" aria-labelledby="pk-name" data-pk>
+  {#- Two cards (operator 2026-11-25): a narrow one on the left with the
+      patient's particulars and diagnoses, a wider one on the right with the
+      EPS summary. They stack below 60rem. #}
+  <div class="pk-card pk-side">
   <header class="pk-head">
     <div class="pk-ident">
       <p class="pk-kicker">Patientkort</p>
@@ -101,7 +105,14 @@
     {%- endif %}
   </section>
 
-  <section class="pk-block" aria-labelledby="pk-eps-h">
+  <footer class="pk-foot">
+    <span>GUID <code class="pk-id" title="Markera för att kopiera">{{ pk.ids.guid }}</code></span>
+    {%- if pk.ids.fhir_id %}<span>FHIR-id <code class="pk-id" title="Markera för att kopiera">{{ pk.ids.fhir_id }}</code></span>{% endif %}
+  </footer>
+  </div>
+
+  <div class="pk-card pk-main">
+  <section class="pk-block pk-block--main" aria-labelledby="pk-eps-h">
     <h2 class="pk-h" id="pk-eps-h">Patientsammanfattning (EPS)</h2>
     {%- if pk.sections_state == 'unavailable' %}
     <p class="pk-empty">Patientsammanfattningen kunde inte läsas.</p>
@@ -139,10 +150,7 @@
     {%- endif %}
   </section>
 
-  <footer class="pk-foot">
-    <span>GUID <code class="pk-id" title="Markera för att kopiera">{{ pk.ids.guid }}</code></span>
-    {%- if pk.ids.fhir_id %}<span>FHIR-id <code class="pk-id" title="Markera för att kopiera">{{ pk.ids.fhir_id }}</code></span>{% endif %}
-  </footer>
+  </div>
 </section>
 <script>
 /* Patientkort pop-outs: CSS already opens them on hover and focus. This adds

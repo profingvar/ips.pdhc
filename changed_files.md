@@ -2058,3 +2058,5 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/templates/patient_detail.html — card on top, Administration below
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patientkort_view.py (NEW, 33)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+
+- 2026-11-25 gateway/app/templates/_patientkort.html, gateway/static/css/patientkort.css: two cards (narrow particulars+diagnoses left, sticky; wide EPS summary right; stacked below 60rem), operator 2026-11-25
