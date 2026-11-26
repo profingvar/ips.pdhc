@@ -1166,7 +1166,10 @@ def euips_section_status(guid):
 
 
 def _summary_reader_patient(guid):
-    """The ONE gate for patient-content reads behind `@require_auth`:
+    """The ONE gate for patient-content reads behind `@require_auth_or_care_bearer`
+    (operator 2026-11-26: a professional's own SSO bearer is admitted without
+    an eps users row, scoped by `affiliations[].care_unit_guid` in
+    `patient_export`, as the /clinics picker is):
     `/euips-summary` (#980) and `/patientkort`. Returns `(patient, None)` or
     `(None, response)`.
 
@@ -1204,7 +1207,7 @@ def _summary_reader_patient(guid):
 
 
 @bp.route("/<guid>/euips-summary", methods=["GET"])
-@require_auth
+@require_auth_or_care_bearer
 def euips_summary(guid):
     """#980 — the live euIPS summary: each section's status AND its entries.
 
@@ -1267,7 +1270,7 @@ def euips_summary(guid):
 
 
 @bp.route("/<guid>/patientkort", methods=["GET"])
-@require_auth
+@require_auth_or_care_bearer
 def patientkort(guid):
     """The shared patient card's view-model, for dashboard.pdhc and record.pdhc.
 

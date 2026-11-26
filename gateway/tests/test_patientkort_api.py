@@ -198,3 +198,50 @@ def test_the_JSON_renders_the_SAME_card_as_the_admin_page(client, db, world, app
     assert _card_html(from_json) == _card_html(page)
     assert "Hypertoni" in from_json and "Spärr aktiv" in from_json
     assert from_json.count(PNR) == 1      # the field, never a pop-out
+
+
+# ── a professional's own SSO bearer (operator 2026-11-26) ───────────────
+# dashboard and record call with the person's bearer; almost no professional
+# has an eps users row, so both reads use `require_auth_or_care_bearer` and the
+# scope is the person's affiliated care units (Rule 24), never organization_ids.
+
+def _bearer_blob(units=(), *, user_type="professional", legacy=()):
+    b = {"user_guid": str(uuid.uuid4()), "email": f"b{uuid.uuid4().hex[:6]}@example.test",
+         "user_type": user_type, "is_su_admin": False, "session_phases": [],
+         "affiliations": [{"care_unit_guid": u, "role": "doctor"} for u in units]}
+    if legacy:
+        b["organization_ids"] = list(legacy)
+    return b
+
+
+def _as_bearer(client, blob, url):
+    with patch("app.services.auth_service.resolve_sso_user", return_value=blob):
+        return client.get(url, headers={"Authorization": "Bearer t-synthetic"})
+
+
+@pytest.mark.parametrize("path", ["patientkort", "euips-summary"])
+def test_professional_bearer_at_the_patients_unit_reads(auth_on, db, world, path):
+    blob = _bearer_blob([str(world["a"].organisation_guid)])
+    r = _as_bearer(auth_on, blob, f"/api/v1/patients/{world['p'].guid}/{path}")
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("path", ["patientkort", "euips-summary"])
+def test_professional_bearer_at_another_unit_gets_404(auth_on, db, world, path):
+    blob = _bearer_blob([str(world["c"].organisation_guid)])
+    r = _as_bearer(auth_on, blob, f"/api/v1/patients/{world['p'].guid}/{path}")
+    assert r.status_code == 404
+
+
+@pytest.mark.parametrize("path", ["patientkort", "euips-summary"])
+def test_memberships_are_not_affiliations(auth_on, db, world, path):
+    blob = _bearer_blob([], legacy=[str(world["a"].organisation_guid)])
+    r = _as_bearer(auth_on, blob, f"/api/v1/patients/{world['p'].guid}/{path}")
+    assert r.status_code == 404
+
+
+@pytest.mark.parametrize("path", ["patientkort", "euips-summary"])
+def test_a_patient_bearer_is_401(auth_on, db, world, path):
+    blob = _bearer_blob([str(world["a"].organisation_guid)], user_type="patient")
+    r = _as_bearer(auth_on, blob, f"/api/v1/patients/{world['p'].guid}/{path}")
+    assert r.status_code == 401

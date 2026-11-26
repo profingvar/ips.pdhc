@@ -2066,3 +2066,4 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/admin.py — `_patientkort(patient, *, block_detail_visible=None)` (spärr redaction hook for the API)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patientkort_api.py (NEW, 12)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
+- 2026-11-26 gateway/app/api/patient_routes.py, gateway/tests/test_patientkort_api.py: /euips-summary and /patientkort admit a professional SSO bearer, scoped by affiliated care units (operator 2026-11-26)
