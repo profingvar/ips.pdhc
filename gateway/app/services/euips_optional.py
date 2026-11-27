@@ -69,14 +69,14 @@ _VITALS = [
     ("29463-7", "Body weight", "kg", 55, 110),
     ("8302-2", "Body height", "cm", 155, 195),
     ("9279-1", "Respiratory rate", "/min", 12, 20),
-    ("2708-6", "Oxygen saturation", "%", 94, 99),
+    ("2708-6", "Oxygen saturation in Arterial blood", "%", 94, 99),
 ]
 
 _PAST_ILLNESSES = [
     ("40055000", "Chronic sinusitis", 5),
     ("233604007", "Pneumonia", 10),
-    ("1734006", "Fracture of radius", 8),
-    ("80146002", "Appendicitis", 10),
+    ("12676007", "Fracture of radius", 8),
+    ("74400008", "Appendicitis", 10),
     ("36971009", "Sinusitis", 5),
     ("230690007", "Cerebrovascular accident", 55),
 ]
@@ -89,15 +89,15 @@ _SOCIAL_HISTORY = [
         ("77176002", "Smoker"),
     ]),
     ("74013-4", "Alcoholic drinks per day", [
-        ("105542008", "Non-drinker"),
+        ("783261004", "Lifetime non-drinker of alcohol"),
         ("219006", "Current drinker of alcohol"),
     ]),
 ]
 
 _FUNCTIONAL = [
-    ("45605-3", "Independent in activities of daily living"),
-    ("46610-1", "Requires assistance with mobility"),
-    ("72133-2", "Uses a walking aid"),
+    ("282144007", "Able to walk"),
+    ("719232003", "Difficulty walking"),
+    ("165251008", "Walking aid use"),
 ]
 
 _CARE_PLAN_TITLES = [
@@ -110,11 +110,11 @@ _CARE_PLAN_TITLES = [
 #: Advance directives. SNOMED-coded intents, deliberately phrased as the
 #: patient's own decision rather than a clinical order.
 _ADVANCE_DIRECTIVES = [
-    ("61420007", "Do not attempt resuscitation",
+    ("304253006", "Not for resuscitation",
      "Patient has recorded a decision against attempted resuscitation."),
-    ("225204009", "Organ donation consent",
+    ("182774007", "Consent to donate organs given",
      "Patient consents to organ donation."),
-    ("713673000", "Advance statement of treatment preferences",
+    ("425392003", "Active advance directive",
      "Patient has recorded treatment preferences for future incapacity."),
 ]
 
@@ -255,7 +255,7 @@ def _pregnancy(ref: str, birth, gender, rng: random.Random) -> list[dict]:
             "subject": {"reference": ref},
             "status": "final",
             "category": _category("social-history", "Social History"),
-            "code": _cc("http://loinc.org", "11640-0", "Number of pregnancies"),
+            "code": _cc("http://loinc.org", "11640-0", "[#] Births total"),
             "valueQuantity": {"value": n, "unit": "1",
                               "system": "http://unitsofmeasure.org", "code": "1"},
             "effectiveDateTime": _recent(rng, 1000),
@@ -313,7 +313,10 @@ def _functional_status(ref: str, birth, rng: random.Random) -> list[dict]:
         # `functional-status` code. Recorded in euips_sections rather than
         # invented.
         "category": _category("survey", "Survey"),
-        "code": _cc("http://loinc.org", code, display),
+        # SNOMED CT findings (#1061): the LOINC codes used before named other
+        # things entirely (72133-2 is the MoCA score, 45605-3 a CMS toilet-use
+        # item, 46610-1 does not exist), measured on tx.fhir.org 2026-11-26.
+        "code": _cc("http://snomed.info/sct", code, display),
         "effectiveDateTime": _recent(rng, 365),
     }]
 
@@ -359,7 +362,7 @@ def _advance_directives(ref: str, birth, rng: random.Random) -> list[dict]:
         # what keeps it readable as a directive rather than a data-sharing
         # permission.
         "scope": _cc("http://terminology.hl7.org/CodeSystem/consentscope",
-                     "adr", "Advance Care Directive"),
+                     "adr", "Advanced Care Directive"),  # THO display (#1061)
         "category": [_cc("http://snomed.info/sct", code, display)],
         "dateTime": _recent(rng, 1500),
     }]

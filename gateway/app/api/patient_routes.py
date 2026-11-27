@@ -1230,9 +1230,22 @@ def euips_summary(guid):
 
     `fhir_resources` has no authoring-clinic column, so spärr cannot be
     applied per resource here; scope is per patient, via `exportable`.
+
+    `?include=resource` (#1061): every entry and absent assertion also
+    carries the stored R5 `resource`. Same gate, same audit row (its detail
+    says `resources: true`). record.pdhc asks for it to build the HL7 Europe
+    Patient Summary document, so eps stays the ONE builder of the sections.
+    Any other `include` value is a 400, so a typo is not silently a summary
+    without resources.
     """
     from app.services import euips_summary as summ
     from app.services.audit_service import log_event
+
+    include = (request.args.get("include") or "").strip()
+    if include not in ("", "resource"):
+        return jsonify({"error": "bad_include",
+                        "message": "include must be 'resource' or absent"}), 400
+    with_resources = include == "resource"
 
     patient, refused = _summary_reader_patient(guid)
     if refused is not None:
@@ -1245,13 +1258,15 @@ def euips_summary(guid):
     rows = (db.session.query(FhirResource)
             .filter(FhirResource.patient_guid == patient.guid)
             .filter(FhirResource.status == "active").all())
-    sections = summ.compose(rows)
+    sections = summ.compose(rows, include_resources=with_resources)
     status = {s["key"]: s["status"] for s in sections}
 
-    log_event("euips_summary_read", patient_guid=patient.guid,
-              detail={"entries": sum(len(s["entries"]) for s in sections),
-                      "sections_present": sum(1 for s in sections
-                                              if s["status"] == euips.PRESENT)})
+    detail = {"entries": sum(len(s["entries"]) for s in sections),
+              "sections_present": sum(1 for s in sections
+                                      if s["status"] == euips.PRESENT)}
+    if with_resources:
+        detail["resources"] = True
+    log_event("euips_summary_read", patient_guid=patient.guid, detail=detail)
     db.session.commit()
 
     return jsonify({

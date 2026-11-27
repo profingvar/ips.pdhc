@@ -231,3 +231,77 @@ def test_a_FAILING_scope_check_is_503_not_not_found(client, db, monkeypatch):
     r = client.get(f"/api/v1/patients/{p.guid}/euips-summary")
     assert r.status_code == 503
     assert r.get_json()["error"] == "scope_undetermined"
+
+
+# --------------------------------------------------------------------------
+# #1061: ?include=resource — the stored resource rides along, for record.pdhc's
+# HL7 Europe Patient Summary document. eps stays the one section builder.
+# --------------------------------------------------------------------------
+
+def test_by_default_no_entry_carries_its_resource(client, db):
+    p = _patient(db); _add(db, p, "AllergyIntolerance", _allergy())
+    body = client.get(f"/api/v1/patients/{p.guid}/euips-summary").get_json()
+    e = _section(body["sections"], "allergies")["entries"][0]
+    assert "resource" not in e
+
+
+def test_include_resource_carries_the_stored_resource_unchanged(client, db):
+    p = _patient(db)
+    row = _add(db, p, "AllergyIntolerance", _allergy())
+    r = client.get(f"/api/v1/patients/{p.guid}/euips-summary?include=resource")
+    assert r.status_code == 200
+    e = _section(r.get_json()["sections"], "allergies")["entries"][0]
+    assert e["resource"] == row.resource_json
+    assert e["resource_id"] == row.resource_id
+
+
+def test_include_resource_carries_the_absent_assertion_too(client, db):
+    p = _patient(db)
+    row = _add(db, p, "AllergyIntolerance", _absent("allergies"))
+    body = client.get(f"/api/v1/patients/{p.guid}/euips-summary?include=resource").get_json()
+    s = _section(body["sections"], "allergies")
+    assert s["status"] == euips.EXPLICITLY_ABSENT
+    assert s["absent"]["resource"] == row.resource_json
+
+
+def test_include_resource_only_returns_current_versions(client, db):
+    p = _patient(db)
+    old = _add(db, p, "AllergyIntolerance", _allergy(display="Old version"))
+    old.status = "superseded"; db.session.commit()
+    _add(db, p, "AllergyIntolerance", _allergy(display="Current version"))
+    body = client.get(f"/api/v1/patients/{p.guid}/euips-summary?include=resource").get_json()
+    shown = [e["resource"]["code"]["coding"][0]["display"]
+             for e in _section(body["sections"], "allergies")["entries"]]
+    assert shown == ["Current version"]
+
+
+def test_the_resource_is_a_copy_not_the_stored_object(db):
+    p = _patient(db)
+    row = _add(db, p, "AllergyIntolerance", _allergy())
+    s = _section(summ.compose(_rows(db, p), include_resources=True), "allergies")
+    s["entries"][0]["resource"]["code"] = {"text": "changed"}
+    assert row.resource_json["code"]["coding"][0]["code"] == "91936005"
+
+
+def test_an_unknown_include_is_400_not_a_summary_without_resources(client, db):
+    p = _patient(db); _add(db, p, "AllergyIntolerance", _allergy())
+    r = client.get(f"/api/v1/patients/{p.guid}/euips-summary?include=resources")
+    assert r.status_code == 400 and r.get_json()["error"] == "bad_include"
+
+
+def test_include_resource_is_gated_exactly_like_the_summary(client, db, monkeypatch):
+    p = _patient(db); _add(db, p, "AllergyIntolerance", _allergy())
+    from app.services import patient_export as px
+    monkeypatch.setattr(px, "exportable", lambda guids: ([], []))
+    r = client.get(f"/api/v1/patients/{p.guid}/euips-summary?include=resource")
+    assert r.status_code == 404
+    assert "resource" not in r.get_data(as_text=True)
+
+
+def test_include_resource_is_audited_and_says_so(client, db):
+    p = _patient(db); _add(db, p, "AllergyIntolerance", _allergy())
+    client.get(f"/api/v1/patients/{p.guid}/euips-summary?include=resource")
+    row = (db.session.query(AuditLog).filter_by(event_type="euips_summary_read")
+           .order_by(AuditLog.created_at.desc()).first())
+    assert str(row.patient_guid) == str(p.guid)
+    assert (row.detail or {}).get("resources") is True

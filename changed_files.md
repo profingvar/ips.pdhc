@@ -2067,3 +2067,4 @@ deployed.
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/tests/test_patientkort_api.py (NEW, 12)
 - /Users/martiningvar/T7_sidewinder/ips.pdhc/progress.md, /Users/martiningvar/T7_sidewinder/ips.pdhc/changed_files.md
 - 2026-11-26 gateway/app/api/patient_routes.py, gateway/tests/test_patientkort_api.py: /euips-summary and /patientkort admit a professional SSO bearer, scoped by affiliated care units (operator 2026-11-26)
+- 2026-11-27 (#1061) EEHRxF Patient Summary support: /Users/martiningvar/T7_sidewinder/ips.pdhc/gateway/app/api/patient_routes.py, gateway/app/services/euips_summary.py, gateway/app/services/euips_required.py, gateway/app/services/euips_recommended.py, gateway/app/services/euips_optional.py, gateway/app/services/euips_eu_additions.py, gateway/tests/test_euips_summary_980.py, gateway/tests/test_recommended_sections_794.py, progress.md, newtask.txt, changed_files.md, docs/technical.md

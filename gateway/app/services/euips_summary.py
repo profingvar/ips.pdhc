@@ -32,6 +32,7 @@ defect inside a presentation layer.
 """
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
@@ -189,13 +190,20 @@ def _cdr_ref(rj: dict) -> dict | None:
     return None
 
 
-def compose(rows) -> list[dict]:
+def compose(rows, *, include_resources: bool = False) -> list[dict]:
     """Every section, in catalogue order, with its status and its entries.
 
     A section's entries are the rows `section_matches` assigns to it, EXCEPT
     absent assertions, which are returned separately under `absent`. When a
     section holds both, its status is PRESENT and the stale assertion is not
     shown — the same rule `status_for_resources` applies.
+
+    `include_resources` (#1061): each entry, and the absent assertion, also
+    carries `resource` — the stored FHIR R5 resource exactly as written, a
+    copy. record.pdhc builds the HL7 Europe Patient Summary document from it
+    and converts R5 -> R4 there; THIS module stays the one place that decides
+    which resource belongs to which section, so the document and the summary
+    the card shows cannot describe two different patients.
     """
     rows = list(rows)
     status = euips.status_for_resources(rows)
@@ -208,9 +216,14 @@ def compose(rows) -> list[dict]:
                 if euips.absent_section_key(rj) == s.key and absent is None:
                     absent = {"code": (_concept(rj.get("code"))[1]),
                               "narrative_text": narrative_text(rj)}
+                    if include_resources:
+                        absent["resource"] = copy.deepcopy(rj)
                 continue
             if euips.section_matches(s, r.resource_type, rj):
-                entries.append(entry(r))
+                e = entry(r)
+                if include_resources:
+                    e["resource"] = copy.deepcopy(rj)
+                entries.append(e)
         st = status[s.key]
         out.append({
             "key": s.key,

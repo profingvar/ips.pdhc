@@ -80,13 +80,13 @@ SIMULATED = "simulated"
 #: Clinically weighty alerts — the section exists so a clinician abroad sees
 #: these first.
 _ALERTS = [
-    ("1023001", "Anticoagulant therapy — bleeding risk",
+    ("182764009", "Anticoagulant therapy",
      "Patient is on long-term anticoagulation."),
-    ("419099009", "Risk of anaphylaxis",
+    ("704354006", "At increased risk of anaphylaxis",
      "Previous anaphylactic reaction recorded."),
-    ("161477002", "Difficult airway",
+    ("718447001", "Difficult intubation",
      "Intubation previously documented as difficult."),
-    ("58597006", "Implanted device present — MRI caution",
+    ("703398004", "Cardiac implant in situ",
      "Implanted device; confirm MRI compatibility before imaging."),
 ]
 
@@ -107,11 +107,11 @@ ISO_3166_SYSTEM = "urn:iso:std:iso:3166"
 
 #: What a patient reports themselves, as opposed to a clinician's record.
 _PATIENT_REPORTED = [
-    ("75321-0", "Clinical finding reported by patient",
+    ("75321-0", "Clinical finding",
      "Patient reports intermittent dizziness on standing."),
-    ("72514-3", "Pain severity, patient-reported",
+    ("72514-3", "Pain severity - 0-10 verbal numeric rating [Score] - Reported",
      "Patient reports pain 4 of 10 in the lower back."),
-    ("89204-2", "Patient-reported sleep quality",
+    ("75321-0", "Clinical finding",
      "Patient reports poor sleep for several weeks."),
 ]
 
@@ -195,8 +195,9 @@ def _travel_history(ref: str, rng: random.Random) -> list[dict]:
             "social-history", "Social History")],
         # LOINC 94651-7, FIXED by the EPS profile — not the SNOMED code #795
         # guessed. Written from the constant so there is one place to change.
+        # Display: LOINC's own long common name (#1061, tx.fhir.org).
         "code": _cc(euips.TRAVEL_CODE_SYSTEM, euips.TRAVEL_CODE,
-                    "History of Travel"),
+                    "Country of travel [Location]"),
         # A coded country, because the profile's binding on value[x] is
         # REQUIRED. `valueString: "Thailand"` satisfied nothing.
         "valueCodeableConcept": _cc(ISO_3166_SYSTEM, iso2, place),

@@ -61,11 +61,11 @@ ABSENT_RATE = {
 
 _ALLERGIES = [
     ("91936005", "Allergy to penicillin"),
-    ("293585002", "Allergy to acetylsalicylic acid"),
-    ("232347008", "Allergy to peanut"),
-    ("425525006", "Allergy to lactose"),
-    ("300916003", "Allergy to latex"),
-    ("419263009", "Allergy to pollen"),
+    ("293586001", "Allergy to aspirin"),
+    ("91935009", "Allergy to peanut"),
+    ("782555009", "Allergy to cow's milk protein"),
+    ("1003755004", "Allergy to latex"),
+    ("300910009", "Allergy to pollen"),
 ]
 
 _CONDITIONS = [

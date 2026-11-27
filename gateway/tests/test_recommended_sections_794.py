@@ -157,8 +157,10 @@ class TestImmunisationDatesFollowTheBirthDate:
         bodies = rec.recommended_sections_for("Patient/p", "2022-01-01", rng=rng)
         for b in bodies:
             if b["resourceType"] == "Immunization":
-                disp = (b.get("vaccineCode") or {}).get("text", "").lower()
-                assert "influenza" not in disp, disp
+                # by CODE (#1061): the ATC display of the DTaP-IPV-Hib vaccine
+                # spells out "haemophilus influenzae", which is not flu
+                codes = {c.get("code") for c in (b.get("vaccineCode") or {}).get("coding", [])}
+                assert "J07BB02" not in codes, codes
 
 
 class TestRecommendedMayBeAbsent:

@@ -9,6 +9,12 @@ progress.md is the authority when they disagree (CLAUDE.md §16); this file is
 the short answer.
 
 
+#1061 EEHRxF Patient Summary support — LOCAL, not deployed (2026-11-27)
+-----------------------------------------------------------------------
+/euips-summary?include=resource + corrected generator codes. 1591 passed.
+Deploy eps BEFORE record.pdhc stage 8. No migration, no .env key.
+
+
 #928 last_updated — DONE AND DEPLOYED (2026-11-04). Ticket closed.
 ------------------------------------------------------------------
 1242 tests pass (was 1231). No migration: `onupdate` is ORM-level.

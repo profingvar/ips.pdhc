@@ -62,27 +62,27 @@ ABSENT_SHARE = 0.5
 #: Swedish childhood programme, roughly: (ATC, display, age in years at dose).
 #: Ages are what make the dates plausible -- the point of this ticket.
 _CHILDHOOD_VACCINES = [
-    ("J07CA06", "Diphtheria-tetanus-pertussis-polio-Hib", 0.25),
-    ("J07CA06", "Diphtheria-tetanus-pertussis-polio-Hib booster", 1.0),
-    ("J07BD52", "Measles, mumps and rubella", 1.5),
-    ("J07AL02", "Pneumococcal conjugate", 0.5),
-    ("J07BM01", "Human papillomavirus", 11.0),
-    ("J07AM01", "Tetanus booster", 15.0),
+    ("J07CA06", "diphtheria-haemophilus influenzae B-pertussis-poliomyelitis-tetanus", 0.25),
+    ("J07CA06", "diphtheria-haemophilus influenzae B-pertussis-poliomyelitis-tetanus", 1.0),
+    ("J07BD52", "measles, combinations with mumps and rubella, live attenuated", 1.5),
+    ("J07AL02", "pneumococcus, purified polysaccharides antigen conjugated", 0.5),
+    ("J07BM01", "papillomavirus (human types 6, 11, 16, 18)", 11.0),
+    ("J07AM01", "tetanus toxoid", 15.0),
 ]
 
 #: Given seasonally to older adults, so dated in recent years and gated on age.
 _SEASONAL_VACCINES = [
-    ("J07BB02", "Influenza vaccine", 60),
-    ("J07BX03", "COVID-19 vaccine", 18),
+    ("J07BB02", "influenza, inactivated, split virus or surface antigen", 60),
+    ("J07BN01", "covid-19, RNA-based vaccine", 18),
 ]
 
 _PROCEDURES = [
     ("80146002", "Appendectomy", 15),
-    ("397956004", "Coronary angiography", 45),
+    ("33367005", "Angiography of coronary artery", 45),
     ("73761001", "Colonoscopy", 40),
     ("40701008", "Echocardiography", 30),
-    ("71388002", "Total hip replacement", 60),
-    ("119771000000106", "Cataract surgery", 65),
+    ("52734007", "Total replacement of hip", 60),
+    ("54885007", "Extraction of cataract", 65),
 ]
 
 #: (SNOMED, display, minimum age). The CGM sensor is deliberately here:
@@ -90,37 +90,37 @@ _PROCEDURES = [
 #: integration describe the same object rather than two different ones.
 _DEVICES = [
     ("14106009", "Cardiac pacemaker", 55),
-    ("69555007", "Implantable cardioverter defibrillator", 55),
-    ("337414009", "Continuous glucose monitoring sensor", 10),
-    ("25062003", "Insulin pump", 10),
-    ("304120007", "Total hip prosthesis", 60),
-    ("72506001", "Implantable hearing aid", 50),
+    ("72506001", "Implantable defibrillator", 55),
+    ("700585005", "Invasive interstitial-fluid glucose monitoring system", 10),
+    ("69805005", "Insulin pump", 10),
+    ("304120007", "Total hip replacement prosthesis", 60),
+    ("43252007", "Cochlear prosthesis", 50),
 ]
 
 #: (LOINC panel, display, [(LOINC, display, unit, low, high)]) -- the report
 #: AND its results, because a report without results is the defect above.
 _LAB_PANELS = [
-    ("58410-2", "Complete blood count panel", [
-        ("718-7", "Haemoglobin", "g/L", 115, 165),
-        ("777-3", "Platelets", "10*9/L", 150, 400),
-        ("6690-2", "Leukocytes", "10*9/L", 3.5, 10.0),
+    ("58410-2", "CBC panel - Blood by Automated count", [
+        ("718-7", "Hemoglobin [Mass/volume] in Blood", "g/L", 115, 165),
+        ("777-3", "Platelets [#/volume] in Blood by Automated count", "10*9/L", 150, 400),
+        ("6690-2", "Leukocytes [#/volume] in Blood by Automated count", "10*9/L", 3.5, 10.0),
     ]),
-    ("24323-8", "Comprehensive metabolic panel", [
-        ("14682-9", "Creatinine", "umol/L", 50, 110),   # #728: molar code for a molar unit (2160-0 is mg/dL)
-        ("14749-6", "Glucose", "mmol/L", 4.0, 7.0),      # #728: molar code for a molar unit (2345-7 is mg/dL)
+    ("24323-8", "Comprehensive metabolic 2000 panel - Serum or Plasma", [
+        ("14682-9", "Creatinine [Moles/volume] in Serum or Plasma", "umol/L", 50, 110),   # #728: molar code for a molar unit (2160-0 is mg/dL)
+        ("14749-6", "Glucose [Moles/volume] in Serum or Plasma", "mmol/L", 4.0, 7.0),      # #728: molar code for a molar unit (2345-7 is mg/dL)
         ("1751-7", "Albumin", "g/L", 35, 50),
     ]),
-    ("24357-6", "Urinalysis panel", [
-        ("5811-5", "Urine specific gravity", "1", 1.005, 1.030),
+    ("24357-6", "Urinalysis macro (dipstick) panel - Urine", [
+        ("5811-5", "Specific gravity of Urine by Test strip", "1", 1.005, 1.030),
     ]),
 ]
 
 #: Imaging: a report with a conclusion and no numeric result is CORRECT here,
 #: unlike a lab panel. The distinction is the reason these are separate lists.
 _IMAGING = [
-    ("57021-8", "Chest X-ray", "No acute cardiopulmonary abnormality."),
-    ("42272-5", "Abdominal ultrasound", "Liver and kidneys of normal appearance."),
-    ("24590-2", "CT head without contrast", "No intracranial haemorrhage."),
+    ("42272-5", "XR Chest PA and Lateral", "No acute cardiopulmonary abnormality."),
+    ("24558-9", "US Abdomen", "Liver and kidneys of normal appearance."),
+    ("30799-1", "CT Head WO contrast", "No intracranial haemorrhage."),
 ]
 
 
@@ -396,7 +396,7 @@ def _diagnostic_results(ref: str, birth: date | None,
         "text": _narrative(f"{panel_display}: {len(result_refs)} analytes reported."),
         "subject": {"reference": ref},
         "status": "final",
-        "category": [_cc("http://loinc.org", "LAB", "Laboratory")],
+        "category": [_cc("http://terminology.hl7.org/CodeSystem/v2-0074", "LAB", "Laboratory")],
         "code": _cc("http://loinc.org", panel_code, panel_display),
         "effectiveDateTime": when,
         # THE fix: the report points at its observations.
@@ -411,7 +411,7 @@ def _diagnostic_results(ref: str, birth: date | None,
             "text": _narrative(f"{img_display}: {conclusion}"),
             "subject": {"reference": ref},
             "status": "final",
-            "category": [_cc("http://loinc.org", "RAD", "Radiology")],
+            "category": [_cc("http://terminology.hl7.org/CodeSystem/v2-0074", "RAD", "Radiology")],
             "code": _cc("http://loinc.org", img_code, img_display),
             "effectiveDateTime": _recent(rng, 2),
             "conclusion": conclusion,

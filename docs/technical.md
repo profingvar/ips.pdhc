@@ -317,6 +317,18 @@ null. Its export has not carried that field; the check works when it does.
 `/euips-summary` and `/euips-sections` read current versions only. Before,
 a superseded version was returned as an entry of its own.
 
+**`?include=resource` (#1061).** With `include=resource`, every entry of
+`/euips-summary` also carries `resource`: the stored FHIR resource of that
+entry (current version). record.pdhc builds its HL7 Europe Patient Summary
+(`hl7.fhir.eu.eps#1.0.0-ballot`) from it, so eps stays the one place that
+decides what is in an IPS section. Any other `include` value is
+`400 bad_include` (checked before the gate); the read is audited with
+`detail.resources=True`. Without the parameter the response is unchanged.
+eps keeps IPS 1.1's `absent-unknown-uv-ips` codes; EPS is IPS 2.0, and
+record translates them to IPS 2.0's SNOMED codes at its export boundary.
+The synthetic generators' codes and displays were corrected against
+tx.fhir.org in the same pass (some meant something other than their text).
+
 ### Card versions: the latest endorsed version wins (#1049)
 
 In patient app v2 the patient sends one SECTION of "Mitt patientkort" at a
